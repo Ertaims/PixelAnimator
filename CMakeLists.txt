@@ -14,14 +14,28 @@ include_directories(
 # 链接库路径
 link_directories(${CMAKE_SOURCE_DIR}/lib)
 
-# 设置源文件目录
-set(SOURCES 
-    src/main.cpp
-)
-
 # 设置头文件目录
 set(HEADERS
     include/common.h
+)
+
+# 设置源文件目录
+set(SOURCES 
+    src/main.cpp
+    src/menu/MenuBase.cpp
+    src/menu/MenuItem.cpp
+    src/menu/Menu.cpp
+    src/menu/MenuSeparator.cpp
+    src/menu/MenuManager.cpp
+    src/menu/menu_items/MenuOptionBase.cpp
+    src/menu/menu_items/Menu_File.cpp
+    src/menu/menu_items/Menu_Edit.cpp
+    src/menu/menu_items/Menu_Sprite.cpp
+    src/menu/menu_items/Menu_Layer.cpp
+    src/menu/menu_items/Menu_Frame.cpp
+    src/menu/menu_items/Menu_Select.cpp
+    src/menu/menu_items/Menu_View.cpp
+    src/menu/menu_items/Menu_Help.cpp
 )
 
 # 添加ImGui源文件

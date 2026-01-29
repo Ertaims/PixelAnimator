@@ -17,6 +17,8 @@
 
 #include <iostream>
 
+#include "menu/MenuBar.h"
+
 // Main code
 int main(int, char**)
 {
@@ -40,7 +42,7 @@ int main(int, char**)
     SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 8);
     float main_scale = SDL_GetDisplayContentScale(SDL_GetPrimaryDisplay());
     SDL_WindowFlags window_flags = SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIDDEN | SDL_WINDOW_HIGH_PIXEL_DENSITY;
-    SDL_Window* window = SDL_CreateWindow("Dear ImGui SDL3+OpenGL3 example", (int)(1280 * main_scale), (int)(800 * main_scale), window_flags);
+    SDL_Window* window = SDL_CreateWindow("Pixel Animator", (int)(1280 * main_scale), (int)(800 * main_scale), window_flags);
 
     if (window == nullptr)
     {
@@ -62,7 +64,7 @@ int main(int, char**)
     // Setup Dear ImGui context
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
-    ImGuiIO& io = ImGui::GetIO(); (void)io;
+    ImGuiIO& io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // Enable Keyboard Controls
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;         // Enable Docking
@@ -71,9 +73,12 @@ int main(int, char**)
     // Setup Dear ImGui style
     ImGui::StyleColorsDark();
     //ImGui::StyleColorsLight();
-
+    
+    
     // Setup scaling
     ImGuiStyle& style = ImGui::GetStyle();
+    style.ItemSpacing.x = 8.0f;
+    //style.FontSizeBase = 14.0f;
     style.ScaleAllSizes(main_scale);        // Bake a fixed style scale. (until we have a solution for dynamic style scaling, changing this requires resetting Style + calling this again)
     style.FontScaleDpi = main_scale;        // Set initial font scale. (using io.ConfigDpiScaleFonts=true makes this unnecessary. We leave both here for documentation purpose)
     io.ConfigDpiScaleFonts = true;          // [Experimental] Automatically overwrite style.FontScaleDpi in Begin() when Monitor DPI changes. This will scale fonts but _NOT_ scale sizes/padding for now.
@@ -102,7 +107,7 @@ int main(int, char**)
     //style.FontSizeBase = 20.0f;
     //io.Fonts->AddFontDefaultVector();
     //io.Fonts->AddFontDefaultBitmap();
-    //io.Fonts->AddFontFromFileTTF("c:\\Windows\\Fonts\\segoeui.ttf");
+    //io.Fonts->AddFontFromFileTTF("C:\\Users\\76293\\AppData\\Local\\Microsoft\\Windows\\Fonts\\BigBlueTerm437NerdFontMono-Regular.ttf");
     //io.Fonts->AddFontFromFileTTF("../../misc/fonts/DroidSans.ttf");
     //io.Fonts->AddFontFromFileTTF("../../misc/fonts/Roboto-Medium.ttf");
     //io.Fonts->AddFontFromFileTTF("../../misc/fonts/Cousine-Regular.ttf");
@@ -120,6 +125,49 @@ int main(int, char**)
     bool fullscreen_mode = false;
     bool show_grid = false;
     bool show_axis = false;
+
+    // 创建菜单管理器
+    MenuManager menuManager;
+    
+    // 设置文件菜单
+    Menu* fileMenu = menuManager.addMenu("File");
+    Menu_File menuFile(fileMenu, [&done]() { done = true; });
+    menuFile.initialize();
+
+    // 设置编辑菜单
+    Menu* editMenu = menuManager.addMenu("Edit");
+    Menu_Edit menuEdit(editMenu);
+    menuEdit.initialize();
+    
+    // 设置 Sprite 菜单
+    Menu* spriteMenu = menuManager.addMenu("Sprite");
+    Menu_Sprite menuSprite(spriteMenu);
+    menuSprite.initialize();
+    
+    // 设置 Layer 菜单
+    Menu* layerMenu = menuManager.addMenu("Layer");
+    Menu_Layer menuLayer(layerMenu);
+    menuLayer.initialize();
+    
+    // 设置 Frame 菜单
+    Menu* frameMenu = menuManager.addMenu("Frame");
+    Menu_Frame menuFrame(frameMenu);
+    menuFrame.initialize();
+    
+    // 设置 Select 菜单
+    Menu* selectMenu = menuManager.addMenu("Select");
+    Menu_Select menuSelect(selectMenu);
+    menuSelect.initialize();
+    
+    // 设置 View 菜单
+    Menu* viewMenu = menuManager.addMenu("View");
+    Menu_View menuView(viewMenu);
+    menuView.initialize();
+    
+    // 设置 Help 菜单
+    Menu* helpMenu = menuManager.addMenu("Help");
+    Menu_Help menuHelp(helpMenu);
+    menuHelp.initialize();
 
     std::cout << "OpenGL Version: " << glGetString(GL_VERSION) << std::endl;
 
@@ -153,60 +201,63 @@ int main(int, char**)
         ImGui_ImplSDL3_NewFrame();
         ImGui::NewFrame();
 
-        // 创建顶部菜单栏
-        if (ImGui::BeginMainMenuBar())
+        // 渲染顶部菜单栏
+        menuManager.render();
+
+        //启用DockSpace
         {
-            if (ImGui::BeginMenu("FILE"))
+            static bool opt_fullscreen = true;
+            static bool opt_padding = false;
+            static ImGuiDockNodeFlags dockspace_flags = ImGuiDockNodeFlags_None;
+
+            // We are using the ImGuiWindowFlags_NoDocking flag to make the parent window not dockable into,
+            // because it would be confusing to have two docking targets within each others.
+            ImGuiWindowFlags window_flags = ImGuiWindowFlags_NoDocking;
+            if (opt_fullscreen)
             {
-                if (ImGui::MenuItem("Quit")) 
-                    done = true;
-                ImGui::EndMenu();
+                const ImGuiViewport* viewport = ImGui::GetMainViewport();
+                ImGui::SetNextWindowPos(viewport->WorkPos);
+                ImGui::SetNextWindowSize(viewport->WorkSize);
+                ImGui::SetNextWindowViewport(viewport->ID);
+                ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
+                ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+                window_flags |= ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove;
+                window_flags |= ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNavFocus;
             }
-            
-            if (ImGui::BeginMenu("View"))
+            else
             {
-                ImGui::MenuItem("Option1", "", &some_bool_option);
-                ImGui::MenuItem("Full Screen", "", &fullscreen_mode);
-                ImGui::MenuItem("显示网格", "", &show_grid);
-                ImGui::MenuItem("显示坐标轴", "", &show_axis);
-                ImGui::EndMenu();
+                dockspace_flags &= ~ImGuiDockNodeFlags_PassthruCentralNode;
             }
-            
-            ImGui::EndMainMenuBar();
+
+            // When using ImGuiDockNodeFlags_PassthruCentralNode, DockSpace() will render our background
+            // and handle the pass-thru hole, so we ask Begin() to not render a background.
+            if (dockspace_flags & ImGuiDockNodeFlags_PassthruCentralNode)
+                window_flags |= ImGuiWindowFlags_NoBackground;
+
+            // Important: note that we proceed even if Begin() returns false (aka window is collapsed).
+            // This is because we want to keep our DockSpace() active. If a DockSpace() is inactive,
+            // all active windows docked into it will lose their parent and become undocked.
+            // We cannot preserve the docking relationship between an active window and an inactive docking, otherwise
+            // any change of dockspace/settings would lead to windows being stuck in limbo and never being visible.
+            if (!opt_padding)
+                ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+            ImGui::Begin("DockSpace Demo", nullptr, window_flags);
+            if (!opt_padding)
+                ImGui::PopStyleVar();
+
+            if (opt_fullscreen)
+                ImGui::PopStyleVar(2);
+
+            // Submit the DockSpace
+            // REMINDER: THIS IS A DEMO FOR ADVANCED USAGE OF DockSpace()!
+            // MOST REGULAR APPLICATIONS WILL SIMPLY WANT TO CALL DockSpaceOverViewport(). READ COMMENTS ABOVE.
+            if (io.ConfigFlags & ImGuiConfigFlags_DockingEnable)
+            {
+                ImGuiID dockspace_id = ImGui::GetID("MyDockSpace");
+                ImGui::DockSpace(dockspace_id, ImVec2(0.0f, 0.0f), dockspace_flags);
+            }
         }
-
-        // 2. Show a simple window that we create ourselves. We use a Begin/End pair to create a named window.
-        {
-            static float f = 0.0f;
-            static int counter = 0;
-
-            ImGui::Begin("Hello, world!");                          // Create a window called "Hello, world!" and append into it.
-
-            ImGui::Text("This is some useful text.");               // Display some text (you can use a format strings too)
-            ImGui::Checkbox("Demo Window", &show_demo_window);      // Edit bools storing our window open/close state
-            ImGui::Checkbox("Another Window", &show_another_window);
-
-            ImGui::SliderFloat("float", &f, 0.0f, 1.0f);            // Edit 1 float using a slider from 0.0f to 1.0f
-            ImGui::ColorEdit3("clear color", (float*)&clear_color); // Edit 3 floats representing a color
-
-            if (ImGui::Button("Button"))                            // Buttons return true when clicked (most widgets return true when edited/activated)
-                counter++;
-            ImGui::SameLine();
-            ImGui::Text("counter = %d", counter);
-
-            ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / io.Framerate, io.Framerate);
-            ImGui::End();
-        }
-
-        // 3. Show another simple window.
-        if (show_another_window)
-        {
-            ImGui::Begin("Another Window", &show_another_window);   // Pass a pointer to our bool variable (the window will have a closing button that will clear the bool when clicked)
-            ImGui::Text("Hello from another window!");
-            if (ImGui::Button("Close Me"))
-                show_another_window = false;
-            ImGui::End();
-        }
+        ImGui::End();
 
         // Rendering
         ImGui::Render();
@@ -230,8 +281,6 @@ int main(int, char**)
         SDL_GL_SwapWindow(window);
     }
 
-    // Cleanup
-    // [If using SDL_MAIN_USE_CALLBACKS: all code below would likely be your SDL_AppQuit() function]
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplSDL3_Shutdown();
     ImGui::DestroyContext();
