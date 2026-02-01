@@ -16,6 +16,7 @@ private:
 public:
     // 构造函数
     MenuItem(const std::string& name, const std::string& shortcut = "", bool* isChecked = nullptr, bool enabled = true);
+    // 有子菜单的构造函数
     MenuItem(const std::string& name, Menu* subMenu, const std::string& shortcut = "", bool enabled = true);
     
     // 设置回调函数

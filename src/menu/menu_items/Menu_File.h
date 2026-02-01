@@ -11,8 +11,8 @@ private:
 public:
     // 构造函数
     Menu_File(Menu* menu, const std::function<void()>& onExitCallback = nullptr);
-    
-    // 初始化菜单选项
+
+    // 初始化菜单项
     void initialize() override;
     
     // 设置退出回调函数

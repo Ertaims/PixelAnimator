@@ -17,7 +17,7 @@
 
 #include <iostream>
 
-#include "menu/MenuBar.h"
+#include "menu/MenuFactory.h"
 
 // Main code
 int main(int, char**)
@@ -126,48 +126,20 @@ int main(int, char**)
     bool show_grid = false;
     bool show_axis = false;
 
-    // 创建菜单管理器
-    MenuManager menuManager;
-    
-    // 设置文件菜单
-    Menu* fileMenu = menuManager.addMenu("File");
-    Menu_File menuFile(fileMenu, [&done]() { done = true; });
-    menuFile.initialize();
+    // 使用菜单工厂创建菜单
+    ConcreteMenuFactory menuFactory;
+    MenuManager* menuManager = menuFactory.createMenuManager();
 
-    // 设置编辑菜单
-    Menu* editMenu = menuManager.addMenu("Edit");
-    Menu_Edit menuEdit(editMenu);
-    menuEdit.initialize();
-    
-    // 设置 Sprite 菜单
-    Menu* spriteMenu = menuManager.addMenu("Sprite");
-    Menu_Sprite menuSprite(spriteMenu);
-    menuSprite.initialize();
-    
-    // 设置 Layer 菜单
-    Menu* layerMenu = menuManager.addMenu("Layer");
-    Menu_Layer menuLayer(layerMenu);
-    menuLayer.initialize();
-    
-    // 设置 Frame 菜单
-    Menu* frameMenu = menuManager.addMenu("Frame");
-    Menu_Frame menuFrame(frameMenu);
-    menuFrame.initialize();
-    
-    // 设置 Select 菜单
-    Menu* selectMenu = menuManager.addMenu("Select");
-    Menu_Select menuSelect(selectMenu);
-    menuSelect.initialize();
-    
-    // 设置 View 菜单
-    Menu* viewMenu = menuManager.addMenu("View");
-    Menu_View menuView(viewMenu);
-    menuView.initialize();
-    
-    // 设置 Help 菜单
-    Menu* helpMenu = menuManager.addMenu("Help");
-    Menu_Help menuHelp(helpMenu);
-    menuHelp.initialize();
+    // 创建文件菜单
+    menuFactory.createFileMenu(menuManager, [&done]() { done = true; });
+    // 创建其他菜单
+    menuFactory.createEditMenu(menuManager);
+    menuFactory.createSpriteMenu(menuManager);
+    menuFactory.createLayerMenu(menuManager);
+    menuFactory.createFrameMenu(menuManager);
+    menuFactory.createSelectMenu(menuManager);
+    menuFactory.createViewMenu(menuManager);
+    menuFactory.createHelpMenu(menuManager);
 
     std::cout << "OpenGL Version: " << glGetString(GL_VERSION) << std::endl;
 
@@ -202,7 +174,7 @@ int main(int, char**)
         ImGui::NewFrame();
 
         // 渲染顶部菜单栏
-        menuManager.render();
+        menuManager->render();
 
         //启用DockSpace
         {

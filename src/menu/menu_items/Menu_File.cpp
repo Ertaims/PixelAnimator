@@ -5,7 +5,6 @@ Menu_File::Menu_File(Menu* menu, const std::function<void()>& onExitCallback)
     : MenuOptionBase(menu), onExitCallback(onExitCallback) {
 }
 
-// 初始化菜单选项
 void Menu_File::initialize() {
     // 添加菜单项
     getMenu()->addItem("New...", "Ctrl+N");
