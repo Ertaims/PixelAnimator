@@ -22,20 +22,21 @@ set(HEADERS
 # 设置源文件目录
 set(SOURCES 
     src/main.cpp
-    src/menu/MenuBase.cpp
-    src/menu/MenuItem.cpp
-    src/menu/Menu.cpp
-    src/menu/MenuSeparator.cpp
-    src/menu/MenuManager.cpp
-    src/menu/menu_items/MenuOptionBase.cpp
-    src/menu/menu_items/Menu_File.cpp
-    src/menu/menu_items/Menu_Edit.cpp
-    src/menu/menu_items/Menu_Sprite.cpp
-    src/menu/menu_items/Menu_Layer.cpp
-    src/menu/menu_items/Menu_Frame.cpp
-    src/menu/menu_items/Menu_Select.cpp
-    src/menu/menu_items/Menu_View.cpp
-    src/menu/menu_items/Menu_Help.cpp
+    src/app/App.cpp
+    src/core/AppContext.cpp
+    src/ui/menu/MenuBase.cpp
+    src/ui/menu/MenuItem.cpp
+    src/ui/menu/Menu.cpp
+    src/ui/menu/MenuSeparator.cpp
+    src/ui/menu/MenuManager.cpp
+    src/ui/menu/menu_items/MenuOptionBase.cpp
+    src/ui/menu/menu_items/Menu_File.cpp
+    src/ui/menu/menu_items/Menu_Edit.cpp
+    src/ui/menu/menu_items/Menu_View.cpp
+    src/ui/menu/menu_items/Menu_Help.cpp
+    src/ui/windows/HomeWindow.cpp
+    src/ui/windows/ProjectWindow.cpp
+    src/ui/windows/WindowFactory.cpp
 )
 
 # 添加ImGui源文件
@@ -63,7 +64,8 @@ file(COPY ${PROJECT_SOURCE_DIR}/lib/SDL3_image.dll DESTINATION ${PROJECT_BINARY_
 
 # 设置头文件搜索路径
 target_include_directories(${PROJECT_NAME} PRIVATE
-    include
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/src
     imgui
 )
 

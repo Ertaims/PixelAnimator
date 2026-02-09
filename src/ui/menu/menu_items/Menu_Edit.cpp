@@ -1,15 +1,17 @@
 #include "Menu_Edit.h"
+#include "ui/menu/Menu.h"
+#include "ui/menu/MenuItem.h"
+#include "core/AppContext.h"
 
-// 构造函数
-Menu_Edit::Menu_Edit(Menu* menu)
-    : MenuOptionBase(menu) {
-}
+Menu_Edit::Menu_Edit(Menu* menu, AppContext* context)
+    : MenuOptionBase(menu), context_(context) {}
 
-// 初始化菜单选项
 void Menu_Edit::initialize() {
-    // 添加菜单项
-    getMenu()->addItem("Undo", "Ctrl+Z");
-    getMenu()->addItem("Redo", "Ctrl+Y");
+    MenuItem* undoItem = getMenu()->addItem("Undo", "Ctrl+Z");
+    undoItem->setCallback([this]() { if (context_) context_->undo(); });
+
+    MenuItem* redoItem = getMenu()->addItem("Redo", "Ctrl+Y");
+    redoItem->setCallback([this]() { if (context_) context_->redo(); });
     
     // 添加 Undo History 子菜单
     Menu* undoHistoryMenu = new Menu("Undo History");
