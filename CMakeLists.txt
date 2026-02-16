@@ -24,6 +24,7 @@ set(SOURCES
     src/main.cpp
     src/app/App.cpp
     src/core/AppContext.cpp
+    src/core/Project.cpp
     src/ui/menu/MenuBase.cpp
     src/ui/menu/MenuItem.cpp
     src/ui/menu/Menu.cpp
@@ -37,6 +38,7 @@ set(SOURCES
     src/ui/windows/HomeWindow.cpp
     src/ui/windows/ProjectWindow.cpp
     src/ui/windows/WindowFactory.cpp
+    src/ui/statusBar/statusBar.cpp
 )
 
 # 添加ImGui源文件

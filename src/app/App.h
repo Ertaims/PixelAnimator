@@ -15,15 +15,17 @@
 #include "../core/AppContext.h"
 #include "imgui.h"
 #include <SDL3/SDL.h>
+#include <memory>
 
 class MenuManager;
-class HomeWindow;
+class ProjectWindow;
+class Project;
 
 class App
 {
 public:
-    App() = default;
-    ~App() = default;
+    App();
+    ~App();
 
     /** 禁止拷贝与赋值 */
     App(const App&) = delete;
@@ -63,6 +65,9 @@ private:
     // 创建菜单栏与各窗口（在 ImGui 已初始化后调用）
     void createMenuAndWindows();
 
+    // 初始化默认面板停靠布局（只执行一次）
+    void setupDefaultDockLayout();
+
     // -------------------------------------------------------------------------
     // 平台与渲染状态
     // -------------------------------------------------------------------------
@@ -80,5 +85,7 @@ private:
     // -------------------------------------------------------------------------
     AppContext context_;
     MenuManager* menuManager_ = nullptr;
-    HomeWindow* homeWindow_ = nullptr;
+    ProjectWindow* projectWindow_ = nullptr;
+    std::unique_ptr<Project> activeProject_;
+    bool dockLayoutInitialized_ = false;
 };

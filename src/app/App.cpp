@@ -5,14 +5,19 @@
 
 #include "app/App.h"
 #include "imgui.h"
+#include "imgui_internal.h"
 #include "imgui_impl_sdl3.h"
 #include "imgui_impl_opengl3.h"
 #include "ui/menu/MenuFactory.h"
 #include "ui/windows/WindowFactory.h"
+#include "ui/windows/Window.h"
+#include "core/Project.h"
 #include <SDL3/SDL_opengl.h>
 #include <cstdio>
 #include <iostream>
 
+App::App() = default;
+App::~App() = default;
 bool App::init()
 {
     // -------------------------------------------------------------------------
@@ -125,7 +130,11 @@ void App::createMenuAndWindows()
     menuFactory.createHelpMenu(menuManager_);
 
     WindowFactory& windowFactory = WindowFactory::getInstance();
-    homeWindow_ = windowFactory.createHomeWindow();
+    projectWindow_ = windowFactory.createProjectWindow(&context_);
+
+    // Start with a default in-memory project so canvas/timeline panels are usable.
+    activeProject_ = std::make_unique<Project>();
+    context_.setProject(activeProject_.get());
 }
 
 void App::run()
@@ -211,12 +220,20 @@ void App::renderFrame()
         {
             ImGuiID dockspace_id = ImGui::GetID("MyDockSpace");
             ImGui::DockSpace(dockspace_id, ImVec2(0.0f, 0.0f), dockspace_flags);
+            setupDefaultDockLayout();
         }
         ImGui::End();
     }
 
-    if (homeWindow_)
-        homeWindow_->render();
+    // Render all registered tool windows/panels.
+    for (Window* window : WindowFactory::getInstance().getWindows())
+    {
+        if (window)
+        {
+            window->render();
+        }
+    }
+    // statusBar::draw(context_);
 
     ImGui::Render();
     glViewport(0, 0, (int)io.DisplaySize.x, (int)io.DisplaySize.y);
@@ -239,7 +256,9 @@ void App::shutdown()
 {
     // 先清理由我们或工厂创建的 UI 对象
     WindowFactory::getInstance().cleanup();
-    homeWindow_ = nullptr;
+    projectWindow_ = nullptr;
+    context_.setProject(nullptr);
+    activeProject_.reset();
 
     if (menuManager_)
     {
@@ -262,4 +281,22 @@ void App::shutdown()
         window_ = nullptr;
     }
     SDL_Quit();
+}
+
+void App::setupDefaultDockLayout()
+{
+    if (dockLayoutInitialized_)
+        return;
+
+    ImGuiID dockspaceId = ImGui::GetID("MyDockSpace");
+    ImGui::DockBuilderRemoveNode(dockspaceId);
+    ImGui::DockBuilderAddNode(dockspaceId, ImGuiDockNodeFlags_DockSpace);
+    ImGui::DockBuilderSetNodeSize(dockspaceId, ImGui::GetMainViewport()->WorkSize);
+
+    ImGuiID centerId = dockspaceId;
+
+    ImGui::DockBuilderDockWindow("Project", centerId);
+
+    ImGui::DockBuilderFinish(dockspaceId);
+    dockLayoutInitialized_ = true;
 }

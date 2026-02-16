@@ -2,9 +2,10 @@
 #define WINDOWFACTORY_H
 
 #include "Window.h"
-#include "HomeWindow.h"
 #include "ProjectWindow.h"
 #include <vector>
+
+class AppContext;
 
 class WindowFactory {
 public:
@@ -14,11 +15,8 @@ public:
         return instance;
     }
     
-    // 创建主页窗口
-    HomeWindow* createHomeWindow();
-    
     // 创建项目窗口
-    ProjectWindow* createProjectWindow();
+    ProjectWindow* createProjectWindow(AppContext* context);
     
     // 获取所有窗口
     std::vector<Window*>& getWindows() { return windows; }

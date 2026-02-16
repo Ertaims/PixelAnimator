@@ -1,13 +1,7 @@
 #include "WindowFactory.h"
 
-HomeWindow* WindowFactory::createHomeWindow() {
-    HomeWindow* homeWindow = new HomeWindow();
-    windows.push_back(homeWindow);
-    return homeWindow;
-}
-
-ProjectWindow* WindowFactory::createProjectWindow() {
-    ProjectWindow* projectWindow = new ProjectWindow();
+ProjectWindow* WindowFactory::createProjectWindow(AppContext* context) {
+    ProjectWindow* projectWindow = new ProjectWindow(context);
     windows.push_back(projectWindow);
     return projectWindow;
 }
