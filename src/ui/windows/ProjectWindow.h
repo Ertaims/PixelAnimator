@@ -4,6 +4,7 @@
 #include "Window.h"
 
 class AppContext;
+class Project;
 
 class ProjectWindow : public Window {
 public:
@@ -13,6 +14,11 @@ public:
     void render() override;
     
 private:
+    void renderLeftPanel(Project* project);
+    void renderCanvasPanel(Project* project);
+    void renderRightPanel(Project* project);
+    void renderTimelinePanel(Project* project);
+
     AppContext* context = nullptr;
 };
 
