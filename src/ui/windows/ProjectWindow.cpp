@@ -163,32 +163,104 @@ void ProjectWindow::render()
 void ProjectWindow::renderLeftPanel(Project* project)
 {
     (void)project;
-    ImGui::TextUnformatted("Color Picker");
-    ImVec4 color = rgbaToFloat4(context->getColorRGBA());
-    if (ImGui::ColorPicker4("##ProjectColorPicker", &color.x, ImGuiColorEditFlags_AlphaBar))
-    {
-        context->setColorRGBA(float4ToRgba(color));
-        context->setProjectDirty(true);
-    }
-
-    ImGui::Separator();
-    ImGui::TextUnformatted("Palette");
-    constexpr uint32_t palette[] = {
+    // Palette 分为系统默认与用户自定义两部分。
+    static const uint32_t kDefaultPalette[] = {
         0xFF000000, 0xFFFFFFFF, 0xFF404040, 0xFFC0C0C0,
         0xFF0000FF, 0xFF00FF00, 0xFFFF0000, 0xFF00FFFF,
         0xFFFF00FF, 0xFFFFFF00, 0xFF804000, 0xFFFFA500,
         0xFF8B4513, 0xFF800080, 0xFF008080, 0xFF1E90FF
     };
-    for (int i = 0; i < static_cast<int>(sizeof(palette) / sizeof(palette[0])); ++i)
+    static std::vector<uint32_t> userPalette;
+    static int selectedIndex = 0;
+    static bool selectedIsUser = false;
+
+    const int defaultCount = static_cast<int>(sizeof(kDefaultPalette) / sizeof(kDefaultPalette[0]));
+    const int userCount = static_cast<int>(userPalette.size());
+
+    if (!selectedIsUser)
+    {
+        if (selectedIndex < 0 || selectedIndex >= defaultCount)
+            selectedIndex = 0;
+    }
+    else
+    {
+        if (userCount == 0)
+        {
+            selectedIsUser = false;
+            selectedIndex = 0;
+        }
+        else if (selectedIndex < 0 || selectedIndex >= userCount)
+        {
+            selectedIndex = 0;
+        }
+    }
+
+    const uint32_t selectedColor = selectedIsUser
+        ? userPalette[static_cast<size_t>(selectedIndex)]
+        : kDefaultPalette[selectedIndex];
+
+    ImGui::TextUnformatted("Color Picker");
+    ImVec4 color = rgbaToFloat4(selectedColor);
+    if (ImGui::ColorPicker4("##ProjectColorPicker", &color.x, ImGuiColorEditFlags_AlphaBar))
+    {
+        const uint32_t newColor = float4ToRgba(color);
+        // 系统默认色不改动，仅更新当前前景色。
+        if (selectedIsUser && !userPalette.empty())
+        {
+            userPalette[static_cast<size_t>(selectedIndex)] = newColor;
+        }
+        context->setColorRGBA(newColor);
+        context->setProjectDirty(true);
+    }
+
+    ImGui::Separator();
+    ImGui::TextUnformatted("Palette - Default");
+    for (int i = 0; i < defaultCount; ++i)
     {
         ImGui::PushID(i);
-        if (ImGui::ColorButton("##palette", rgbaToFloat4(palette[i]), ImGuiColorEditFlags_NoTooltip, ImVec2(24.0f, 24.0f)))
+        if (ImGui::ColorButton("##palette_default", rgbaToFloat4(kDefaultPalette[i]), ImGuiColorEditFlags_NoTooltip, ImVec2(24.0f, 24.0f)))
         {
-            context->setColorRGBA(palette[i]);
+            selectedIsUser = false;
+            selectedIndex = i;
+            context->setColorRGBA(kDefaultPalette[i]);
         }
         ImGui::PopID();
         if ((i + 1) % 4 != 0)
             ImGui::SameLine();
+    }
+
+    ImGui::Separator();
+    ImGui::TextUnformatted("Palette - User");
+    if (userPalette.empty())
+    {
+        ImGui::TextUnformatted("No user colors yet.");
+    }
+    else
+    {
+        for (int i = 0; i < static_cast<int>(userPalette.size()); ++i)
+        {
+            ImGui::PushID(i);
+            if (ImGui::ColorButton("##palette_user", rgbaToFloat4(userPalette[static_cast<size_t>(i)]), ImGuiColorEditFlags_NoTooltip, ImVec2(24.0f, 24.0f)))
+            {
+                selectedIsUser = true;
+                selectedIndex = i;
+                context->setColorRGBA(userPalette[static_cast<size_t>(i)]);
+            }
+            ImGui::PopID();
+            if ((i + 1) % 4 != 0)
+                ImGui::SameLine();
+        }
+    }
+
+    // 添加按钮：新增一个颜色并选中（默认使用当前前景色）。
+    ImGui::Separator();
+    if (ImGui::Button("+ Add Color"))
+    {
+        const uint32_t newColor = context->getColorRGBA();
+        userPalette.push_back(newColor);
+        selectedIsUser = true;
+        selectedIndex = static_cast<int>(userPalette.size()) - 1;
+        context->setProjectDirty(true);
     }
 }
 
@@ -261,7 +333,24 @@ void ProjectWindow::renderCanvasPanel(Project* project)
     ImDrawList* drawList = ImGui::GetWindowDrawList();
     const ImVec2 imageMin = imagePos;
     const ImVec2 imageMax = ImVec2(imagePos.x + imageW, imagePos.y + imageH);
-    drawList->AddRectFilled(imageMin, imageMax, IM_COL32(30, 30, 30, 255));
+    // 绘制棋盘背景（四格：2x2）。
+    {
+        const ImU32 c1 = IM_COL32(70, 70, 70, 255);
+        const ImU32 c2 = IM_COL32(90, 90, 90, 255);
+        const float tileW = imageW * 0.5f;
+        const float tileH = imageH * 0.5f;
+        for (int ty = 0; ty < 2; ++ty)
+        {
+            for (int tx = 0; tx < 2; ++tx)
+            {
+                const ImU32 col = ((tx + ty) % 2 == 0) ? c1 : c2;
+                const ImVec2 p0(imageMin.x + tx * tileW, imageMin.y + ty * tileH);
+                const ImVec2 p1(p0.x + tileW, p0.y + tileH);
+                drawList->AddRectFilled(p0, p1, col);
+            }
+        }
+    }
+    // 绘制画布图像（OpenGL 纹理 id 通过 ImTextureID 传入）。
     drawList->AddImage(reinterpret_cast<ImTextureID>(static_cast<uintptr_t>(g_canvasTexture)),
                        imageMin, imageMax,
                        ImVec2(0, 0), ImVec2(1, 1));
