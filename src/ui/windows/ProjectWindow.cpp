@@ -190,7 +190,7 @@ void ProjectWindow::render()
     Project* project = context->getProject();
 
     // 顶部三列 + 底部时间线，时间线高度可拖拽调整
-    static float timelineHeight = 140.0f;
+    static float timelineHeight = 200.0f;
     const float splitterHeight = 2.0f;
     const float minTopHeight = 120.0f;
     const float minTimelineHeight = 80.0f;
@@ -662,10 +662,10 @@ void ProjectWindow::renderTimelinePanel(Project* project)
         ImGui::SameLine();
         if (ImGui::Button("+", btnSize))
         {
-            // 添加一帧，并切到新帧
-            const int frameCount = project->getFrameCount();
-            project->setFrameCount(frameCount + 1, 0x00000000);
-            context->setCurrentFrameIndex(frameCount);
+            // 在当前帧之后插入一帧，并切到新帧
+            const int current = context->getCurrentFrameIndex();
+            project->insertFrameAfter(current, 0x00000000);
+            context->setCurrentFrameIndex(current + 1);
             context->setProjectDirty(true);
         }
         ImGui::SameLine();
@@ -676,8 +676,9 @@ void ProjectWindow::renderTimelinePanel(Project* project)
             if (frameCount > 1)
             {
                 const int current = context->getCurrentFrameIndex();
-                project->setFrameCount(frameCount - 1);
-                context->setCurrentFrameIndex(std::min(current, frameCount - 2));
+                project->removeFrame(current);
+                const int newCount = project->getFrameCount();
+                context->setCurrentFrameIndex(std::min(current, newCount - 1));
                 context->setProjectDirty(true);
             }
         }

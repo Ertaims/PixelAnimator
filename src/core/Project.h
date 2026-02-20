@@ -50,6 +50,12 @@ public:
     // 调整帧数量（新增帧用 fillColor 填充）
     void setFrameCount(int count, uint32_t fillColor = 0x00000000);
 
+    // 在指定帧之后插入一帧（新增帧用 fillColor 填充）
+    void insertFrameAfter(int index, uint32_t fillColor = 0x00000000);
+
+    // 删除指定帧（至少保留 1 帧）
+    void removeFrame(int index);
+
 private:
     // 按当前 width_/height_ 创建指定数量的帧并填充像素
     void createFrames(int count, uint32_t fillColor);

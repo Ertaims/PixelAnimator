@@ -12,7 +12,7 @@ int clampPositive(int value)
 }
 } // namespace
 
-Project::Project() : Project(128, 128, 1, 0x00000000) {}
+Project::Project() : Project(16, 16, 1, 0x00000000) {}
 
 Project::Project(int width, int height, int frameCount, uint32_t fillColor)
 {
@@ -100,6 +100,34 @@ void Project::setFrameCount(int count, uint32_t fillColor)
     {
         frames_[i].pixels.assign(pixelCount, fillColor);
     }
+}
+
+void Project::insertFrameAfter(int index, uint32_t fillColor)
+{
+    if (frames_.empty())
+    {
+        createFrames(1, fillColor);
+        return;
+    }
+
+    const int clamped = std::clamp(index, 0, static_cast<int>(frames_.size()) - 1);
+    const size_t insertPos = static_cast<size_t>(clamped + 1);
+
+    Frame newFrame;
+    const size_t pixelCount =
+        static_cast<size_t>(width_) * static_cast<size_t>(height_);
+    newFrame.pixels.assign(pixelCount, fillColor);
+
+    frames_.insert(frames_.begin() + static_cast<long long>(insertPos), std::move(newFrame));
+}
+
+void Project::removeFrame(int index)
+{
+    if (frames_.size() <= 1)
+        return;
+
+    const int clamped = std::clamp(index, 0, static_cast<int>(frames_.size()) - 1);
+    frames_.erase(frames_.begin() + static_cast<long long>(clamped));
 }
 
 void Project::createFrames(int count, uint32_t fillColor)
