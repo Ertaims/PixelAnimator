@@ -16,14 +16,19 @@ public:
      * @param context 编辑器上下文，用于 New/Open/Save 等操作（可为 nullptr，则仅 Exit 有效）
      * @param onExitCallback 点击 Exit 时的回调（通常设置主循环退出）
      */
-    Menu_File(Menu* menu, AppContext* context, const std::function<void()>& onExitCallback = nullptr);
+    Menu_File(Menu* menu,
+              AppContext* context,
+              const std::function<void()>& onExitCallback = nullptr,
+              const std::function<void()>& onNewProjectCallback = nullptr);
 
     void initialize() override;
 
     void setOnExitCallback(const std::function<void()>& callback);
+    void setOnNewProjectCallback(const std::function<void()>& callback);
     void setContext(AppContext* context) { context_ = context; }
 
 private:
     AppContext* context_ = nullptr;
     std::function<void()> onExitCallback_;
+    std::function<void()> onNewProjectCallback_;
 };

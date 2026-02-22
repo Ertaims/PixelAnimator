@@ -173,10 +173,16 @@ void ProjectWindow::render()
     if (!visible)
         return;
 
-    if (!ImGui::Begin(name, &visible))
+    const char* label = windowLabel_.empty() ? name : windowLabel_.c_str();
+    if (!ImGui::Begin(label, &visible))
     {
         ImGui::End();
         return;
+    }
+
+    if (onFocused_ && ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows))
+    {
+        onFocused_(context);
     }
 
     if (!context || !context->hasProject())

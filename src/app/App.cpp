@@ -4,50 +4,56 @@
  */
 
 #include "app/App.h"
-#include "imgui.h"
-#include "imgui_internal.h"
-#include "imgui_impl_sdl3.h"
-#include "imgui_impl_opengl3.h"
-#include "ui/menu/MenuFactory.h"
-#include "ui/windows/WindowFactory.h"
-#include "ui/windows/Window.h"
+
+#include "core/AppContext.h"
 #include "core/Project.h"
+#include "imgui.h"
+#include "imgui_impl_opengl3.h"
+#include "imgui_impl_sdl3.h"
+#include "imgui_internal.h"
+#include "ui/menu/MenuFactory.h"
+#include "ui/menu/menu_items/Menu_Edit.h"
+#include "ui/menu/menu_items/Menu_File.h"
+#include "ui/windows/Window.h"
+#include "ui/windows/WindowFactory.h"
 #include <SDL3/SDL_opengl.h>
+#include <cassert>
 #include <cstdio>
 #include <iostream>
 
 App::App() = default;
 App::~App() = default;
+
 bool App::init()
 {
-    // -------------------------------------------------------------------------
-    // 1. 初始化 SDL
-    // -------------------------------------------------------------------------
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD))
     {
         std::fprintf(stderr, "Error: SDL_Init(): %s\n", SDL_GetError());
         return false;
     }
 
-    // -------------------------------------------------------------------------
-    // 2. 创建窗口与 OpenGL 上下文
-    // -------------------------------------------------------------------------
     if (!createWindowAndContext())
         return false;
 
-    // -------------------------------------------------------------------------
-    // 3. 初始化 ImGui
-    // -------------------------------------------------------------------------
     if (!initImGui())
         return false;
 
-    // -------------------------------------------------------------------------
-    // 4. 创建菜单与窗口（依赖 ImGui 已就绪）
-    // -------------------------------------------------------------------------
     createMenuAndWindows();
 
     std::cout << "OpenGL Version: " << glGetString(GL_VERSION) << std::endl;
     return true;
+}
+
+AppContext& App::getContext()
+{
+    assert(activeContext_ && "No active project context.");
+    return *activeContext_;
+}
+
+const AppContext& App::getContext() const
+{
+    assert(activeContext_ && "No active project context.");
+    return *activeContext_;
 }
 
 bool App::createWindowAndContext()
@@ -65,7 +71,9 @@ bool App::createWindowAndContext()
     SDL_WindowFlags windowFlags = SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE
         | SDL_WINDOW_HIDDEN | SDL_WINDOW_HIGH_PIXEL_DENSITY;
     window_ = SDL_CreateWindow("Pixel Animator",
-        (int)(1280 * mainScale_), (int)(800 * mainScale_), windowFlags);
+                               static_cast<int>(1280 * mainScale_),
+                               static_cast<int>(800 * mainScale_),
+                               windowFlags);
     if (!window_)
     {
         std::fprintf(stderr, "Error: SDL_CreateWindow(): %s\n", SDL_GetError());
@@ -122,19 +130,18 @@ void App::createMenuAndWindows()
     ConcreteMenuFactory menuFactory;
     menuManager_ = menuFactory.createMenuManager();
 
-    // 文件菜单：传入 context_，New/Open/Save 操作 context；Exit 时设置 done_
-    menuFactory.createFileMenu(menuManager_, &context_, [this]() { done_ = true; });
-    // 编辑菜单：Undo/Redo 调用 context_.undo() / context_.redo()
-    menuFactory.createEditMenu(menuManager_, &context_);
+    fileMenu_ = menuFactory.createFileMenu(
+        menuManager_,
+        nullptr,
+        [this]() { done_ = true; },
+        [this]() { createNewProject(16, 16, 1, 0x00000000); });
+
+    editMenu_ = menuFactory.createEditMenu(menuManager_, nullptr);
     menuFactory.createViewMenu(menuManager_);
     menuFactory.createHelpMenu(menuManager_);
 
-    WindowFactory& windowFactory = WindowFactory::getInstance();
-    projectWindow_ = windowFactory.createProjectWindow(&context_);
-
-    // Start with a default in-memory project so canvas/timeline panels are usable.
-    activeProject_ = std::make_unique<Project>();
-    context_.setProject(activeProject_.get());
+    // 默认创建一个项目窗口，保证启动后可编辑。
+    createNewProject(16, 16, 1, 0x00000000);
 }
 
 void App::run()
@@ -176,11 +183,9 @@ void App::renderFrame()
 
     ImGuiIO& io = ImGui::GetIO();
 
-    // 顶部菜单栏
     if (menuManager_)
         menuManager_->render();
 
-    // 主 DockSpace（全屏铺满，子窗口可停靠）
     {
         static bool opt_fullscreen = true;
         static bool opt_padding = false;
@@ -225,20 +230,16 @@ void App::renderFrame()
         ImGui::End();
     }
 
-    // Render all registered tool windows/panels.
     for (Window* window : WindowFactory::getInstance().getWindows())
     {
         if (window)
-        {
             window->render();
-        }
     }
-    // statusBar::draw(context_);
 
     ImGui::Render();
-    glViewport(0, 0, (int)io.DisplaySize.x, (int)io.DisplaySize.y);
+    glViewport(0, 0, static_cast<int>(io.DisplaySize.x), static_cast<int>(io.DisplaySize.y));
     glClearColor(clearColor_.x * clearColor_.w, clearColor_.y * clearColor_.w,
-        clearColor_.z * clearColor_.w, clearColor_.w);
+                 clearColor_.z * clearColor_.w, clearColor_.w);
     glClear(GL_COLOR_BUFFER_BIT);
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
@@ -254,17 +255,17 @@ void App::renderFrame()
 
 void App::shutdown()
 {
-    // 先清理由我们或工厂创建的 UI 对象
     WindowFactory::getInstance().cleanup();
-    projectWindow_ = nullptr;
-    context_.setProject(nullptr);
-    activeProject_.reset();
+    projectSessions_.clear();
+    activeContext_ = nullptr;
 
     if (menuManager_)
     {
         delete menuManager_;
         menuManager_ = nullptr;
     }
+    fileMenu_ = nullptr;
+    editMenu_ = nullptr;
 
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplSDL3_Shutdown();
@@ -293,10 +294,55 @@ void App::setupDefaultDockLayout()
     ImGui::DockBuilderAddNode(dockspaceId, ImGuiDockNodeFlags_DockSpace);
     ImGui::DockBuilderSetNodeSize(dockspaceId, ImGui::GetMainViewport()->WorkSize);
 
-    ImGuiID centerId = dockspaceId;
-
-    ImGui::DockBuilderDockWindow("Project", centerId);
+    for (const ProjectSession& session : projectSessions_)
+    {
+        if (session.window)
+            ImGui::DockBuilderDockWindow(session.windowLabel.c_str(), dockspaceId);
+    }
 
     ImGui::DockBuilderFinish(dockspaceId);
     dockLayoutInitialized_ = true;
+}
+
+void App::setActiveContext(AppContext* context)
+{
+    if (!context || activeContext_ == context)
+        return;
+
+    activeContext_ = context;
+    if (fileMenu_)
+        fileMenu_->setContext(activeContext_);
+    if (editMenu_)
+        editMenu_->setContext(activeContext_);
+}
+
+void App::createNewProject(int width, int height, int frameCount, uint32_t fillColor)
+{
+    ProjectSession session;
+    session.project = std::make_unique<Project>(width, height, frameCount, fillColor);
+    session.context = std::make_unique<AppContext>();
+    session.context->setProject(session.project.get());
+    session.context->setProjectFilePath("");
+    session.context->setProjectDirty(false);
+    session.context->setCurrentAnimationIndex(0);
+    session.context->setCurrentFrameIndex(0);
+    session.context->setCanvasPan(0.0f, 0.0f);
+    session.context->setCanvasZoom(4);
+
+    const int projectId = nextProjectId_++;
+    session.windowLabel = "Project " + std::to_string(projectId) +
+        "###ProjectWindow_" + std::to_string(projectId);
+
+    AppContext* rawContext = session.context.get();
+    session.window = WindowFactory::getInstance().createProjectWindow(
+        rawContext,
+        session.windowLabel,
+        [this](AppContext* focusedContext) { setActiveContext(focusedContext); });
+    session.window->setVisible(true);
+
+    projectSessions_.push_back(std::move(session));
+    setActiveContext(rawContext);
+
+    // 新项目创建后重新应用 dock 布局，保证窗口可见。
+    dockLayoutInitialized_ = false;
 }
