@@ -1,6 +1,6 @@
 /**
  * @file App.cpp
- * @brief 应用程序主类实现：初始化、主循环、收尾
+ * @brief App 主流程实现：初始化、主循环渲染、资源释放、多项目会话管理
  */
 
 #include "app/App.h"
@@ -14,12 +14,28 @@
 #include "ui/menu/MenuFactory.h"
 #include "ui/menu/menu_items/Menu_Edit.h"
 #include "ui/menu/menu_items/Menu_File.h"
+#include "ui/windows/ProjectWindow.h"
 #include "ui/windows/Window.h"
 #include "ui/windows/WindowFactory.h"
 #include <SDL3/SDL_opengl.h>
+#include <algorithm>
 #include <cassert>
+#include <cmath>
 #include <cstdio>
 #include <iostream>
+
+namespace
+{
+    // ImGui 颜色(float4) 转为项目使用的 RGBA8888（R 在低字节）
+    uint32_t float4ToRgba(const ImVec4& color)
+    {
+        const uint32_t r = static_cast<uint32_t>(std::round(color.x * 255.0f)) & 0xFF;
+        const uint32_t g = static_cast<uint32_t>(std::round(color.y * 255.0f)) & 0xFF;
+        const uint32_t b = static_cast<uint32_t>(std::round(color.z * 255.0f)) & 0xFF;
+        const uint32_t a = static_cast<uint32_t>(std::round(color.w * 255.0f)) & 0xFF;
+        return (r << 0) | (g << 8) | (b << 16) | (a << 24);
+    }
+}
 
 App::App() = default;
 App::~App() = default;
@@ -134,13 +150,14 @@ void App::createMenuAndWindows()
         menuManager_,
         nullptr,
         [this]() { done_ = true; },
-        [this]() { createNewProject(16, 16, 1, 0x00000000); });
+        [this]() { newProjectPopupRequested_ = true; },
+        [this]() { closeProjectByContext(activeContext_); },
+        [this]() { closeAllProjects(); });
 
     editMenu_ = menuFactory.createEditMenu(menuManager_, nullptr);
     menuFactory.createViewMenu(menuManager_);
     menuFactory.createHelpMenu(menuManager_);
 
-    // 默认创建一个项目窗口，保证启动后可编辑。
     createNewProject(16, 16, 1, 0x00000000);
 }
 
@@ -185,6 +202,10 @@ void App::renderFrame()
 
     if (menuManager_)
         menuManager_->render();
+
+    renderNewProjectPopup();
+    handleProjectSwitchShortcut();
+    refreshWindowLabels();
 
     {
         static bool opt_fullscreen = true;
@@ -306,9 +327,6 @@ void App::setupDefaultDockLayout()
 
 void App::setActiveContext(AppContext* context)
 {
-    if (!context || activeContext_ == context)
-        return;
-
     activeContext_ = context;
     if (fileMenu_)
         fileMenu_->setContext(activeContext_);
@@ -316,7 +334,157 @@ void App::setActiveContext(AppContext* context)
         editMenu_->setContext(activeContext_);
 }
 
-void App::createNewProject(int width, int height, int frameCount, uint32_t fillColor)
+int App::findSessionIndexByContext(const AppContext* context) const
+{
+    if (!context)
+        return -1;
+
+    for (int i = 0; i < static_cast<int>(projectSessions_.size()); ++i)
+    {
+        if (projectSessions_[static_cast<size_t>(i)].context.get() == context)
+            return i;
+    }
+    return -1;
+}
+
+void App::closeProjectByContext(AppContext* context)
+{
+    const int index = findSessionIndexByContext(context);
+    if (index < 0)
+        return;
+
+    ProjectSession& session = projectSessions_[static_cast<size_t>(index)];
+    Window* windowToDestroy = session.window;
+    if (windowToDestroy)
+        WindowFactory::getInstance().destroyWindow(windowToDestroy);
+
+    projectSessions_.erase(projectSessions_.begin() + index);
+    dockLayoutInitialized_ = false;
+
+    if (projectSessions_.empty())
+    {
+        setActiveContext(nullptr);
+        return;
+    }
+
+    const int newIndex = std::min(index, static_cast<int>(projectSessions_.size()) - 1);
+    AppContext* newActive = projectSessions_[static_cast<size_t>(newIndex)].context.get();
+    setActiveContext(newActive);
+    ImGui::SetWindowFocus(projectSessions_[static_cast<size_t>(newIndex)].windowLabel.c_str());
+}
+
+void App::closeAllProjects()
+{
+    for (ProjectSession& session : projectSessions_)
+    {
+        if (session.window)
+            WindowFactory::getInstance().destroyWindow(session.window);
+    }
+
+    projectSessions_.clear();
+    setActiveContext(nullptr);
+    dockLayoutInitialized_ = false;
+}
+
+void App::refreshWindowLabels()
+{
+    for (ProjectSession& session : projectSessions_)
+    {
+        const bool dirty = session.context && session.context->isProjectDirty();
+        std::string label = session.windowBaseTitle;
+        if (dirty)
+            label += "*";
+        label += "###ProjectWindow_" + std::to_string(session.projectId);
+
+        if (session.windowLabel == label)
+            continue;
+
+        session.windowLabel = label;
+        if (session.window)
+            session.window->setWindowLabel(session.windowLabel);
+    }
+}
+
+void App::handleProjectSwitchShortcut()
+{
+    if (projectSessions_.size() < 2)
+        return;
+
+    ImGuiIO& io = ImGui::GetIO();
+    if (!io.KeyCtrl)
+        return;
+    if (!ImGui::IsKeyPressed(ImGuiKey_Tab, false))
+        return;
+
+    int currentIndex = findSessionIndexByContext(activeContext_);
+    if (currentIndex < 0)
+        currentIndex = 0;
+
+    const int n = static_cast<int>(projectSessions_.size());
+    const bool backward = io.KeyShift;
+    const int nextIndex = backward
+        ? (currentIndex - 1 + n) % n
+        : (currentIndex + 1) % n;
+
+    ProjectSession& nextSession = projectSessions_[static_cast<size_t>(nextIndex)];
+    setActiveContext(nextSession.context.get());
+    ImGui::SetWindowFocus(nextSession.windowLabel.c_str());
+}
+
+void App::renderNewProjectPopup()
+{
+    if (newProjectPopupRequested_)
+    {
+        ImGui::OpenPopup("New Project");
+        newProjectPopupRequested_ = false;
+    }
+
+    if (!ImGui::BeginPopupModal("New Project", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+        return;
+
+    ImGui::TextUnformatted("Create a new project");
+    ImGui::Separator();
+
+    ImGui::SetNextItemWidth(140.0f);
+    ImGui::InputInt("Width", &newProjectWidth_);
+    ImGui::SetNextItemWidth(140.0f);
+    ImGui::InputInt("Height", &newProjectHeight_);
+    ImGui::SetNextItemWidth(140.0f);
+    ImGui::InputInt("Frames", &newProjectFrameCount_);
+    ImGui::ColorEdit4("Background", &newProjectBgColor_.x);
+    const char* canvasBgItems[] = {"Checkerboard", "White"};
+    ImGui::SetNextItemWidth(140.0f);
+    ImGui::Combo("Canvas Background", &newProjectCanvasBgMode_, canvasBgItems, 2);
+
+    if (newProjectWidth_ < 1)
+        newProjectWidth_ = 1;
+    if (newProjectHeight_ < 1)
+        newProjectHeight_ = 1;
+    if (newProjectFrameCount_ < 1)
+        newProjectFrameCount_ = 1;
+
+    ImGui::Separator();
+    if (ImGui::Button("Create", ImVec2(120.0f, 0.0f)))
+    {
+        createNewProject(
+            newProjectWidth_,
+            newProjectHeight_,
+            newProjectFrameCount_,
+            float4ToRgba(newProjectBgColor_),
+            newProjectCanvasBgMode_ == 0);
+        ImGui::CloseCurrentPopup();
+    }
+
+    ImGui::SameLine();
+    if (ImGui::Button("Cancel", ImVec2(120.0f, 0.0f)))
+    {
+        ImGui::CloseCurrentPopup();
+    }
+
+    ImGui::EndPopup();
+}
+
+void App::createNewProject(int width, int height, int frameCount, uint32_t fillColor, bool checkerboardBackground)
 {
     ProjectSession session;
     session.project = std::make_unique<Project>(width, height, frameCount, fillColor);
@@ -328,10 +496,11 @@ void App::createNewProject(int width, int height, int frameCount, uint32_t fillC
     session.context->setCurrentFrameIndex(0);
     session.context->setCanvasPan(0.0f, 0.0f);
     session.context->setCanvasZoom(4);
+    session.context->setCheckerboardBackgroundEnabled(checkerboardBackground);
 
-    const int projectId = nextProjectId_++;
-    session.windowLabel = "Project " + std::to_string(projectId) +
-        "###ProjectWindow_" + std::to_string(projectId);
+    session.projectId = nextProjectId_++;
+    session.windowBaseTitle = "Project " + std::to_string(session.projectId);
+    session.windowLabel = session.windowBaseTitle + "###ProjectWindow_" + std::to_string(session.projectId);
 
     AppContext* rawContext = session.context.get();
     session.window = WindowFactory::getInstance().createProjectWindow(
@@ -342,7 +511,5 @@ void App::createNewProject(int width, int height, int frameCount, uint32_t fillC
 
     projectSessions_.push_back(std::move(session));
     setActiveContext(rawContext);
-
-    // 新项目创建后重新应用 dock 布局，保证窗口可见。
     dockLayoutInitialized_ = false;
 }

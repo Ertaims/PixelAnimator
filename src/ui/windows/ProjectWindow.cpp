@@ -463,19 +463,26 @@ void ProjectWindow::renderCanvasPanel(Project* project)
     const ImVec2 imageMax = ImVec2(imagePos.x + imageW, imagePos.y + imageH);
     // 绘制棋盘背景（四格：2x2），作为透明像素的对比底色。
     {
-        const ImU32 c1 = IM_COL32(70, 70, 70, 255);
-        const ImU32 c2 = IM_COL32(90, 90, 90, 255);
-        const float tileW = imageW * 0.5f;
-        const float tileH = imageH * 0.5f;
-        for (int ty = 0; ty < 2; ++ty)
+        if (context->isCheckerboardBackgroundEnabled())
         {
-            for (int tx = 0; tx < 2; ++tx)
+            const ImU32 c1 = IM_COL32(70, 70, 70, 255);
+            const ImU32 c2 = IM_COL32(90, 90, 90, 255);
+            const float tileW = imageW * 0.5f;
+            const float tileH = imageH * 0.5f;
+            for (int ty = 0; ty < 2; ++ty)
             {
-                const ImU32 col = ((tx + ty) % 2 == 0) ? c1 : c2;
-                const ImVec2 p0(imageMin.x + tx * tileW, imageMin.y + ty * tileH);
-                const ImVec2 p1(p0.x + tileW, p0.y + tileH);
-                drawList->AddRectFilled(p0, p1, col);
+                for (int tx = 0; tx < 2; ++tx)
+                {
+                    const ImU32 col = ((tx + ty) % 2 == 0) ? c1 : c2;
+                    const ImVec2 p0(imageMin.x + tx * tileW, imageMin.y + ty * tileH);
+                    const ImVec2 p1(p0.x + tileW, p0.y + tileH);
+                    drawList->AddRectFilled(p0, p1, col);
+                }
             }
+        }
+        else
+        {
+            drawList->AddRectFilled(imageMin, imageMax, IM_COL32(255, 255, 255, 255));
         }
     }
     // 绘制画布图像（OpenGL 纹理 id 通过 ImTextureID 传入）。

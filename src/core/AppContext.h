@@ -56,66 +56,114 @@ public:
     // -------------------------------------------------------------------------
 
     // 获取当前项目指针；无打开项目时返回 nullptr
-    Project* getProject() const { return project_; }
+    Project* getProject() const 
+    { 
+        return project_; 
+    }
 
     // 设置当前项目（不负责释放旧项目，由调用方管理生命周期）
-    void setProject(Project* project) { project_ = project; }
+    void setProject(Project* project) 
+    { 
+        project_ = project; 
+    }
 
     // 是否有打开的项目
-    bool hasProject() const { return project_ != nullptr; }
+    bool hasProject() const 
+    { 
+        return project_ != nullptr; 
+    }
 
     /**
      * @brief 项目是否自上次保存后有修改
      * 用于窗口标题显示 *、退出时提示保存等
      */
-    bool isProjectDirty() const { return projectDirty_; }
+    bool isProjectDirty() const 
+    { 
+        return projectDirty_; 
+    }
 
     // 标记项目已修改
-    void setProjectDirty(bool dirty = true) { projectDirty_ = dirty; }
+    void setProjectDirty(bool dirty = true) 
+    { 
+        projectDirty_ = dirty; 
+    }
 
     // 当前项目文件路径（未保存或新建时为空）
-    const std::string& getProjectFilePath() const { return projectFilePath_; }
+    const std::string& getProjectFilePath() const 
+    { 
+        return projectFilePath_; 
+    }
 
     // 设置当前项目文件路径（保存/另存为/打开后更新）
-    void setProjectFilePath(const std::string& path) { projectFilePath_ = path; }
+    void setProjectFilePath(const std::string& path) 
+    { 
+        projectFilePath_ = path; 
+    }
 
     // -------------------------------------------------------------------------
     // 动画与帧
     // -------------------------------------------------------------------------
 
     // 当前选中的动画索引（多动画时使用，MVP 可固定为 0）
-    int getCurrentAnimationIndex() const { return currentAnimationIndex_; }
+    int getCurrentAnimationIndex() const 
+    { 
+        return currentAnimationIndex_; 
+    }
 
     // 设置当前动画索引；调用方需保证 0 <= index < 动画数量 
-    void setCurrentAnimationIndex(int index) { currentAnimationIndex_ = index; }
+    void setCurrentAnimationIndex(int index) 
+    { 
+        currentAnimationIndex_ = index; 
+    }
 
     // 当前选中的帧索引（时间线、画布编辑的目标帧）
-    int getCurrentFrameIndex() const { return currentFrameIndex_; }
+    int getCurrentFrameIndex() const 
+    { 
+        return currentFrameIndex_; 
+    }
 
     // 设置当前帧索引；调用方需保证 0 <= index < 帧数量
-    void setCurrentFrameIndex(int index) { currentFrameIndex_ = index; }
+    void setCurrentFrameIndex(int index) 
+    { 
+        currentFrameIndex_ = index; 
+    }
 
     // -------------------------------------------------------------------------
     // 绘图工具与颜色
     // -------------------------------------------------------------------------
 
     // 当前选中的工具
-    ToolType getTool() const { return tool_; }
+    ToolType getTool() const 
+    { 
+        return tool_; 
+    }
 
     // 设置当前工具（由工具栏、快捷键调用）
-    void setTool(ToolType tool) { tool_ = tool; }
+    void setTool(ToolType tool) 
+    { 
+        tool_ = tool; 
+    }
 
     /**
      * @brief 当前前景色，RGBA8888 格式（R 低字节，A 高字节）
      * 与 ImGui 颜色选择器、吸管工具同步
      */
-    uint32_t getColorRGBA() const { return colorRGBA_; }
+    uint32_t getColorRGBA() const 
+    { 
+        return colorRGBA_; 
+    }
 
     // 设置前景色（RGBA8888）
-    void setColorRGBA(uint32_t rgba) { colorRGBA_ = rgba; }
+    void setColorRGBA(uint32_t rgba) 
+    { 
+        colorRGBA_ = rgba; 
+    }
 
     // 画笔半径（像素），1/2/3 等，供 Brush/Eraser 使用
-    int getBrushSize() const { return brushSize_; }
+    int getBrushSize() const 
+    { 
+        return brushSize_; 
+    }
 
     // 设置画笔半径
     void setBrushSize(int size);
@@ -125,32 +173,53 @@ public:
     // -------------------------------------------------------------------------
 
     // 画布缩放倍率（整数倍，如 1/2/4/8）
-    int getCanvasZoom() const { return canvasZoom_; }
+    int getCanvasZoom() const 
+    { 
+        return canvasZoom_; 
+    }
 
     // 设置画布缩放；建议限制在 [1, 2, 4, 8, 16] 等 
     void setCanvasZoom(int zoom);
 
     // 画布平移 X（像素，屏幕空间）
-    float getCanvasPanX() const { return canvasPanX_; }
+    float getCanvasPanX() const 
+    { 
+        return canvasPanX_; 
+    }
 
     // 画布平移 Y（像素，屏幕空间）
-    float getCanvasPanY() const { return canvasPanY_; }
+    float getCanvasPanY() const 
+    { 
+        return canvasPanY_; 
+    }
 
     // 设置画布平移
-    void setCanvasPan(float x, float y) { canvasPanX_ = x; canvasPanY_ = y; }
+    void setCanvasPan(float x, float y) 
+    { 
+        canvasPanX_ = x; canvasPanY_ = y; 
+    }
 
     // 叠加平移量（用于鼠标拖拽平移）
-    void addCanvasPan(float dx, float dy) { canvasPanX_ += dx; canvasPanY_ += dy; }
+    void addCanvasPan(float dx, float dy) 
+    { 
+        canvasPanX_ += dx; canvasPanY_ += dy; 
+    }
 
     // -------------------------------------------------------------------------
     // 撤销/重做
     // -------------------------------------------------------------------------
 
     // 获取撤销重做栈；未初始化时返回 nullptr
-    CommandStack* getCommandStack() const { return commandStack_; }
+    CommandStack* getCommandStack() const 
+    { 
+        return commandStack_; 
+    }
 
     // 设置命令栈（由 App 或初始化逻辑创建并传入）
-    void setCommandStack(CommandStack* stack) { commandStack_ = stack; }
+    void setCommandStack(CommandStack* stack) 
+    { 
+        commandStack_ = stack; 
+    }
 
     // 是否可撤销
     bool canUndo() const;
@@ -169,22 +238,51 @@ public:
     // -------------------------------------------------------------------------
 
     // 是否显示网格线
-    bool isGridVisible() const { return gridVisible_; }
+    bool isGridVisible() const 
+    { 
+        return gridVisible_; 
+    }
 
     // 设置网格线显隐
-    void setGridVisible(bool visible) { gridVisible_ = visible; }
+    void setGridVisible(bool visible) 
+    { 
+        gridVisible_ = visible; 
+    }
 
     // 是否开启洋葱皮
-    bool isOnionSkinEnabled() const { return onionSkinEnabled_; }
+    bool isOnionSkinEnabled() const 
+    { 
+        return onionSkinEnabled_; 
+    }
 
     // 设置洋葱皮开关
-    void setOnionSkinEnabled(bool enabled) { onionSkinEnabled_ = enabled; }
+    void setOnionSkinEnabled(bool enabled) 
+    { 
+        onionSkinEnabled_ = enabled; 
+    }
 
     // 是否显示时间线面板
-    bool isTimelineVisible() const { return timelineVisible_; }
+    bool isTimelineVisible() const 
+    { 
+        return timelineVisible_; 
+    }
 
     // 设置时间线面板显隐
-    void setTimelineVisible(bool visible) { timelineVisible_ = visible; }
+    void setTimelineVisible(bool visible) 
+    { 
+        timelineVisible_ = visible; 
+    }
+
+    // 画布背景模式：true=棋盘背景，false=纯白背景
+    bool isCheckerboardBackgroundEnabled() const
+    {
+        return checkerboardBackground_;
+    }
+
+    void setCheckerboardBackgroundEnabled(bool enabled)
+    {
+        checkerboardBackground_ = enabled;
+    }
 
 private:
     // 项目与文档
@@ -213,4 +311,5 @@ private:
     bool gridVisible_ = false;
     bool onionSkinEnabled_ = false;
     bool timelineVisible_ = true;
+    bool checkerboardBackground_ = true;
 };

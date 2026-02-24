@@ -1,6 +1,6 @@
 /**
  * @file App.h
- * @brief 应用程序主类，负责生命周期与主循环
+ * @brief 应用主类：负责生命周期、主循环以及多项目窗口管理
  */
 
 #pragma once
@@ -41,6 +41,8 @@ private:
         std::unique_ptr<Project> project;
         std::unique_ptr<AppContext> context;
         ProjectWindow* window = nullptr;
+        int projectId = 0;
+        std::string windowBaseTitle;
         std::string windowLabel;
     };
 
@@ -50,8 +52,20 @@ private:
     bool initImGui();
     void createMenuAndWindows();
     void setupDefaultDockLayout();
-    void createNewProject(int width, int height, int frameCount = 1, uint32_t fillColor = 0x00000000);
+    void renderNewProjectPopup();
+    void createNewProject(int width,
+                          int height,
+                          int frameCount = 1,
+                          uint32_t fillColor = 0x00000000,
+                          bool checkerboardBackground = true);
     void setActiveContext(AppContext* context);
+
+    // 会话管理
+    int findSessionIndexByContext(const AppContext* context) const;
+    void closeProjectByContext(AppContext* context);
+    void closeAllProjects();
+    void refreshWindowLabels();
+    void handleProjectSwitchShortcut();
 
     SDL_Window* window_ = nullptr;
     SDL_GLContext glContext_ = nullptr;
@@ -68,4 +82,11 @@ private:
 
     bool dockLayoutInitialized_ = false;
     int nextProjectId_ = 1;
+
+    bool newProjectPopupRequested_ = false;
+    int newProjectWidth_ = 16;
+    int newProjectHeight_ = 16;
+    int newProjectFrameCount_ = 1;
+    ImVec4 newProjectBgColor_ = ImVec4(0.0f, 0.0f, 0.0f, 0.0f);
+    int newProjectCanvasBgMode_ = 0; // 0=Checkerboard, 1=White
 };

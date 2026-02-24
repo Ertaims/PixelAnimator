@@ -8,6 +8,19 @@ ProjectWindow* WindowFactory::createProjectWindow(AppContext* context,
     return projectWindow;
 }
 
+void WindowFactory::destroyWindow(Window* target) {
+    if (!target) {
+        return;
+    }
+    for (auto it = windows.begin(); it != windows.end(); ++it) {
+        if (*it == target) {
+            delete *it;
+            windows.erase(it);
+            return;
+        }
+    }
+}
+
 void WindowFactory::cleanup() {
     for (Window* window : windows) {
         delete window;

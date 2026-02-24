@@ -25,22 +25,37 @@ public:
         std::vector<uint32_t> pixels;
     };
 
-    // 默认构造：128x128、1 帧、透明填充
+    // 默认构造：16x16、1 帧、透明填充
     Project();
 
     // 自定义构造：指定宽高/帧数/填充色
     Project(int width, int height, int frameCount = 1, uint32_t fillColor = 0x00000000);
 
     // 项目名（UI 展示用）
-    const std::string& getName() const { return name_; }
-    void setName(const std::string& name) { name_ = name; }
+    const std::string& getName() const 
+    { 
+        return name_; 
+    }
+    void setName(const std::string& name) 
+    { 
+        name_ = name; 
+    }
 
     // 画布尺寸
-    int getWidth() const { return width_; }
-    int getHeight() const { return height_; }
+    int getWidth() const 
+    { 
+        return width_; 
+    }
+    int getHeight() const 
+    { 
+        return height_; 
+    }
 
     // 帧数量与帧访问
-    int getFrameCount() const { return static_cast<int>(frames_.size()); }
+    int getFrameCount() const 
+    { 
+        return static_cast<int>(frames_.size()); 
+    }
     Frame& getFrame(int index);
     const Frame& getFrame(int index) const;
 

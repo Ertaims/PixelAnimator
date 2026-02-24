@@ -5,12 +5,12 @@
 
 namespace
 {
-// 保证宽高/帧数为正值，避免 0 或负数导致空画布
-int clampPositive(int value)
-{
-    return std::max(1, value);
+    // 保证宽高/帧数为正值，避免 0 或负数导致空画布
+    int clampPositive(int value)
+    {
+        return std::max(1, value);
+    }
 }
-} // namespace
 
 Project::Project() : Project(16, 16, 1, 0x00000000) {}
 

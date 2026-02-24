@@ -15,10 +15,10 @@ public:
                   const std::function<void(AppContext*)>& onFocused = {})
         : Window("ProjectWindow"), context(context), windowLabel_(windowLabel), onFocused_(onFocused) {}
 
-    // 渲染窗口
     void render() override;
 
     const char* getWindowLabel() const { return windowLabel_.c_str(); }
+    void setWindowLabel(const std::string& label) { windowLabel_ = label; }
 
 private:
     void renderLeftPanel(Project* project);

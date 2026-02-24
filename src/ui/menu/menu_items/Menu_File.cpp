@@ -7,11 +7,15 @@
 Menu_File::Menu_File(Menu* menu,
                      AppContext* context,
                      const std::function<void()>& onExitCallback,
-                     const std::function<void()>& onNewProjectCallback)
+                     const std::function<void()>& onNewProjectCallback,
+                     const std::function<void()>& onCloseProjectCallback,
+                     const std::function<void()>& onCloseAllProjectsCallback)
     : MenuOptionBase(menu),
       context_(context),
       onExitCallback_(onExitCallback),
-      onNewProjectCallback_(onNewProjectCallback) {}
+      onNewProjectCallback_(onNewProjectCallback),
+      onCloseProjectCallback_(onCloseProjectCallback),
+      onCloseAllProjectsCallback_(onCloseAllProjectsCallback) {}
 
 void Menu_File::initialize() {
     MenuItem* newItem = getMenu()->addItem("New...", "Ctrl+N");
@@ -49,8 +53,19 @@ void Menu_File::initialize() {
 
     getMenu()->addSeparator();
 
-    getMenu()->addItem("Close", "Ctrl+W");
-    getMenu()->addItem("Close All", "Ctrl+Shift+W");
+    MenuItem* closeItem = getMenu()->addItem("Close", "Ctrl+W");
+    closeItem->setCallback([this]() {
+        if (onCloseProjectCallback_) {
+            onCloseProjectCallback_();
+        }
+    });
+
+    MenuItem* closeAllItem = getMenu()->addItem("Close All", "Ctrl+Shift+W");
+    closeAllItem->setCallback([this]() {
+        if (onCloseAllProjectsCallback_) {
+            onCloseAllProjectsCallback_();
+        }
+    });
 
     getMenu()->addSeparator();
 
@@ -74,4 +89,12 @@ void Menu_File::setOnExitCallback(const std::function<void()>& callback) {
 
 void Menu_File::setOnNewProjectCallback(const std::function<void()>& callback) {
     onNewProjectCallback_ = callback;
+}
+
+void Menu_File::setOnCloseProjectCallback(const std::function<void()>& callback) {
+    onCloseProjectCallback_ = callback;
+}
+
+void Menu_File::setOnCloseAllProjectsCallback(const std::function<void()>& callback) {
+    onCloseAllProjectsCallback_ = callback;
 }
