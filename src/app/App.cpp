@@ -1,6 +1,6 @@
 /**
  * @file App.cpp
- * @brief App 主流程实现：初始化、主循环渲染、资源释放、多项目会话管理
+ * @brief App 主流程实现：初始化、主循环渲染、资源释放、多项目会话切换
  */
 
 #include "app/App.h"
@@ -11,12 +11,14 @@
 #include "imgui_impl_opengl3.h"
 #include "imgui_impl_sdl3.h"
 #include "imgui_internal.h"
+
 #include "ui/menu/MenuFactory.h"
 #include "ui/menu/menu_items/Menu_Edit.h"
 #include "ui/menu/menu_items/Menu_File.h"
 #include "ui/windows/ProjectWindow.h"
 #include "ui/windows/Window.h"
 #include "ui/windows/WindowFactory.h"
+
 #include <SDL3/SDL_opengl.h>
 #include <algorithm>
 #include <cassert>
@@ -26,7 +28,7 @@
 
 namespace
 {
-    // ImGui 颜色(float4) 转为项目使用的 RGBA8888（R 在低字节）
+    // 将 ImGui 的 float4 颜色转换为 RGBA8888（R 在低字节）
     uint32_t float4ToRgba(const ImVec4& color)
     {
         const uint32_t r = static_cast<uint32_t>(std::round(color.x * 255.0f)) & 0xFF;
@@ -42,18 +44,22 @@ App::~App() = default;
 
 bool App::init()
 {
+    // 1) 初始化 SDL
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD))
     {
         std::fprintf(stderr, "Error: SDL_Init(): %s\n", SDL_GetError());
         return false;
     }
 
+    // 2) 创建主窗口与 OpenGL 上下文
     if (!createWindowAndContext())
         return false;
 
+    // 3) 初始化 ImGui
     if (!initImGui())
         return false;
 
+    // 4) 创建菜单与默认项目
     createMenuAndWindows();
 
     std::cout << "OpenGL Version: " << glGetString(GL_VERSION) << std::endl;
@@ -62,6 +68,7 @@ bool App::init()
 
 AppContext& App::getContext()
 {
+    // 约束：调用方只能在存在活跃项目时访问
     assert(activeContext_ && "No active project context.");
     return *activeContext_;
 }
@@ -146,6 +153,10 @@ void App::createMenuAndWindows()
     ConcreteMenuFactory menuFactory;
     menuManager_ = menuFactory.createMenuManager();
 
+    // File 菜单回调：
+    // - New: 打开 New Project 弹窗
+    // - Close / Close All: 关闭当前或全部会话
+    // - Exit: 退出主循环
     fileMenu_ = menuFactory.createFileMenu(
         menuManager_,
         nullptr,
@@ -158,6 +169,7 @@ void App::createMenuAndWindows()
     menuFactory.createViewMenu(menuManager_);
     menuFactory.createHelpMenu(menuManager_);
 
+    // 启动时默认创建一个项目，保证界面可用
     createNewProject(16, 16, 1, 0x00000000);
 }
 
@@ -167,6 +179,7 @@ void App::run()
     {
         processEvents();
 
+        // 最小化时降低 CPU 占用
         if (SDL_GetWindowFlags(window_) & SDL_WINDOW_MINIMIZED)
         {
             SDL_Delay(10);
@@ -203,10 +216,12 @@ void App::renderFrame()
     if (menuManager_)
         menuManager_->render();
 
+    // 每帧更新：New Project 弹窗、快捷切换、窗口标题脏标记
     renderNewProjectPopup();
     handleProjectSwitchShortcut();
     refreshWindowLabels();
 
+    // 全屏 DockSpace 容器，所有工具窗口停靠其中
     {
         static bool opt_fullscreen = true;
         static bool opt_padding = false;
@@ -251,6 +266,7 @@ void App::renderFrame()
         ImGui::End();
     }
 
+    // 渲染所有注册窗口（包括多个 ProjectWindow）
     for (Window* window : WindowFactory::getInstance().getWindows())
     {
         if (window)
@@ -276,6 +292,7 @@ void App::renderFrame()
 
 void App::shutdown()
 {
+    // 先销毁窗口，再清空会话，防止悬空指针
     WindowFactory::getInstance().cleanup();
     projectSessions_.clear();
     activeContext_ = nullptr;
@@ -307,6 +324,7 @@ void App::shutdown()
 
 void App::setupDefaultDockLayout()
 {
+    // 仅在需要时重建布局（新建/关闭会话后会置 false）
     if (dockLayoutInitialized_)
         return;
 
@@ -327,6 +345,7 @@ void App::setupDefaultDockLayout()
 
 void App::setActiveContext(AppContext* context)
 {
+    // 统一切换“当前活动上下文”，菜单命令也同步切换目标
     activeContext_ = context;
     if (fileMenu_)
         fileMenu_->setContext(activeContext_);
@@ -361,12 +380,14 @@ void App::closeProjectByContext(AppContext* context)
     projectSessions_.erase(projectSessions_.begin() + index);
     dockLayoutInitialized_ = false;
 
+    // 全部关闭后，活动上下文清空
     if (projectSessions_.empty())
     {
         setActiveContext(nullptr);
         return;
     }
 
+    // 关闭后激活相邻会话
     const int newIndex = std::min(index, static_cast<int>(projectSessions_.size()) - 1);
     AppContext* newActive = projectSessions_[static_cast<size_t>(newIndex)].context.get();
     setActiveContext(newActive);
@@ -388,6 +409,7 @@ void App::closeAllProjects()
 
 void App::refreshWindowLabels()
 {
+    // 窗口标题展示脏标记：Project N*
     for (ProjectSession& session : projectSessions_)
     {
         const bool dirty = session.context && session.context->isProjectDirty();
@@ -407,6 +429,7 @@ void App::refreshWindowLabels()
 
 void App::handleProjectSwitchShortcut()
 {
+    // 少于两个会话时不需要切换
     if (projectSessions_.size() < 2)
         return;
 
@@ -421,7 +444,7 @@ void App::handleProjectSwitchShortcut()
         currentIndex = 0;
 
     const int n = static_cast<int>(projectSessions_.size());
-    const bool backward = io.KeyShift;
+    const bool backward = io.KeyShift; // Ctrl+Shift+Tab 反向
     const int nextIndex = backward
         ? (currentIndex - 1 + n) % n
         : (currentIndex + 1) % n;
@@ -433,6 +456,7 @@ void App::handleProjectSwitchShortcut()
 
 void App::renderNewProjectPopup()
 {
+    // 菜单中点击 New 后，仅设置请求标志；真正 OpenPopup 放在渲染帧中执行
     if (newProjectPopupRequested_)
     {
         ImGui::OpenPopup("New Project");
@@ -452,10 +476,13 @@ void App::renderNewProjectPopup()
     ImGui::SetNextItemWidth(140.0f);
     ImGui::InputInt("Frames", &newProjectFrameCount_);
     ImGui::ColorEdit4("Background", &newProjectBgColor_.x);
+
+    // 可选画布底纹：棋盘 / 纯白
     const char* canvasBgItems[] = {"Checkerboard", "White"};
     ImGui::SetNextItemWidth(140.0f);
     ImGui::Combo("Canvas Background", &newProjectCanvasBgMode_, canvasBgItems, 2);
 
+    // 输入兜底，避免非法参数
     if (newProjectWidth_ < 1)
         newProjectWidth_ = 1;
     if (newProjectHeight_ < 1)
@@ -487,6 +514,8 @@ void App::renderNewProjectPopup()
 void App::createNewProject(int width, int height, int frameCount, uint32_t fillColor, bool checkerboardBackground)
 {
     ProjectSession session;
+
+    // 为新窗口创建独立项目数据 + 独立上下文
     session.project = std::make_unique<Project>(width, height, frameCount, fillColor);
     session.context = std::make_unique<AppContext>();
     session.context->setProject(session.project.get());
@@ -498,6 +527,7 @@ void App::createNewProject(int width, int height, int frameCount, uint32_t fillC
     session.context->setCanvasZoom(4);
     session.context->setCheckerboardBackgroundEnabled(checkerboardBackground);
 
+    // 生成唯一窗口标题/ID
     session.projectId = nextProjectId_++;
     session.windowBaseTitle = "Project " + std::to_string(session.projectId);
     session.windowLabel = session.windowBaseTitle + "###ProjectWindow_" + std::to_string(session.projectId);
@@ -511,5 +541,7 @@ void App::createNewProject(int width, int height, int frameCount, uint32_t fillC
 
     projectSessions_.push_back(std::move(session));
     setActiveContext(rawContext);
+
+    // 下帧重建 dock，确保新窗口可见
     dockLayoutInitialized_ = false;
 }
