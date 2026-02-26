@@ -37,6 +37,11 @@ set(SOURCES
     src/ui/menu/menu_items/Menu_Help.cpp
     src/ui/windows/HomeWindow.cpp
     src/ui/windows/ProjectWindow.cpp
+    src/ui/windows/ProjectWindow_Palette.cpp
+    src/ui/windows/ProjectWindow_Tools.cpp
+    src/ui/windows/ProjectWindow_Canvas.cpp
+    src/ui/windows/ProjectWindow_ToolProperties.cpp
+    src/ui/windows/ProjectWindow_Timeline.cpp
     src/ui/windows/WindowFactory.cpp
     src/ui/statusBar/statusBar.cpp
 )
