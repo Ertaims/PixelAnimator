@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <deque>
 #include <string>
 #include <vector>
 
@@ -35,45 +36,6 @@ namespace
         const uint32_t b = static_cast<uint32_t>(color.z * 255.0f + 0.5f) & 0xFF;
         const uint32_t a = static_cast<uint32_t>(color.w * 255.0f + 0.5f) & 0xFF;
         return (r << 0) | (g << 8) | (b << 16) | (a << 24);
-    }
-
-    // -----------------------------------------------------------------------------
-    // 画布预览用的最小 OpenGL 纹理缓存
-    // -----------------------------------------------------------------------------
-    GLuint g_canvasTexture = 0;
-    int g_texWidth = 0;
-    int g_texHeight = 0;
-
-    // 确保 OpenGL 纹理存在且尺寸与画布一致
-    void ensureCanvasTexture(int width, int height)
-    {
-        if (g_canvasTexture == 0)
-        {
-            glGenTextures(1, &g_canvasTexture);
-            glBindTexture(GL_TEXTURE_2D, g_canvasTexture);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-        }
-
-        if (width != g_texWidth || height != g_texHeight)
-        {
-            // 当画布尺寸变化时分配/重分配纹理存储。
-            g_texWidth = width;
-            g_texHeight = height;
-            glBindTexture(GL_TEXTURE_2D, g_canvasTexture);
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, g_texWidth, g_texHeight, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
-        }
-    }
-
-    // 把 CPU 侧像素上传到 GPU 纹理
-    void uploadCanvasPixels(const std::vector<uint32_t>& pixels)
-    {
-        // 像素缓冲是 RGBA8888（R 在低字节），因此 GL_RGBA/GL_UNSIGNED_BYTE 对应正确。
-        glBindTexture(GL_TEXTURE_2D, g_canvasTexture);
-        glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, g_texWidth, g_texHeight, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
     }
 
     // 在给定像素坐标画一个“方形笔刷”（当前最简单实现）
@@ -165,7 +127,243 @@ namespace
 
         loaded = true;
     }
+
+    void ensureToolbarIconTextures(GLuint& brushIcon,
+                                   GLuint& eraserIcon,
+                                   GLuint& eyedropperIcon,
+                                   GLuint& fillIcon,
+                                   bool& loaded)
+    {
+        if (loaded)
+            return;
+
+        const char* brushCandidates[] = {
+            "src/assets/paintbrush.png", "../src/assets/paintbrush.png", "../../src/assets/paintbrush.png"
+        };
+        const char* eraserCandidates[] = {
+            "src/assets/erase.png", "../src/assets/erase.png", "../../src/assets/erase.png"
+        };
+        const char* eyedropperCandidates[] = {
+            "src/assets/eyedropper.png", "../src/assets/eyedropper.png", "../../src/assets/eyedropper.png"
+        };
+        const char* fillCandidates[] = {
+            "src/assets/fill.png", "../src/assets/fill.png", "../../src/assets/fill.png"
+        };
+
+        for (const char* p : brushCandidates)
+        {
+            brushIcon = loadTextureFromFile(p);
+            if (brushIcon != 0)
+                break;
+        }
+        for (const char* p : eraserCandidates)
+        {
+            eraserIcon = loadTextureFromFile(p);
+            if (eraserIcon != 0)
+                break;
+        }
+        for (const char* p : eyedropperCandidates)
+        {
+            eyedropperIcon = loadTextureFromFile(p);
+            if (eyedropperIcon != 0)
+                break;
+        }
+        for (const char* p : fillCandidates)
+        {
+            fillIcon = loadTextureFromFile(p);
+            if (fillIcon != 0)
+                break;
+        }
+
+        loaded = true;
+    }
+
+    // 4 邻域洪泛填充：把起点连通区域从 oldColor 改为 newColor。
+    void floodFill(Project::Frame& frame, int width, int height, int startX, int startY, uint32_t newColor)
+    {
+        if (startX < 0 || startY < 0 || startX >= width || startY >= height)
+            return;
+
+        const size_t startIndex = static_cast<size_t>(startY) * static_cast<size_t>(width)
+            + static_cast<size_t>(startX);
+        const uint32_t oldColor = frame.pixels[startIndex];
+        if (oldColor == newColor)
+            return;
+
+        std::deque<std::pair<int, int>> q;
+        q.emplace_back(startX, startY);
+        frame.pixels[startIndex] = newColor;
+
+        const int dx[4] = {1, -1, 0, 0};
+        const int dy[4] = {0, 0, 1, -1};
+
+        while (!q.empty())
+        {
+            const auto [x, y] = q.front();
+            q.pop_front();
+
+            for (int i = 0; i < 4; ++i)
+            {
+                const int nx = x + dx[i];
+                const int ny = y + dy[i];
+                if (nx < 0 || ny < 0 || nx >= width || ny >= height)
+                    continue;
+
+                const size_t nIdx = static_cast<size_t>(ny) * static_cast<size_t>(width)
+                    + static_cast<size_t>(nx);
+                if (frame.pixels[nIdx] != oldColor)
+                    continue;
+
+                frame.pixels[nIdx] = newColor;
+                q.emplace_back(nx, ny);
+            }
+        }
+    }
 } // namespace
+
+ProjectWindow::~ProjectWindow()
+{
+    if (canvasTexture_.texture != 0)
+    {
+        glDeleteTextures(1, &canvasTexture_.texture);
+        canvasTexture_.texture = 0;
+    }
+    if (timelineState_.playIconTexture != 0)
+    {
+        glDeleteTextures(1, &timelineState_.playIconTexture);
+        timelineState_.playIconTexture = 0;
+    }
+    if (timelineState_.pauseIconTexture != 0)
+    {
+        glDeleteTextures(1, &timelineState_.pauseIconTexture);
+        timelineState_.pauseIconTexture = 0;
+    }
+    if (toolbarState_.brushIconTexture != 0)
+    {
+        glDeleteTextures(1, &toolbarState_.brushIconTexture);
+        toolbarState_.brushIconTexture = 0;
+    }
+    if (toolbarState_.eraserIconTexture != 0)
+    {
+        glDeleteTextures(1, &toolbarState_.eraserIconTexture);
+        toolbarState_.eraserIconTexture = 0;
+    }
+    if (toolbarState_.eyedropperIconTexture != 0)
+    {
+        glDeleteTextures(1, &toolbarState_.eyedropperIconTexture);
+        toolbarState_.eyedropperIconTexture = 0;
+    }
+    if (toolbarState_.fillIconTexture != 0)
+    {
+        glDeleteTextures(1, &toolbarState_.fillIconTexture);
+        toolbarState_.fillIconTexture = 0;
+    }
+}
+
+void ProjectWindow::ensureCanvasTexture(int width, int height)
+{
+    if (canvasTexture_.texture == 0)
+    {
+        glGenTextures(1, &canvasTexture_.texture);
+        glBindTexture(GL_TEXTURE_2D, canvasTexture_.texture);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    }
+
+    if (width != canvasTexture_.width || height != canvasTexture_.height)
+    {
+        canvasTexture_.width = width;
+        canvasTexture_.height = height;
+        glBindTexture(GL_TEXTURE_2D, canvasTexture_.texture);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+    }
+}
+
+void ProjectWindow::uploadCanvasPixels(const std::vector<uint32_t>& pixels) const
+{
+    glBindTexture(GL_TEXTURE_2D, canvasTexture_.texture);
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+    glTexSubImage2D(
+        GL_TEXTURE_2D,
+        0,
+        0,
+        0,
+        canvasTexture_.width,
+        canvasTexture_.height,
+        GL_RGBA,
+        GL_UNSIGNED_BYTE,
+        pixels.data());
+}
+
+void ProjectWindow::renderToolbarPanel()
+{
+    ensureToolbarIconTextures(
+        toolbarState_.brushIconTexture,
+        toolbarState_.eraserIconTexture,
+        toolbarState_.eyedropperIconTexture,
+        toolbarState_.fillIconTexture,
+        toolbarState_.iconsLoaded);
+    ImGui::TextUnformatted("Tools");
+    ImGui::Separator();
+
+    struct ToolbarItem
+    {
+        ToolType tool;
+        const char* label;
+        unsigned int icon;
+    };
+
+    const ToolbarItem items[] = {
+        {ToolType::Brush, "Brush", toolbarState_.brushIconTexture},
+        {ToolType::Eraser, "Eraser", toolbarState_.eraserIconTexture},
+        {ToolType::Eyedropper, "Eyedropper", toolbarState_.eyedropperIconTexture},
+        {ToolType::Fill, "Fill", toolbarState_.fillIconTexture}
+    };
+
+    const ImVec2 iconSize(26.0f, 26.0f);
+    for (const ToolbarItem& item : items)
+    {
+        const bool selected = (context->getTool() == item.tool);
+        ImGui::PushID(static_cast<int>(item.tool));
+        if (selected)
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.24f, 0.52f, 0.86f, 1.0f));
+
+        bool clicked = false;
+        if (item.icon != 0)
+        {
+            clicked = ImGui::ImageButton(
+                "##toolbar_icon",
+                reinterpret_cast<ImTextureID>(static_cast<uintptr_t>(item.icon)),
+                iconSize);
+        }
+        else
+        {
+            clicked = ImGui::Button(item.label, ImVec2(80.0f, 26.0f));
+        }
+
+        if (selected)
+        {
+            ImGui::PopStyleColor();
+            ImGui::GetWindowDrawList()->AddRect(
+                ImGui::GetItemRectMin(),
+                ImGui::GetItemRectMax(),
+                IM_COL32(255, 220, 40, 255),
+                4.0f,
+                0,
+                2.0f);
+        }
+
+        if (clicked)
+            context->setTool(item.tool);
+
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("%s", item.label);
+
+        ImGui::PopID();
+    }
+}
 
 // 主窗口渲染入口：负责组织四个子区域（左/中/右/时间线）
 void ProjectWindow::render()
@@ -196,22 +394,26 @@ void ProjectWindow::render()
     Project* project = context->getProject();
 
     // 顶部三列 + 底部时间线，时间线高度可拖拽调整
-    static float timelineHeight = 200.0f;
     const float splitterHeight = 2.0f;
     const float minTopHeight = 120.0f;
     const float minTimelineHeight = 80.0f;
     const float availableHeight = ImGui::GetContentRegionAvail().y;
     const float maxTimelineHeight = std::max(minTimelineHeight, availableHeight - minTopHeight - splitterHeight);
-    timelineHeight = std::clamp(timelineHeight, minTimelineHeight, maxTimelineHeight);
-    const float topHeight = std::max(minTopHeight, availableHeight - timelineHeight - splitterHeight);
+    timelineState_.height = std::clamp(timelineState_.height, minTimelineHeight, maxTimelineHeight);
+    const float topHeight = std::max(minTopHeight, availableHeight - timelineState_.height - splitterHeight);
 
     if (ImGui::BeginChild("##ProjectTopRegion", ImVec2(0.0f, topHeight), false))
     {
-        if (ImGui::BeginTable("##ProjectMainColumns", 3, ImGuiTableFlags_Resizable | ImGuiTableFlags_SizingStretchProp))
+        if (ImGui::BeginTable("##ProjectMainColumns", 4, ImGuiTableFlags_Resizable | ImGuiTableFlags_SizingStretchProp))
         {
-            ImGui::TableSetupColumn("Left", ImGuiTableColumnFlags_WidthStretch, 0.95f);
-            ImGui::TableSetupColumn("Center", ImGuiTableColumnFlags_WidthStretch, 1.8f);
-            ImGui::TableSetupColumn("Right", ImGuiTableColumnFlags_WidthStretch, 0.95f);
+            ImGui::TableSetupColumn("Left", ImGuiTableColumnFlags_WidthStretch, 0.90f);
+            // Tools 列仅容纳图标按钮：使用固定窄宽，并禁用该列手动拉伸。
+            ImGui::TableSetupColumn(
+                "Tools",
+                ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize,
+                50.0f);
+            ImGui::TableSetupColumn("Center", ImGuiTableColumnFlags_WidthStretch, 1.75f);
+            ImGui::TableSetupColumn("Right", ImGuiTableColumnFlags_WidthStretch, 0.90f);
             ImGui::TableNextRow();
 
             ImGui::TableSetColumnIndex(0);
@@ -222,13 +424,20 @@ void ProjectWindow::render()
             ImGui::EndChild();
 
             ImGui::TableSetColumnIndex(1);
+            if (ImGui::BeginChild("##ToolBarPanel", ImVec2(0.0f, 0.0f), true))
+            {
+                renderToolbarPanel();
+            }
+            ImGui::EndChild();
+
+            ImGui::TableSetColumnIndex(2);
             if (ImGui::BeginChild("##CanvasPanel", ImVec2(0.0f, 0.0f), true))
             {
                 renderCanvasPanel(project);
             }
             ImGui::EndChild();
 
-            ImGui::TableSetColumnIndex(2);
+            ImGui::TableSetColumnIndex(3);
             if (ImGui::BeginChild("##ToolPropsPanel", ImVec2(0.0f, 0.0f), true))
             {
                 renderRightPanel(project);
@@ -246,7 +455,7 @@ void ProjectWindow::render()
     if (ImGui::IsItemActive() && ImGui::IsMouseDragging(ImGuiMouseButton_Left))
     {
         const float deltaY = ImGui::GetIO().MouseDelta.y;
-        timelineHeight = std::clamp(timelineHeight - deltaY, minTimelineHeight, maxTimelineHeight);
+        timelineState_.height = std::clamp(timelineState_.height - deltaY, minTimelineHeight, maxTimelineHeight);
     }
     if (ImGui::IsItemHovered() || ImGui::IsItemActive())
     {
@@ -273,9 +482,9 @@ void ProjectWindow::renderLeftPanel(Project* project)
         0xFFFF00FF, 0xFFFFFF00, 0xFF804000, 0xFFFFA500,
         0xFF8B4513, 0xFF800080, 0xFF008080, 0xFF1E90FF
     };
-    static std::vector<uint32_t> userPalette;
-    static int selectedIndex = 0;
-    static bool selectedIsUser = false;
+    std::vector<uint32_t>& userPalette = paletteState_.userPalette;
+    int& selectedIndex = paletteState_.selectedIndex;
+    bool& selectedIsUser = paletteState_.selectedIsUser;
 
     const int defaultCount = static_cast<int>(sizeof(kDefaultPalette) / sizeof(kDefaultPalette[0]));
     const int userCount = static_cast<int>(userPalette.size());
@@ -423,7 +632,8 @@ void ProjectWindow::renderCanvasPanel(Project* project)
         panelPos.y + centerOffset.y + panY);
 
     // 用一个覆盖面板的透明按钮接收鼠标交互（滚轮缩放/中键拖拽/左键绘制）。
-    ImGui::InvisibleButton("##CanvasHitbox", panelAvail,
+    const ImVec2 hitboxSize(std::max(1.0f, panelAvail.x), std::max(1.0f, panelAvail.y));
+    ImGui::InvisibleButton("##CanvasHitbox", hitboxSize,
                            ImGuiButtonFlags_MouseButtonLeft |
                            ImGuiButtonFlags_MouseButtonMiddle |
                            ImGuiButtonFlags_MouseButtonRight);
@@ -486,7 +696,7 @@ void ProjectWindow::renderCanvasPanel(Project* project)
         }
     }
     // 绘制画布图像（OpenGL 纹理 id 通过 ImTextureID 传入）。
-    drawList->AddImage(reinterpret_cast<ImTextureID>(static_cast<uintptr_t>(g_canvasTexture)),
+    drawList->AddImage(reinterpret_cast<ImTextureID>(static_cast<uintptr_t>(canvasTexture_.texture)),
                        imageMin, imageMax,
                        ImVec2(0, 0), ImVec2(1, 1));
     drawList->AddRect(imageMin, imageMax, IM_COL32(180, 180, 180, 255));
@@ -523,13 +733,27 @@ void ProjectWindow::renderCanvasPanel(Project* project)
         const int pixelX = std::clamp(static_cast<int>(localX / zoom), 0, width - 1);
         const int pixelY = std::clamp(static_cast<int>(localY / zoom), 0, height - 1);
 
-        // 应用工具：目前最小实现仅支持画笔/橡皮。
-        uint32_t paintColor = context->getColorRGBA();
-        if (context->getTool() == ToolType::Eraser)
-            paintColor = 0x00000000;
+        const ToolType tool = context->getTool();
+        if (tool == ToolType::Eyedropper)
+        {
+            const size_t idx = static_cast<size_t>(pixelY) * static_cast<size_t>(width)
+                + static_cast<size_t>(pixelX);
+            context->setColorRGBA(frame.pixels[idx]);
+        }
+        else if (tool == ToolType::Fill && ImGui::IsMouseClicked(ImGuiMouseButton_Left))
+        {
+            floodFill(frame, width, height, pixelX, pixelY, context->getColorRGBA());
+            context->setProjectDirty(true);
+        }
+        else
+        {
+            uint32_t paintColor = context->getColorRGBA();
+            if (tool == ToolType::Eraser)
+                paintColor = 0x00000000;
 
-        paintAt(frame, width, height, pixelX, pixelY, context->getBrushSize(), paintColor);
-        context->setProjectDirty(true);
+            paintAt(frame, width, height, pixelX, pixelY, context->getBrushSize(), paintColor);
+            context->setProjectDirty(true);
+        }
     }
 
     // 选中像素高亮（鼠标悬停时高亮当前像素）。
@@ -549,17 +773,36 @@ void ProjectWindow::renderCanvasPanel(Project* project)
 void ProjectWindow::renderRightPanel(Project* project)
 {
     ImGui::TextUnformatted("Tool Properties");
-    const char* toolNames[] = {"Brush", "Eraser", "Eyedropper", "Fill", "Line", "Rect", "RectFilled"};
-    int toolIndex = static_cast<int>(context->getTool());
-    if (ImGui::Combo("Tool", &toolIndex, toolNames, static_cast<int>(ToolType::Count)))
+    const ToolType tool = context->getTool();
+    switch (tool)
     {
-        context->setTool(static_cast<ToolType>(toolIndex));
+    case ToolType::Brush:
+    {
+        ImGui::TextUnformatted("Current: Brush");
+        int brushSize = context->getBrushSize();
+        if (ImGui::SliderInt("Brush Size", &brushSize, 1, 32))
+            context->setBrushSize(brushSize);
+        break;
     }
-
-    int brushSize = context->getBrushSize();
-    if (ImGui::SliderInt("Brush Size", &brushSize, 1, 32))
+    case ToolType::Eraser:
     {
-        context->setBrushSize(brushSize);
+        ImGui::TextUnformatted("Current: Eraser");
+        int brushSize = context->getBrushSize();
+        if (ImGui::SliderInt("Eraser Size", &brushSize, 1, 32))
+            context->setBrushSize(brushSize);
+        break;
+    }
+    case ToolType::Eyedropper:
+        ImGui::TextUnformatted("Current: Eyedropper");
+        ImGui::TextWrapped("Click a pixel on canvas to sample its RGBA color.");
+        break;
+    case ToolType::Fill:
+        ImGui::TextUnformatted("Current: Fill");
+        ImGui::TextWrapped("Click a pixel on canvas to flood-fill connected area.");
+        break;
+    default:
+        ImGui::TextUnformatted("Current: Unsupported in toolbar");
+        break;
     }
 
     const int zoomLevels[] = {1, 2, 4, 8, 16, 32};
@@ -593,19 +836,17 @@ void ProjectWindow::renderRightPanel(Project* project)
     ImGui::Text("Frames: %d", project->getFrameCount());
     ImGui::Text("Total Pixels: %d", project->getWidth() * project->getHeight());
 
-    static int newWidth = 16;
-    static int newHeight = 16;
-    if (newWidth <= 0 || newHeight <= 0)
+    if (pendingCanvasWidth_ <= 0 || pendingCanvasHeight_ <= 0)
     {
-        newWidth = project->getWidth();
-        newHeight = project->getHeight();
+        pendingCanvasWidth_ = project->getWidth();
+        pendingCanvasHeight_ = project->getHeight();
     }
 
-    ImGui::InputInt("Width", &newWidth);
-    ImGui::InputInt("Height", &newHeight);
-    if (ImGui::Button("Apply Size") && newWidth > 0 && newHeight > 0)
+    ImGui::InputInt("Width", &pendingCanvasWidth_);
+    ImGui::InputInt("Height", &pendingCanvasHeight_);
+    if (ImGui::Button("Apply Size") && pendingCanvasWidth_ > 0 && pendingCanvasHeight_ > 0)
     {
-        project->resizeCanvas(newWidth, newHeight, 0x00000000);
+        project->resizeCanvas(pendingCanvasWidth_, pendingCanvasHeight_, 0x00000000);
         context->setProjectDirty(true);
     }
 }
@@ -617,20 +858,13 @@ void ProjectWindow::renderTimelinePanel(Project* project)
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(4.0f, 4.0f));
     ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(4.0f, 2.0f));
 
-    // 播放状态与节奏控制（内存态，后续可移入 AppContext）
-    static bool isPlaying = false;
-    static bool loopEnabled = true;
-    static float fps = 8.0f;
-    static uint64_t lastTick = 0;
-    static double accumulator = 0.0;
-
-    if (lastTick == 0)
-        lastTick = SDL_GetTicks();
+    if (timelineState_.lastTick == 0)
+        timelineState_.lastTick = SDL_GetTicks();
     const uint64_t nowTick = SDL_GetTicks();
-    const double dt = static_cast<double>(nowTick - lastTick) / 1000.0;
-    lastTick = nowTick;
-    if (isPlaying && fps > 0.0f)
-        accumulator += dt;
+    const double dt = static_cast<double>(nowTick - timelineState_.lastTick) / 1000.0;
+    timelineState_.lastTick = nowTick;
+    if (timelineState_.isPlaying && timelineState_.fps > 0.0f)
+        timelineState_.accumulator += dt;
 
     // 控制按钮区（含添加/删除帧）
     {
@@ -667,10 +901,10 @@ void ProjectWindow::renderTimelinePanel(Project* project)
                 context->setCurrentFrameIndex(frameCount - 1);
         }
         ImGui::SameLine();
-        const char* loopLabel = loopEnabled ? "Loop" : "Once";
+        const char* loopLabel = timelineState_.loopEnabled ? "Loop" : "Once";
         if (ImGui::Button(loopLabel, ImVec2(44.0f, 18.0f)))
         {
-            loopEnabled = !loopEnabled;
+            timelineState_.loopEnabled = !timelineState_.loopEnabled;
         }
         ImGui::SameLine();
         if (ImGui::Button("+", btnSize))
@@ -717,20 +951,20 @@ void ProjectWindow::renderTimelinePanel(Project* project)
     ImGui::BeginChild("##TimelineFrames", ImVec2(0.0f, 0.0f), true, ImGuiWindowFlags_HorizontalScrollbar);
 
     // 播放/暂停按钮（当前仅 UI 占位，不实现播放逻辑）。
-    static GLuint playIconTexture = 0;
-    static GLuint pauseIconTexture = 0;
-    static bool iconsLoaded = false;
-    ensureTimelineIconTextures(playIconTexture, pauseIconTexture, iconsLoaded);
+    ensureTimelineIconTextures(
+        timelineState_.playIconTexture,
+        timelineState_.pauseIconTexture,
+        timelineState_.iconsLoaded);
 
     const ImVec2 iconSize(20.0f, 20.0f);
     bool clickedToggle = false;
-    if (isPlaying)
+    if (timelineState_.isPlaying)
     {
-        if (pauseIconTexture != 0)
+        if (timelineState_.pauseIconTexture != 0)
         {
             clickedToggle = ImGui::ImageButton(
                 "##timeline_toggle",
-                reinterpret_cast<ImTextureID>(static_cast<uintptr_t>(pauseIconTexture)),
+                reinterpret_cast<ImTextureID>(static_cast<uintptr_t>(timelineState_.pauseIconTexture)),
                 iconSize);
         }
         else
@@ -740,11 +974,11 @@ void ProjectWindow::renderTimelinePanel(Project* project)
     }
     else
     {
-        if (playIconTexture != 0)
+        if (timelineState_.playIconTexture != 0)
         {
             clickedToggle = ImGui::ImageButton(
                 "##timeline_toggle",
-                reinterpret_cast<ImTextureID>(static_cast<uintptr_t>(playIconTexture)),
+                reinterpret_cast<ImTextureID>(static_cast<uintptr_t>(timelineState_.playIconTexture)),
                 iconSize);
         }
         else
@@ -754,8 +988,7 @@ void ProjectWindow::renderTimelinePanel(Project* project)
     }
     if (clickedToggle)
     {
-        // 仅做 UI 状态切换，帧播放逻辑后续再接入。
-        isPlaying = !isPlaying;
+        timelineState_.isPlaying = !timelineState_.isPlaying;
     }
 
     ImGui::Separator();
@@ -763,7 +996,7 @@ void ProjectWindow::renderTimelinePanel(Project* project)
     ImGui::TextUnformatted("FPS");
     ImGui::SameLine();
     ImGui::SetNextItemWidth(80.0f);
-    ImGui::SliderFloat("##timeline_fps", &fps, 1.0f, 60.0f, "%.0f");
+    ImGui::SliderFloat("##timeline_fps", &timelineState_.fps, 1.0f, 60.0f, "%.0f");
 
     ImGui::Separator();
 
@@ -773,24 +1006,24 @@ void ProjectWindow::renderTimelinePanel(Project* project)
     context->setCurrentFrameIndex(current);
 
     // 播放逻辑：按 fps 推进帧；到尾部时按 loop 状态处理
-    if (isPlaying && fps > 0.0f && frameCount > 0)
+    if (timelineState_.isPlaying && timelineState_.fps > 0.0f && frameCount > 0)
     {
-        const double frameDuration = 1.0 / static_cast<double>(fps);
-        while (accumulator >= frameDuration)
+        const double frameDuration = 1.0 / static_cast<double>(timelineState_.fps);
+        while (timelineState_.accumulator >= frameDuration)
         {
-            accumulator -= frameDuration;
+            timelineState_.accumulator -= frameDuration;
             int next = context->getCurrentFrameIndex() + 1;
             if (next >= frameCount)
             {
-                if (loopEnabled)
+                if (timelineState_.loopEnabled)
                 {
                     next = 0;
                 }
                 else
                 {
                     next = frameCount - 1;
-                    isPlaying = false;
-                    accumulator = 0.0;
+                    timelineState_.isPlaying = false;
+                    timelineState_.accumulator = 0.0;
                 }
             }
             context->setCurrentFrameIndex(next);
