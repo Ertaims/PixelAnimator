@@ -3,71 +3,38 @@
 #include "core/AppContext.h"
 #include "core/Project.h"
 #include "imgui.h"
+#include "tools/BrushTool.h"
+#include "tools/EraserTool.h"
+#include "tools/EyedropperTool.h"
+#include "tools/FillTool.h"
+#include "tools/Tool.h"
 
 #include <algorithm>
-#include <cstdint>
-#include <deque>
-#include <utility>
 #include <vector>
 
 namespace
 {
-void paintAt(Project::Frame& frame, int canvasW, int canvasH, int x, int y, int brushSize, uint32_t color)
-{
-    const int radius = std::max(0, brushSize - 1);
-    const int minX = std::max(0, x - radius);
-    const int maxX = std::min(canvasW - 1, x + radius);
-    const int minY = std::max(0, y - radius);
-    const int maxY = std::min(canvasH - 1, y + radius);
-
-    for (int py = minY; py <= maxY; ++py)
+    const Tool* resolveTool(ToolType toolType)
     {
-        const size_t row = static_cast<size_t>(py) * static_cast<size_t>(canvasW);
-        for (int px = minX; px <= maxX; ++px)
+        static const BrushTool kBrushTool;
+        static const EraserTool kEraserTool;
+        static const EyedropperTool kEyedropperTool;
+        static const FillTool kFillTool;
+
+        switch (toolType)
         {
-            frame.pixels[row + static_cast<size_t>(px)] = color;
+        case ToolType::Brush:
+            return &kBrushTool;
+        case ToolType::Eraser:
+            return &kEraserTool;
+        case ToolType::Eyedropper:
+            return &kEyedropperTool;
+        case ToolType::Fill:
+            return &kFillTool;
+        default:
+            return nullptr;
         }
     }
-}
-
-void floodFill(Project::Frame& frame, int width, int height, int startX, int startY, uint32_t newColor)
-{
-    if (startX < 0 || startY < 0 || startX >= width || startY >= height)
-        return;
-
-    const size_t startIndex = static_cast<size_t>(startY) * static_cast<size_t>(width) + static_cast<size_t>(startX);
-    const uint32_t oldColor = frame.pixels[startIndex];
-    if (oldColor == newColor)
-        return;
-
-    std::deque<std::pair<int, int>> q;
-    q.emplace_back(startX, startY);
-    frame.pixels[startIndex] = newColor;
-
-    const int dx[4] = {1, -1, 0, 0};
-    const int dy[4] = {0, 0, 1, -1};
-
-    while (!q.empty())
-    {
-        const auto [x, y] = q.front();
-        q.pop_front();
-
-        for (int i = 0; i < 4; ++i)
-        {
-            const int nx = x + dx[i];
-            const int ny = y + dy[i];
-            if (nx < 0 || ny < 0 || nx >= width || ny >= height)
-                continue;
-
-            const size_t nIdx = static_cast<size_t>(ny) * static_cast<size_t>(width) + static_cast<size_t>(nx);
-            if (frame.pixels[nIdx] != oldColor)
-                continue;
-
-            frame.pixels[nIdx] = newColor;
-            q.emplace_back(nx, ny);
-        }
-    }
-}
 } // namespace
 
 void ProjectWindow::renderCanvasPanel(Project* project)
@@ -189,25 +156,19 @@ void ProjectWindow::renderCanvasPanel(Project* project)
         const int pixelX = std::clamp(static_cast<int>(localX / zoom), 0, width - 1);
         const int pixelY = std::clamp(static_cast<int>(localY / zoom), 0, height - 1);
 
-        const ToolType tool = context->getTool();
-        if (tool == ToolType::Eyedropper)
+        const Tool* tool = resolveTool(context->getTool());
+        if (tool)
         {
-            const size_t idx = static_cast<size_t>(pixelY) * static_cast<size_t>(width) + static_cast<size_t>(pixelX);
-            context->setColorRGBA(frame.pixels[idx]);
-        }
-        else if (tool == ToolType::Fill && ImGui::IsMouseClicked(ImGuiMouseButton_Left))
-        {
-            floodFill(frame, width, height, pixelX, pixelY, context->getColorRGBA());
-            context->setProjectDirty(true);
-        }
-        else
-        {
-            uint32_t paintColor = context->getColorRGBA();
-            if (tool == ToolType::Eraser)
-                paintColor = 0x00000000;
-
-            paintAt(frame, width, height, pixelX, pixelY, context->getBrushSize(), paintColor);
-            context->setProjectDirty(true);
+            const bool changed = tool->apply(
+                frame,
+                width,
+                height,
+                pixelX,
+                pixelY,
+                *context,
+                ImGui::IsMouseClicked(ImGuiMouseButton_Left));
+            if (changed)
+                context->setProjectDirty(true);
         }
     }
 

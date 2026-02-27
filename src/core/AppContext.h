@@ -196,13 +196,15 @@ public:
     // 设置画布平移
     void setCanvasPan(float x, float y) 
     { 
-        canvasPanX_ = x; canvasPanY_ = y; 
+        canvasPanX_ = x; 
+        canvasPanY_ = y; 
     }
 
     // 叠加平移量（用于鼠标拖拽平移）
     void addCanvasPan(float dx, float dy) 
     { 
-        canvasPanX_ += dx; canvasPanY_ += dy; 
+        canvasPanX_ += dx; 
+        canvasPanY_ += dy; 
     }
 
     // -------------------------------------------------------------------------

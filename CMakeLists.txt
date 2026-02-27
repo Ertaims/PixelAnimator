@@ -25,6 +25,10 @@ set(SOURCES
     src/app/App.cpp
     src/core/AppContext.cpp
     src/core/Project.cpp
+    src/tools/BrushTool.cpp
+    src/tools/EraserTool.cpp
+    src/tools/EyedropperTool.cpp
+    src/tools/FillTool.cpp
     src/ui/menu/MenuBase.cpp
     src/ui/menu/MenuItem.cpp
     src/ui/menu/Menu.cpp
