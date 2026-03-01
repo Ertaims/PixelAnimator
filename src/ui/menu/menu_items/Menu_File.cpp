@@ -8,12 +8,18 @@ Menu_File::Menu_File(Menu* menu,
                      AppContext* context,
                      const std::function<void()>& onExitCallback,
                      const std::function<void()>& onNewProjectCallback,
+                     const std::function<void()>& onOpenProjectCallback,
+                     const std::function<void()>& onSaveProjectCallback,
+                     const std::function<void()>& onSaveAsProjectCallback,
                      const std::function<void()>& onCloseProjectCallback,
                      const std::function<void()>& onCloseAllProjectsCallback)
     : MenuOptionBase(menu),
       context_(context),
       onExitCallback_(onExitCallback),
       onNewProjectCallback_(onNewProjectCallback),
+      onOpenProjectCallback_(onOpenProjectCallback),
+      onSaveProjectCallback_(onSaveProjectCallback),
+      onSaveAsProjectCallback_(onSaveAsProjectCallback),
       onCloseProjectCallback_(onCloseProjectCallback),
       onCloseAllProjectsCallback_(onCloseAllProjectsCallback) {}
 
@@ -27,9 +33,8 @@ void Menu_File::initialize() {
 
     MenuItem* openItem = getMenu()->addItem("Open...", "Ctrl+O");
     openItem->setCallback([this]() {
-        if (context_) {
-            // TODO: Open file dialog and deserialize project.
-        }
+        if (onOpenProjectCallback_)
+            onOpenProjectCallback_();
     });
 
     Menu* openRecentMenu = new Menu("Open Recent");
@@ -39,16 +44,14 @@ void Menu_File::initialize() {
 
     MenuItem* saveItem = getMenu()->addItem("Save", "Ctrl+S");
     saveItem->setCallback([this]() {
-        if (context_ && context_->hasProject()) {
-            // TODO: Save to existing file path or fall back to Save As.
-        }
+        if (onSaveProjectCallback_)
+            onSaveProjectCallback_();
     });
 
     MenuItem* saveAsItem = getMenu()->addItem("Save As...", "Ctrl+Shift+S");
     saveAsItem->setCallback([this]() {
-        if (context_) {
-            // TODO: Save file dialog and serialize project.
-        }
+        if (onSaveAsProjectCallback_)
+            onSaveAsProjectCallback_();
     });
 
     getMenu()->addSeparator();
@@ -89,6 +92,18 @@ void Menu_File::setOnExitCallback(const std::function<void()>& callback) {
 
 void Menu_File::setOnNewProjectCallback(const std::function<void()>& callback) {
     onNewProjectCallback_ = callback;
+}
+
+void Menu_File::setOnOpenProjectCallback(const std::function<void()>& callback) {
+    onOpenProjectCallback_ = callback;
+}
+
+void Menu_File::setOnSaveProjectCallback(const std::function<void()>& callback) {
+    onSaveProjectCallback_ = callback;
+}
+
+void Menu_File::setOnSaveAsProjectCallback(const std::function<void()>& callback) {
+    onSaveAsProjectCallback_ = callback;
 }
 
 void Menu_File::setOnCloseProjectCallback(const std::function<void()>& callback) {

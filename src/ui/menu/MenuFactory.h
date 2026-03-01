@@ -38,6 +38,9 @@ public:
                                       AppContext* context,
                                       const std::function<void()>& onExitCallback,
                                       const std::function<void()>& onNewProjectCallback,
+                                      const std::function<void()>& onOpenProjectCallback,
+                                      const std::function<void()>& onSaveProjectCallback,
+                                      const std::function<void()>& onSaveAsProjectCallback,
                                       const std::function<void()>& onCloseProjectCallback,
                                       const std::function<void()>& onCloseAllProjectsCallback) = 0;
 
@@ -60,6 +63,9 @@ public:
                               AppContext* context,
                               const std::function<void()>& onExitCallback,
                               const std::function<void()>& onNewProjectCallback,
+                              const std::function<void()>& onOpenProjectCallback,
+                              const std::function<void()>& onSaveProjectCallback,
+                              const std::function<void()>& onSaveAsProjectCallback,
                               const std::function<void()>& onCloseProjectCallback,
                               const std::function<void()>& onCloseAllProjectsCallback) override {
         Menu* fileMenu = manager->addMenu("File");
@@ -68,6 +74,9 @@ public:
             context,
             onExitCallback,
             onNewProjectCallback,
+            onOpenProjectCallback,
+            onSaveProjectCallback,
+            onSaveAsProjectCallback,
             onCloseProjectCallback,
             onCloseAllProjectsCallback);
         menuFile->initialize();

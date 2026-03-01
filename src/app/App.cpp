@@ -7,6 +7,7 @@
 
 #include "core/AppContext.h"
 #include "core/Project.h"
+#include "io/ProjectSerializer.h"
 #include "imgui.h"
 #include "imgui_impl_opengl3.h"
 #include "imgui_impl_sdl3.h"
@@ -23,7 +24,9 @@
 #include <algorithm>
 #include <cassert>
 #include <cmath>
+#include <cstring>
 #include <cstdio>
+#include <filesystem>
 #include <iostream>
 
 namespace
@@ -36,6 +39,21 @@ namespace
         const uint32_t b = static_cast<uint32_t>(std::round(color.z * 255.0f)) & 0xFF;
         const uint32_t a = static_cast<uint32_t>(std::round(color.w * 255.0f)) & 0xFF;
         return (r << 0) | (g << 8) | (b << 16) | (a << 24);
+    }
+
+    std::string projectNameFromPath(const std::string& path)
+    {
+        try
+        {
+            const std::filesystem::path p(path);
+            const std::string stem = p.stem().string();
+            if (!stem.empty())
+                return stem;
+        }
+        catch (...)
+        {
+        }
+        return "Untitled";
     }
 }
 
@@ -162,6 +180,9 @@ void App::createMenuAndWindows()
         nullptr,
         [this]() { done_ = true; },
         [this]() { newProjectPopupRequested_ = true; },
+        [this]() { openPopupRequested_ = true; },
+        [this]() { saveActiveProject(); },
+        [this]() { saveAsPopupRequested_ = true; },
         [this]() { closeProjectByContext(activeContext_); },
         [this]() { closeAllProjects(); });
 
@@ -218,6 +239,8 @@ void App::renderFrame()
 
     // 每帧更新：New Project 弹窗、快捷切换、窗口标题脏标记
     renderNewProjectPopup();
+    renderFilePathPopups();
+    renderErrorPopup();
     handleProjectSwitchShortcut();
     refreshWindowLabels();
 
@@ -409,9 +432,12 @@ void App::closeAllProjects()
 
 void App::refreshWindowLabels()
 {
-    // 窗口标题展示脏标记：Project N*
+    // 窗口标题展示项目名 + 脏标记：Name*
     for (ProjectSession& session : projectSessions_)
     {
+        if (session.project && !session.project->getName().empty())
+            session.windowBaseTitle = session.project->getName();
+
         const bool dirty = session.context && session.context->isProjectDirty();
         std::string label = session.windowBaseTitle;
         if (dirty)
@@ -511,6 +537,213 @@ void App::renderNewProjectPopup()
     ImGui::EndPopup();
 }
 
+void App::renderFilePathPopups()
+{
+    if (openPopupRequested_)
+    {
+        std::memset(openPathBuffer_, 0, sizeof(openPathBuffer_));
+        ImGui::OpenPopup("Open Project");
+        openPopupRequested_ = false;
+    }
+
+    if (saveAsPopupRequested_)
+    {
+        std::memset(saveAsPathBuffer_, 0, sizeof(saveAsPathBuffer_));
+        if (activeContext_)
+        {
+            const std::string& currentPath = activeContext_->getProjectFilePath();
+            if (!currentPath.empty())
+            {
+                std::strncpy(saveAsPathBuffer_, currentPath.c_str(), sizeof(saveAsPathBuffer_) - 1);
+            }
+        }
+        ImGui::OpenPopup("Save Project As");
+        saveAsPopupRequested_ = false;
+    }
+
+    if (ImGui::BeginPopupModal("Open Project", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+    {
+        ImGui::TextUnformatted("Enter .pxanim file path");
+        ImGui::SetNextItemWidth(420.0f);
+        ImGui::InputText("Path", openPathBuffer_, sizeof(openPathBuffer_));
+
+        if (ImGui::Button("Open", ImVec2(120.0f, 0.0f)))
+        {
+            if (!openProjectFromPath(openPathBuffer_))
+            {
+                // showError 在 openProjectFromPath 内部设置
+            }
+            else
+            {
+                ImGui::CloseCurrentPopup();
+            }
+        }
+
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel", ImVec2(120.0f, 0.0f)))
+            ImGui::CloseCurrentPopup();
+
+        ImGui::EndPopup();
+    }
+
+    if (ImGui::BeginPopupModal("Save Project As", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+    {
+        ImGui::TextUnformatted("Enter .pxanim file path");
+        ImGui::SetNextItemWidth(420.0f);
+        ImGui::InputText("Path", saveAsPathBuffer_, sizeof(saveAsPathBuffer_));
+
+        if (ImGui::Button("Save", ImVec2(120.0f, 0.0f)))
+        {
+            if (saveActiveProjectAs(saveAsPathBuffer_))
+                ImGui::CloseCurrentPopup();
+        }
+
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel", ImVec2(120.0f, 0.0f)))
+            ImGui::CloseCurrentPopup();
+
+        ImGui::EndPopup();
+    }
+}
+
+void App::renderErrorPopup()
+{
+    if (!pendingErrorMessage_.empty())
+    {
+        ImGui::OpenPopup("Error");
+    }
+
+    if (!ImGui::BeginPopupModal("Error", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+        return;
+
+    ImGui::TextWrapped("%s", pendingErrorMessage_.c_str());
+    ImGui::Separator();
+    if (ImGui::Button("OK", ImVec2(120.0f, 0.0f)))
+    {
+        pendingErrorMessage_.clear();
+        ImGui::CloseCurrentPopup();
+    }
+    ImGui::EndPopup();
+}
+
+void App::showError(const std::string& message)
+{
+    pendingErrorMessage_ = message;
+}
+
+bool App::saveProjectAs(AppContext* context, const std::string& path)
+{
+    if (!context || !context->hasProject())
+    {
+        showError("No active project to save.");
+        return false;
+    }
+    if (path.empty())
+    {
+        showError("Path is empty.");
+        return false;
+    }
+
+    Project* project = context->getProject();
+    if (!project)
+    {
+        showError("No project data to save.");
+        return false;
+    }
+
+    // Save As 时把文件名（不含扩展）同步为项目名，便于窗口标题显示。
+    project->setName(projectNameFromPath(path));
+
+    std::string error;
+    if (!ProjectSerializer::save(*project, path, &error))
+    {
+        showError(error.empty() ? "Failed to save project." : error);
+        return false;
+    }
+
+    context->setProjectFilePath(path);
+    context->setProjectDirty(false);
+    return true;
+}
+
+bool App::saveActiveProject()
+{
+    if (!activeContext_ || !activeContext_->hasProject())
+    {
+        showError("No active project to save.");
+        return false;
+    }
+
+    const std::string& path = activeContext_->getProjectFilePath();
+    if (path.empty())
+    {
+        saveAsPopupRequested_ = true;
+        return false;
+    }
+
+    return saveProjectAs(activeContext_, path);
+}
+
+bool App::saveActiveProjectAs(const std::string& path)
+{
+    return saveProjectAs(activeContext_, path);
+}
+
+bool App::openProjectFromPath(const std::string& path)
+{
+    if (path.empty())
+    {
+        showError("Path is empty.");
+        return false;
+    }
+
+    std::string error;
+    std::unique_ptr<Project> loadedProject = ProjectSerializer::load(path, &error);
+    if (!loadedProject)
+    {
+        showError(error.empty() ? "Failed to open project." : error);
+        return false;
+    }
+
+    if (loadedProject->getName().empty())
+        loadedProject->setName(projectNameFromPath(path));
+
+    createSessionFromProject(std::move(loadedProject), path);
+    return true;
+}
+
+void App::createSessionFromProject(std::unique_ptr<Project> project, const std::string& projectPath)
+{
+    ProjectSession session;
+    session.project = std::move(project);
+    session.context = std::make_unique<AppContext>();
+    session.context->setProject(session.project.get());
+    session.context->setProjectFilePath(projectPath);
+    session.context->setProjectDirty(false);
+    session.context->setCurrentAnimationIndex(0);
+    session.context->setCurrentFrameIndex(0);
+    session.context->setCanvasPan(0.0f, 0.0f);
+    session.context->setCanvasZoom(4);
+    session.context->setCheckerboardBackgroundEnabled(true);
+
+    session.projectId = nextProjectId_++;
+    session.windowBaseTitle = session.project && !session.project->getName().empty()
+        ? session.project->getName()
+        : "Untitled";
+    session.windowLabel = session.windowBaseTitle + "###ProjectWindow_" + std::to_string(session.projectId);
+
+    AppContext* rawContext = session.context.get();
+    session.window = WindowFactory::getInstance().createProjectWindow(
+        rawContext,
+        session.windowLabel,
+        [this](AppContext* focusedContext) { setActiveContext(focusedContext); });
+    session.window->setVisible(true);
+
+    projectSessions_.push_back(std::move(session));
+    setActiveContext(rawContext);
+    dockLayoutInitialized_ = false;
+}
+
 void App::createNewProject(int width, int height, int frameCount, uint32_t fillColor, bool checkerboardBackground)
 {
     ProjectSession session;
@@ -529,7 +762,9 @@ void App::createNewProject(int width, int height, int frameCount, uint32_t fillC
 
     // 生成唯一窗口标题/ID
     session.projectId = nextProjectId_++;
-    session.windowBaseTitle = "Project " + std::to_string(session.projectId);
+    session.windowBaseTitle = session.project && !session.project->getName().empty()
+        ? session.project->getName()
+        : "Untitled";
     session.windowLabel = session.windowBaseTitle + "###ProjectWindow_" + std::to_string(session.projectId);
 
     AppContext* rawContext = session.context.get();

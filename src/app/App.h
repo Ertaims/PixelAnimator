@@ -75,11 +75,19 @@ private:
 
     // ---------------- New Project 弹窗 ----------------
     void renderNewProjectPopup();
+    void renderFilePathPopups();
+    void renderErrorPopup();
     void createNewProject(int width,
                           int height,
                           int frameCount = 1,
                           uint32_t fillColor = 0x00000000,
                           bool checkerboardBackground = true);
+    bool saveProjectAs(AppContext* context, const std::string& path);
+    bool saveActiveProject();
+    bool saveActiveProjectAs(const std::string& path);
+    bool openProjectFromPath(const std::string& path);
+    void createSessionFromProject(std::unique_ptr<Project> project, const std::string& projectPath);
+    void showError(const std::string& message);
 
     // ---------------- 活跃上下文与会话管理 ----------------
     void setActiveContext(AppContext* context);                         // 设置当前活跃窗口
@@ -115,4 +123,11 @@ private:
     int newProjectFrameCount_ = 1;
     ImVec4 newProjectBgColor_ = ImVec4(0.0f, 0.0f, 0.0f, 0.0f);
     int newProjectCanvasBgMode_ = 0; // 0=Checkerboard, 1=White
+
+    // ---------------- Open/Save 最小可用弹窗状态 ----------------
+    bool openPopupRequested_ = false;
+    bool saveAsPopupRequested_ = false;
+    std::string pendingErrorMessage_;
+    char openPathBuffer_[512] = "";
+    char saveAsPathBuffer_[512] = "";
 };

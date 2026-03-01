@@ -25,6 +25,7 @@ set(SOURCES
     src/app/App.cpp
     src/core/AppContext.cpp
     src/core/Project.cpp
+    src/io/ProjectSerializer.cpp
     src/tools/BrushTool.cpp
     src/tools/EraserTool.cpp
     src/tools/EyedropperTool.cpp

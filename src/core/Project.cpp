@@ -92,8 +92,7 @@ void Project::setFrameCount(int count, uint32_t fillColor)
     }
 
     // 扩展帧数：新增帧用填充色初始化
-    const size_t pixelCount =
-        static_cast<size_t>(width_) * static_cast<size_t>(height_);
+    const size_t pixelCount = static_cast<size_t>(width_) * static_cast<size_t>(height_);
     const size_t oldCount = frames_.size();
     frames_.resize(static_cast<size_t>(newCount));
     for (size_t i = oldCount; i < frames_.size(); ++i)

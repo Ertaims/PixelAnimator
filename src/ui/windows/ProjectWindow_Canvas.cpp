@@ -143,13 +143,15 @@ void ProjectWindow::renderCanvasPanel(Project* project)
     }
 
     const ImVec2 mousePos = ImGui::GetMousePos();
+    const bool anyPopupOpen = ImGui::IsPopupOpen(nullptr, ImGuiPopupFlags_AnyPopupId);
     const bool hovered =
         mousePos.x >= imagePos.x &&
         mousePos.y >= imagePos.y &&
         mousePos.x < (imagePos.x + imageW) &&
         mousePos.y < (imagePos.y + imageH);
 
-    if (hovered && ImGui::IsMouseDown(ImGuiMouseButton_Left))
+    // 只在“无弹窗”时才处理画布编辑输入，避免弹窗期间误绘制。
+    if (!anyPopupOpen && hovered && ImGui::IsMouseDown(ImGuiMouseButton_Left))
     {
         const float localX = mousePos.x - imagePos.x;
         const float localY = mousePos.y - imagePos.y;
@@ -172,7 +174,7 @@ void ProjectWindow::renderCanvasPanel(Project* project)
         }
     }
 
-    if (hovered)
+    if (!anyPopupOpen && hovered)
     {
         const float localX = mousePos.x - imagePos.x;
         const float localY = mousePos.y - imagePos.y;
