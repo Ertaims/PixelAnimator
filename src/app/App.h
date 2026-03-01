@@ -14,6 +14,7 @@
 #include <SDL3/SDL.h>
 #include <cstdint>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -75,8 +76,10 @@ private:
 
     // ---------------- New Project 弹窗 ----------------
     void renderNewProjectPopup();
-    void renderFilePathPopups();
     void renderErrorPopup();
+    void pollDialogResults();
+    void requestOpenProjectDialog();
+    void requestSaveAsDialog();
     void createNewProject(int width,
                           int height,
                           int frameCount = 1,
@@ -88,6 +91,8 @@ private:
     bool openProjectFromPath(const std::string& path);
     void createSessionFromProject(std::unique_ptr<Project> project, const std::string& projectPath);
     void showError(const std::string& message);
+    static void SDLCALL onOpenDialogClosed(void* userdata, const char* const* filelist, int filter);
+    static void SDLCALL onSaveDialogClosed(void* userdata, const char* const* filelist, int filter);
 
     // ---------------- 活跃上下文与会话管理 ----------------
     void setActiveContext(AppContext* context);                         // 设置当前活跃窗口
@@ -125,9 +130,14 @@ private:
     int newProjectCanvasBgMode_ = 0; // 0=Checkerboard, 1=White
 
     // ---------------- Open/Save 最小可用弹窗状态 ----------------
-    bool openPopupRequested_ = false;
-    bool saveAsPopupRequested_ = false;
+    bool openDialogInFlight_ = false;
+    bool saveDialogInFlight_ = false;
+    std::mutex dialogMutex_;
+    std::string pendingOpenPath_;
+    std::string pendingSavePath_;
+    std::string pendingDialogError_;
+    bool pendingOpenReady_ = false;
+    bool pendingSaveReady_ = false;
+    bool pendingDialogErrorReady_ = false;
     std::string pendingErrorMessage_;
-    char openPathBuffer_[512] = "";
-    char saveAsPathBuffer_[512] = "";
 };

@@ -20,11 +20,11 @@
 #include "ui/windows/Window.h"
 #include "ui/windows/WindowFactory.h"
 
+#include <SDL3/SDL_dialog.h>
 #include <SDL3/SDL_opengl.h>
 #include <algorithm>
 #include <cassert>
 #include <cmath>
-#include <cstring>
 #include <cstdio>
 #include <filesystem>
 #include <iostream>
@@ -180,9 +180,9 @@ void App::createMenuAndWindows()
         nullptr,
         [this]() { done_ = true; },
         [this]() { newProjectPopupRequested_ = true; },
-        [this]() { openPopupRequested_ = true; },
+        [this]() { requestOpenProjectDialog(); },
         [this]() { saveActiveProject(); },
-        [this]() { saveAsPopupRequested_ = true; },
+        [this]() { requestSaveAsDialog(); },
         [this]() { closeProjectByContext(activeContext_); },
         [this]() { closeAllProjects(); });
 
@@ -238,8 +238,8 @@ void App::renderFrame()
         menuManager_->render();
 
     // 每帧更新：New Project 弹窗、快捷切换、窗口标题脏标记
+    pollDialogResults();
     renderNewProjectPopup();
-    renderFilePathPopups();
     renderErrorPopup();
     handleProjectSwitchShortcut();
     refreshWindowLabels();
@@ -537,73 +537,147 @@ void App::renderNewProjectPopup()
     ImGui::EndPopup();
 }
 
-void App::renderFilePathPopups()
+void App::requestOpenProjectDialog()
 {
-    if (openPopupRequested_)
-    {
-        std::memset(openPathBuffer_, 0, sizeof(openPathBuffer_));
-        ImGui::OpenPopup("Open Project");
-        openPopupRequested_ = false;
-    }
+    if (openDialogInFlight_)
+        return;
 
-    if (saveAsPopupRequested_)
+    static const SDL_DialogFileFilter filters[] = {
+        {"PixelAnimator Project", "pxanim"},
+        {"All Files", "*"}
+    };
+
+    openDialogInFlight_ = true;
+    SDL_ShowOpenFileDialog(
+        &App::onOpenDialogClosed,
+        this,
+        window_,
+        filters,
+        2,
+        nullptr,
+        false);
+}
+
+void App::requestSaveAsDialog()
+{
+    if (saveDialogInFlight_)
+        return;
+
+    static const SDL_DialogFileFilter filters[] = {
+        {"PixelAnimator Project", "pxanim"},
+        {"All Files", "*"}
+    };
+
+    const char* defaultLocation = nullptr;
+    std::string candidatePath;
+    if (activeContext_)
     {
-        std::memset(saveAsPathBuffer_, 0, sizeof(saveAsPathBuffer_));
-        if (activeContext_)
+        candidatePath = activeContext_->getProjectFilePath();
+        if (candidatePath.empty())
         {
-            const std::string& currentPath = activeContext_->getProjectFilePath();
-            if (!currentPath.empty())
-            {
-                std::strncpy(saveAsPathBuffer_, currentPath.c_str(), sizeof(saveAsPathBuffer_) - 1);
-            }
+            const Project* project = activeContext_->getProject();
+            if (project && !project->getName().empty())
+                candidatePath = project->getName() + ".pxanim";
         }
-        ImGui::OpenPopup("Save Project As");
-        saveAsPopupRequested_ = false;
+        if (!candidatePath.empty())
+            defaultLocation = candidatePath.c_str();
     }
 
-    if (ImGui::BeginPopupModal("Open Project", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+    saveDialogInFlight_ = true;
+    SDL_ShowSaveFileDialog(
+        &App::onSaveDialogClosed,
+        this,
+        window_,
+        filters,
+        2,
+        defaultLocation);
+}
+
+void SDLCALL App::onOpenDialogClosed(void* userdata, const char* const* filelist, int filter)
+{
+    (void)filter;
+    App* app = static_cast<App*>(userdata);
+    if (!app)
+        return;
+
+    std::lock_guard<std::mutex> guard(app->dialogMutex_);
+    app->openDialogInFlight_ = false;
+
+    if (!filelist)
     {
-        ImGui::TextUnformatted("Enter .pxanim file path");
-        ImGui::SetNextItemWidth(420.0f);
-        ImGui::InputText("Path", openPathBuffer_, sizeof(openPathBuffer_));
-
-        if (ImGui::Button("Open", ImVec2(120.0f, 0.0f)))
-        {
-            if (!openProjectFromPath(openPathBuffer_))
-            {
-                // showError 在 openProjectFromPath 内部设置
-            }
-            else
-            {
-                ImGui::CloseCurrentPopup();
-            }
-        }
-
-        ImGui::SameLine();
-        if (ImGui::Button("Cancel", ImVec2(120.0f, 0.0f)))
-            ImGui::CloseCurrentPopup();
-
-        ImGui::EndPopup();
+        app->pendingDialogError_ = SDL_GetError();
+        if (app->pendingDialogError_.empty())
+            app->pendingDialogError_ = "Open dialog failed.";
+        app->pendingDialogErrorReady_ = true;
+        return;
     }
 
-    if (ImGui::BeginPopupModal("Save Project As", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+    if (!filelist[0])
+        return; // 用户取消
+
+    app->pendingOpenPath_ = filelist[0];
+    app->pendingOpenReady_ = true;
+}
+
+void SDLCALL App::onSaveDialogClosed(void* userdata, const char* const* filelist, int filter)
+{
+    (void)filter;
+    App* app = static_cast<App*>(userdata);
+    if (!app)
+        return;
+
+    std::lock_guard<std::mutex> guard(app->dialogMutex_);
+    app->saveDialogInFlight_ = false;
+
+    if (!filelist)
     {
-        ImGui::TextUnformatted("Enter .pxanim file path");
-        ImGui::SetNextItemWidth(420.0f);
-        ImGui::InputText("Path", saveAsPathBuffer_, sizeof(saveAsPathBuffer_));
-
-        if (ImGui::Button("Save", ImVec2(120.0f, 0.0f)))
-        {
-            if (saveActiveProjectAs(saveAsPathBuffer_))
-                ImGui::CloseCurrentPopup();
-        }
-
-        ImGui::SameLine();
-        if (ImGui::Button("Cancel", ImVec2(120.0f, 0.0f)))
-            ImGui::CloseCurrentPopup();
-
-        ImGui::EndPopup();
+        app->pendingDialogError_ = SDL_GetError();
+        if (app->pendingDialogError_.empty())
+            app->pendingDialogError_ = "Save dialog failed.";
+        app->pendingDialogErrorReady_ = true;
+        return;
     }
+
+    if (!filelist[0])
+        return; // 用户取消
+
+    app->pendingSavePath_ = filelist[0];
+    app->pendingSaveReady_ = true;
+}
+
+void App::pollDialogResults()
+{
+    std::string openPath;
+    std::string savePath;
+    std::string dialogError;
+    {
+        std::lock_guard<std::mutex> guard(dialogMutex_);
+        if (pendingOpenReady_)
+        {
+            openPath = pendingOpenPath_;
+            pendingOpenPath_.clear();
+            pendingOpenReady_ = false;
+        }
+        if (pendingSaveReady_)
+        {
+            savePath = pendingSavePath_;
+            pendingSavePath_.clear();
+            pendingSaveReady_ = false;
+        }
+        if (pendingDialogErrorReady_)
+        {
+            dialogError = pendingDialogError_;
+            pendingDialogError_.clear();
+            pendingDialogErrorReady_ = false;
+        }
+    }
+
+    if (!dialogError.empty())
+        showError(dialogError);
+    if (!openPath.empty())
+        openProjectFromPath(openPath);
+    if (!savePath.empty())
+        saveActiveProjectAs(savePath);
 }
 
 void App::renderErrorPopup()
@@ -644,6 +718,19 @@ bool App::saveProjectAs(AppContext* context, const std::string& path)
         return false;
     }
 
+    std::string finalPath = path;
+    try
+    {
+        const std::filesystem::path fsPath(path);
+        const std::string ext = fsPath.extension().string();
+        if (ext.empty() || ext == ".")
+            finalPath += ".pxanim";
+    }
+    catch (...)
+    {
+        // 路径解析失败时保持原始输入，交给序列化阶段返回具体错误。
+    }
+
     Project* project = context->getProject();
     if (!project)
     {
@@ -652,16 +739,16 @@ bool App::saveProjectAs(AppContext* context, const std::string& path)
     }
 
     // Save As 时把文件名（不含扩展）同步为项目名，便于窗口标题显示。
-    project->setName(projectNameFromPath(path));
+    project->setName(projectNameFromPath(finalPath));
 
     std::string error;
-    if (!ProjectSerializer::save(*project, path, &error))
+    if (!ProjectSerializer::save(*project, finalPath, &error))
     {
         showError(error.empty() ? "Failed to save project." : error);
         return false;
     }
 
-    context->setProjectFilePath(path);
+    context->setProjectFilePath(finalPath);
     context->setProjectDirty(false);
     return true;
 }
@@ -677,7 +764,7 @@ bool App::saveActiveProject()
     const std::string& path = activeContext_->getProjectFilePath();
     if (path.empty())
     {
-        saveAsPopupRequested_ = true;
+        requestSaveAsDialog();
         return false;
     }
 
