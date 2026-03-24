@@ -35,8 +35,9 @@ namespace
             return nullptr;
         }
     }
-} // namespace
+} 
 
+// 画布面板
 void ProjectWindow::renderCanvasPanel(Project* project)
 {
     const int width = project->getWidth();

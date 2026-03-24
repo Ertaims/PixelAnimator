@@ -67,31 +67,51 @@ private:
     };
 
     // ---------------- 主流程拆分 ----------------
+    // 事件处理
     void processEvents();
+    // 渲染
     void renderFrame();
+    // 创建窗口和上下文
     bool createWindowAndContext();
+    // 初始化 ImGui
     bool initImGui();
+    // 创建菜单和项目窗口
     void createMenuAndWindows();
+    // 设置默认的 Dock Layout
     void setupDefaultDockLayout();
 
     // ---------------- New Project 弹窗 ----------------
+    // 渲染新建窗口弹窗
     void renderNewProjectPopup();
+    // 渲染错误弹窗
     void renderErrorPopup();
+    // 轮询结果
     void pollDialogResults();
+    // 创建打开项目弹窗
     void requestOpenProjectDialog();
+    // 创建保存项目弹窗
     void requestSaveAsDialog();
+    // 创建新项目
     void createNewProject(int width,
                           int height,
                           int frameCount = 1,
                           uint32_t fillColor = 0x00000000,
                           bool checkerboardBackground = true);
+    // 另存项目
     bool saveProjectAs(AppContext* context, const std::string& path);
+    // 保存当前项目
     bool saveActiveProject();
+    // 另存当前项目
     bool saveActiveProjectAs(const std::string& path);
+    // 打开项目
     bool openProjectFromPath(const std::string& path);
+    // 创建会话
     void createSessionFromProject(std::unique_ptr<Project> project, const std::string& projectPath);
+    // 显示错误
     void showError(const std::string& message);
+    // 窗口事件处理
     static void SDLCALL onOpenDialogClosed(void* userdata, const char* const* filelist, int filter);
+    // 保存项目弹窗
     static void SDLCALL onSaveDialogClosed(void* userdata, const char* const* filelist, int filter);
 
     // ---------------- 活跃上下文与会话管理 ----------------

@@ -30,11 +30,12 @@ public:
 
 private:
     AppContext* context_ = nullptr;
-    std::function<void()> onExitCallback_;
-    std::function<void()> onNewProjectCallback_;
-    std::function<void()> onOpenProjectCallback_;
-    std::function<void()> onSaveProjectCallback_;
-    std::function<void()> onSaveAsProjectCallback_;
-    std::function<void()> onCloseProjectCallback_;
-    std::function<void()> onCloseAllProjectsCallback_;
+
+    std::function<void()> onExitCallback_;                  // Exit回调函数
+    std::function<void()> onNewProjectCallback_;            // 新建项目回调函数
+    std::function<void()> onOpenProjectCallback_;           // 打开项目回调函数
+    std::function<void()> onSaveProjectCallback_;           // 保存项目回调函数
+    std::function<void()> onSaveAsProjectCallback_;         // 另存为项目回调函数
+    std::function<void()> onCloseProjectCallback_;          // 关闭项目回调函数
+    std::function<void()> onCloseAllProjectsCallback_;      // 关闭所有项目回调函数
 };
