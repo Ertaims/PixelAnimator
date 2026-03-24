@@ -1,0 +1,43 @@
+{
+  "format": "PixelAnimatorProject",
+  "version": 1,
+  "meta": {
+    "name": "Untitled",
+    "createdAt": "2026-03-24T00:00:00Z",
+    "updatedAt": "2026-03-24T00:00:00Z"
+  },
+  "canvas": {
+    "width": 16,
+    "height": 16,
+    "background": {
+      "mode": "checkerboard"
+    }
+  },
+  "timeline": {
+    "fps": 12,
+    "frameCount": 1
+  },
+  "frames": [
+    {
+      "index": 0,
+      "duration": 1,
+      "pixels": [
+        "#00000000",
+        "#00000000",
+        "#00000000",
+        "#00000000"
+      ]
+    }
+  ],
+  "palette": [
+    "#00000000",
+    "#FFFFFFFF",
+    "#FF0000FF",
+    "#00FF00FF",
+    "#0000FFFF"
+  ],
+  "toolState": {
+    "activeTool": "brush",
+    "brushSize": 1
+  }
+}

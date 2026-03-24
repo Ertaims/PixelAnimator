@@ -28,6 +28,12 @@ class AppContext;
 class App
 {
 public:
+    enum class ProjectFileFormat
+    {
+        Binary,
+        Json
+    };
+
     App();
     ~App();
 
@@ -90,7 +96,7 @@ private:
     // 创建打开项目弹窗
     void requestOpenProjectDialog();
     // 创建保存项目弹窗
-    void requestSaveAsDialog();
+    void requestSaveAsDialog(ProjectFileFormat format);
     // 创建新项目
     void createNewProject(int width,
                           int height,
@@ -98,11 +104,11 @@ private:
                           uint32_t fillColor = 0x00000000,
                           bool checkerboardBackground = true);
     // 另存项目
-    bool saveProjectAs(AppContext* context, const std::string& path);
+    bool saveProjectAs(AppContext* context, const std::string& path, ProjectFileFormat preferredFormat);
     // 保存当前项目
     bool saveActiveProject();
     // 另存当前项目
-    bool saveActiveProjectAs(const std::string& path);
+    bool saveActiveProjectAs(const std::string& path, ProjectFileFormat preferredFormat);
     // 打开项目
     bool openProjectFromPath(const std::string& path);
     // 创建会话
@@ -158,6 +164,8 @@ private:
     std::string pendingDialogError_;
     bool pendingOpenReady_ = false;
     bool pendingSaveReady_ = false;
+    ProjectFileFormat pendingSaveFormat_ = ProjectFileFormat::Binary;
+    ProjectFileFormat saveDialogFormat_ = ProjectFileFormat::Binary;
     bool pendingDialogErrorReady_ = false;
     std::string pendingErrorMessage_;
 };

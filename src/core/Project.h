@@ -71,6 +71,13 @@ public:
     // 删除指定帧（至少保留 1 帧）
     void removeFrame(int index);
 
+    // 时间轴 FPS（用于播放速度与 JSON 持久化）
+    int getTimelineFps() const
+    {
+        return timelineFps_;
+    }
+    void setTimelineFps(int fps);
+
 private:
     // 按当前 width_/height_ 创建指定数量的帧并填充像素
     void createFrames(int count, uint32_t fillColor);
@@ -79,6 +86,7 @@ private:
     std::string name_ = "Untitled";
     int width_ = 0;
     int height_ = 0;
+    int timelineFps_ = 8;
 
     // 帧列表
     std::vector<Frame> frames_;

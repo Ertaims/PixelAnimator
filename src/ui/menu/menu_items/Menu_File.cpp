@@ -10,7 +10,8 @@ Menu_File::Menu_File(Menu* menu,
                      const std::function<void()>& onNewProjectCallback,
                      const std::function<void()>& onOpenProjectCallback,
                      const std::function<void()>& onSaveProjectCallback,
-                     const std::function<void()>& onSaveAsProjectCallback,
+                     const std::function<void()>& onSaveAsBinaryProjectCallback,
+                     const std::function<void()>& onSaveAsJsonProjectCallback,
                      const std::function<void()>& onCloseProjectCallback,
                      const std::function<void()>& onCloseAllProjectsCallback)
     : MenuOptionBase(menu),
@@ -19,7 +20,8 @@ Menu_File::Menu_File(Menu* menu,
       onNewProjectCallback_(onNewProjectCallback),
       onOpenProjectCallback_(onOpenProjectCallback),
       onSaveProjectCallback_(onSaveProjectCallback),
-      onSaveAsProjectCallback_(onSaveAsProjectCallback),
+      onSaveAsBinaryProjectCallback_(onSaveAsBinaryProjectCallback),
+      onSaveAsJsonProjectCallback_(onSaveAsJsonProjectCallback),
       onCloseProjectCallback_(onCloseProjectCallback),
       onCloseAllProjectsCallback_(onCloseAllProjectsCallback) {}
 
@@ -48,10 +50,19 @@ void Menu_File::initialize() {
             onSaveProjectCallback_();
     });
 
-    MenuItem* saveAsItem = getMenu()->addItem("Save As...", "Ctrl+Shift+S");
-    saveAsItem->setCallback([this]() {
-        if (onSaveAsProjectCallback_)
-            onSaveAsProjectCallback_();
+    Menu* saveAsMenu = new Menu("Save As...");
+    getMenu()->addItem("Save As...", saveAsMenu, "Ctrl+Shift+S");
+
+    MenuItem* saveAsBinaryItem = saveAsMenu->addItem("Binary (*.pxanim)");
+    saveAsBinaryItem->setCallback([this]() {
+        if (onSaveAsBinaryProjectCallback_)
+            onSaveAsBinaryProjectCallback_();
+    });
+
+    MenuItem* saveAsJsonItem = saveAsMenu->addItem("JSON (*.pxanim.json)");
+    saveAsJsonItem->setCallback([this]() {
+        if (onSaveAsJsonProjectCallback_)
+            onSaveAsJsonProjectCallback_();
     });
 
     getMenu()->addSeparator();
@@ -102,8 +113,12 @@ void Menu_File::setOnSaveProjectCallback(const std::function<void()>& callback) 
     onSaveProjectCallback_ = callback;
 }
 
-void Menu_File::setOnSaveAsProjectCallback(const std::function<void()>& callback) {
-    onSaveAsProjectCallback_ = callback;
+void Menu_File::setOnSaveAsBinaryProjectCallback(const std::function<void()>& callback) {
+    onSaveAsBinaryProjectCallback_ = callback;
+}
+
+void Menu_File::setOnSaveAsJsonProjectCallback(const std::function<void()>& callback) {
+    onSaveAsJsonProjectCallback_ = callback;
 }
 
 void Menu_File::setOnCloseProjectCallback(const std::function<void()>& callback) {

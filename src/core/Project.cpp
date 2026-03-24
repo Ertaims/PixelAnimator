@@ -10,6 +10,11 @@ namespace
     {
         return std::max(1, value);
     }
+
+    int clampTimelineFps(int fps)
+    {
+        return std::clamp(fps, 1, 60);
+    }
 }
 
 Project::Project() : Project(16, 16, 1, 0x00000000) {}
@@ -21,6 +26,7 @@ Project::Project(int width, int height, int frameCount, uint32_t fillColor)
     height_ = clampPositive(height);
     // 创建并填充帧数据
     createFrames(std::max(1, frameCount), fillColor);
+    timelineFps_ = clampTimelineFps(timelineFps_);
 }
 
 Project::Frame& Project::getFrame(int index)
@@ -127,6 +133,11 @@ void Project::removeFrame(int index)
 
     const int clamped = std::clamp(index, 0, static_cast<int>(frames_.size()) - 1);
     frames_.erase(frames_.begin() + static_cast<long long>(clamped));
+}
+
+void Project::setTimelineFps(int fps)
+{
+    timelineFps_ = clampTimelineFps(fps);
 }
 
 void Project::createFrames(int count, uint32_t fillColor)

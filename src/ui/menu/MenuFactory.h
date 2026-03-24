@@ -40,7 +40,8 @@ public:
                                       const std::function<void()>& onNewProjectCallback,
                                       const std::function<void()>& onOpenProjectCallback,
                                       const std::function<void()>& onSaveProjectCallback,
-                                      const std::function<void()>& onSaveAsProjectCallback,
+                                      const std::function<void()>& onSaveAsBinaryProjectCallback,
+                                      const std::function<void()>& onSaveAsJsonProjectCallback,
                                       const std::function<void()>& onCloseProjectCallback,
                                       const std::function<void()>& onCloseAllProjectsCallback) = 0;
 
@@ -65,7 +66,8 @@ public:
                               const std::function<void()>& onNewProjectCallback,
                               const std::function<void()>& onOpenProjectCallback,
                               const std::function<void()>& onSaveProjectCallback,
-                              const std::function<void()>& onSaveAsProjectCallback,
+                              const std::function<void()>& onSaveAsBinaryProjectCallback,
+                              const std::function<void()>& onSaveAsJsonProjectCallback,
                               const std::function<void()>& onCloseProjectCallback,
                               const std::function<void()>& onCloseAllProjectsCallback) override {
         Menu* fileMenu = manager->addMenu("File");
@@ -76,7 +78,8 @@ public:
             onNewProjectCallback,
             onOpenProjectCallback,
             onSaveProjectCallback,
-            onSaveAsProjectCallback,
+            onSaveAsBinaryProjectCallback,
+            onSaveAsJsonProjectCallback,
             onCloseProjectCallback,
             onCloseAllProjectsCallback);
         menuFile->initialize();

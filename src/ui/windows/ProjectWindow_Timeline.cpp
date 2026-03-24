@@ -76,6 +76,7 @@ void ProjectWindow::renderTimelinePanel(Project* project)
     const uint64_t nowTick = SDL_GetTicks();
     const double dt = static_cast<double>(nowTick - timelineState_.lastTick) / 1000.0;
     timelineState_.lastTick = nowTick;
+    timelineState_.fps = static_cast<float>(project->getTimelineFps());
     if (timelineState_.isPlaying && timelineState_.fps > 0.0f)
         timelineState_.accumulator += dt;
 
@@ -192,7 +193,12 @@ void ProjectWindow::renderTimelinePanel(Project* project)
     ImGui::TextUnformatted("FPS");
     ImGui::SameLine();
     ImGui::SetNextItemWidth(80.0f);
-    ImGui::SliderFloat("##timeline_fps", &timelineState_.fps, 1.0f, 60.0f, "%.0f");
+    if (ImGui::SliderFloat("##timeline_fps", &timelineState_.fps, 1.0f, 60.0f, "%.0f"))
+    {
+        project->setTimelineFps(static_cast<int>(timelineState_.fps + 0.5f));
+        timelineState_.fps = static_cast<float>(project->getTimelineFps());
+        context->setProjectDirty(true);
+    }
 
     ImGui::Separator();
 

@@ -7,6 +7,7 @@
 
 #include "core/AppContext.h"
 #include "core/Project.h"
+#include "io/ProjectJsonSerializer.h"
 #include "io/ProjectSerializer.h"
 #include "imgui.h"
 #include "imgui_impl_opengl3.h"
@@ -24,10 +25,12 @@
 #include <SDL3/SDL_opengl.h>
 #include <algorithm>
 #include <cassert>
+#include <cctype>
 #include <cmath>
 #include <cstdio>
 #include <filesystem>
 #include <iostream>
+#include <string_view>
 
 namespace
 {
@@ -46,6 +49,21 @@ namespace
         try
         {
             const std::filesystem::path p(path);
+            const std::string filename = p.filename().string();
+            if (filename.size() > std::string(".pxanim.json").size())
+            {
+                const std::string lowerFilename = [&filename]() {
+                    std::string result = filename;
+                    std::transform(result.begin(), result.end(), result.begin(),
+                                   [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
+                    return result;
+                }();
+                if (lowerFilename.size() >= 12
+                    && lowerFilename.rfind(".pxanim.json") == lowerFilename.size() - 12)
+                {
+                    return filename.substr(0, filename.size() - 12);
+                }
+            }
             const std::string stem = p.stem().string();
             if (!stem.empty())
                 return stem;
@@ -54,6 +72,53 @@ namespace
         {
         }
         return "Untitled";
+    }
+
+    std::string toLowerCopy(const std::string& value)
+    {
+        std::string result = value;
+        std::transform(result.begin(), result.end(), result.begin(),
+                       [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
+        return result;
+    }
+
+    bool endsWithInsensitive(const std::string& text, std::string_view suffix)
+    {
+        if (text.size() < suffix.size())
+            return false;
+        const std::string lower = toLowerCopy(text);
+        return lower.compare(lower.size() - suffix.size(), suffix.size(), suffix.data()) == 0;
+    }
+
+    App::ProjectFileFormat detectFormatFromPath(const std::string& path)
+    {
+        if (endsWithInsensitive(path, ".pxanim.json") || endsWithInsensitive(path, ".json"))
+            return App::ProjectFileFormat::Json;
+        return App::ProjectFileFormat::Binary;
+    }
+
+    std::string normalizeSavePath(const std::string& path, App::ProjectFileFormat preferredFormat)
+    {
+        if (path.empty())
+            return path;
+
+        if (preferredFormat == App::ProjectFileFormat::Json)
+        {
+            if (endsWithInsensitive(path, ".pxanim.json") || endsWithInsensitive(path, ".json"))
+                return path;
+            if (endsWithInsensitive(path, ".pxanim"))
+                return path + ".json";
+            return path + ".pxanim.json";
+        }
+
+        // Binary:
+        if (endsWithInsensitive(path, ".pxanim"))
+            return path;
+        if (endsWithInsensitive(path, ".pxanim.json"))
+            return path.substr(0, path.size() - 5); // 去掉末尾 ".json" -> ".pxanim"
+        if (endsWithInsensitive(path, ".json"))
+            return path.substr(0, path.size() - 5) + ".pxanim";
+        return path + ".pxanim";
     }
 }
 
@@ -182,7 +247,8 @@ void App::createMenuAndWindows()
         [this]() { newProjectPopupRequested_ = true; },
         [this]() { requestOpenProjectDialog(); },
         [this]() { saveActiveProject(); },
-        [this]() { requestSaveAsDialog(); },
+        [this]() { requestSaveAsDialog(ProjectFileFormat::Binary); },
+        [this]() { requestSaveAsDialog(ProjectFileFormat::Json); },
         [this]() { closeProjectByContext(activeContext_); },
         [this]() { closeAllProjects(); });
 
@@ -544,6 +610,7 @@ void App::requestOpenProjectDialog()
 
     static const SDL_DialogFileFilter filters[] = {
         {"PixelAnimator Project", "pxanim"},
+        {"PixelAnimator JSON Project", "pxanim.json;json"},
         {"All Files", "*"}
     };
 
@@ -553,20 +620,38 @@ void App::requestOpenProjectDialog()
         this,
         window_,
         filters,
-        2,
+        3,
         nullptr,
         false);
 }
 
-void App::requestSaveAsDialog()
+void App::requestSaveAsDialog(ProjectFileFormat format)
 {
     if (saveDialogInFlight_)
         return;
 
-    static const SDL_DialogFileFilter filters[] = {
-        {"PixelAnimator Project", "pxanim"},
+    saveDialogFormat_ = format;
+
+    const SDL_DialogFileFilter* filters = nullptr;
+    int filterCount = 0;
+    static const SDL_DialogFileFilter binaryFilters[] = {
+        {"PixelAnimator Binary Project", "pxanim"},
         {"All Files", "*"}
     };
+    static const SDL_DialogFileFilter jsonFilters[] = {
+        {"PixelAnimator JSON Project", "pxanim.json;json"},
+        {"All Files", "*"}
+    };
+    if (format == ProjectFileFormat::Json)
+    {
+        filters = jsonFilters;
+        filterCount = 2;
+    }
+    else
+    {
+        filters = binaryFilters;
+        filterCount = 2;
+    }
 
     const char* defaultLocation = nullptr;
     std::string candidatePath;
@@ -577,7 +662,14 @@ void App::requestSaveAsDialog()
         {
             const Project* project = activeContext_->getProject();
             if (project && !project->getName().empty())
-                candidatePath = project->getName() + ".pxanim";
+                candidatePath = format == ProjectFileFormat::Json
+                    ? (project->getName() + ".pxanim.json")
+                    : (project->getName() + ".pxanim");
+        }
+        else
+        {
+            // Save As 按当前用户选择的格式预填路径，避免 JSON 模式仍默认二进制扩展名。
+            candidatePath = normalizeSavePath(candidatePath, format);
         }
         if (!candidatePath.empty())
             defaultLocation = candidatePath.c_str();
@@ -589,7 +681,7 @@ void App::requestSaveAsDialog()
         this,
         window_,
         filters,
-        2,
+        filterCount,
         defaultLocation);
 }
 
@@ -643,6 +735,7 @@ void SDLCALL App::onSaveDialogClosed(void* userdata, const char* const* filelist
 
     app->pendingSavePath_ = filelist[0];
     app->pendingSaveReady_ = true;
+    app->pendingSaveFormat_ = app->saveDialogFormat_;
 }
 
 void App::pollDialogResults()
@@ -650,6 +743,7 @@ void App::pollDialogResults()
     std::string openPath;
     std::string savePath;
     std::string dialogError;
+    ProjectFileFormat saveFormat = ProjectFileFormat::Binary;
     {
         std::lock_guard<std::mutex> guard(dialogMutex_);
         if (pendingOpenReady_)
@@ -663,6 +757,7 @@ void App::pollDialogResults()
             savePath = pendingSavePath_;
             pendingSavePath_.clear();
             pendingSaveReady_ = false;
+            saveFormat = pendingSaveFormat_;
         }
         if (pendingDialogErrorReady_)
         {
@@ -677,7 +772,7 @@ void App::pollDialogResults()
     if (!openPath.empty())
         openProjectFromPath(openPath);
     if (!savePath.empty())
-        saveActiveProjectAs(savePath);
+        saveActiveProjectAs(savePath, saveFormat);
 }
 
 void App::renderErrorPopup()
@@ -705,7 +800,7 @@ void App::showError(const std::string& message)
     pendingErrorMessage_ = message;
 }
 
-bool App::saveProjectAs(AppContext* context, const std::string& path)
+bool App::saveProjectAs(AppContext* context, const std::string& path, ProjectFileFormat preferredFormat)
 {
     if (!context || !context->hasProject())
     {
@@ -718,18 +813,7 @@ bool App::saveProjectAs(AppContext* context, const std::string& path)
         return false;
     }
 
-    std::string finalPath = path;
-    try
-    {
-        const std::filesystem::path fsPath(path);
-        const std::string ext = fsPath.extension().string();
-        if (ext.empty() || ext == ".")
-            finalPath += ".pxanim";
-    }
-    catch (...)
-    {
-        // 路径解析失败时保持原始输入，交给序列化阶段返回具体错误。
-    }
+    const std::string finalPath = normalizeSavePath(path, preferredFormat);
 
     Project* project = context->getProject();
     if (!project)
@@ -742,7 +826,10 @@ bool App::saveProjectAs(AppContext* context, const std::string& path)
     project->setName(projectNameFromPath(finalPath));
 
     std::string error;
-    if (!ProjectSerializer::save(*project, finalPath, &error))
+    const bool ok = preferredFormat == ProjectFileFormat::Json
+        ? ProjectJsonSerializer::save(*project, finalPath, &error)
+        : ProjectSerializer::save(*project, finalPath, &error);
+    if (!ok)
     {
         showError(error.empty() ? "Failed to save project." : error);
         return false;
@@ -764,16 +851,16 @@ bool App::saveActiveProject()
     const std::string& path = activeContext_->getProjectFilePath();
     if (path.empty())
     {
-        requestSaveAsDialog();
+        requestSaveAsDialog(ProjectFileFormat::Binary);
         return false;
     }
 
-    return saveProjectAs(activeContext_, path);
+    return saveProjectAs(activeContext_, path, detectFormatFromPath(path));
 }
 
-bool App::saveActiveProjectAs(const std::string& path)
+bool App::saveActiveProjectAs(const std::string& path, ProjectFileFormat preferredFormat)
 {
-    return saveProjectAs(activeContext_, path);
+    return saveProjectAs(activeContext_, path, preferredFormat);
 }
 
 bool App::openProjectFromPath(const std::string& path)
@@ -785,7 +872,10 @@ bool App::openProjectFromPath(const std::string& path)
     }
 
     std::string error;
-    std::unique_ptr<Project> loadedProject = ProjectSerializer::load(path, &error);
+    const ProjectFileFormat format = detectFormatFromPath(path);
+    std::unique_ptr<Project> loadedProject = format == ProjectFileFormat::Json
+        ? ProjectJsonSerializer::load(path, &error)
+        : ProjectSerializer::load(path, &error);
     if (!loadedProject)
     {
         showError(error.empty() ? "Failed to open project." : error);
