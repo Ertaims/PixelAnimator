@@ -30,7 +30,7 @@ public:
     /**
      * @brief 将 Project 保存为 JSON 文件。
      * @param project      待保存项目。
-     * @param path         输出路径（建议 .json / .pxanim.json）。
+     * @param path         输出路径（/*.pxanim.json）。
      * @param errorMessage 失败时写入错误信息（可为 nullptr）。
      * @return true 成功，false 失败。
      */

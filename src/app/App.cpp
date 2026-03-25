@@ -97,6 +97,13 @@ namespace
         return App::ProjectFileFormat::Binary;
     }
 
+    bool isSupportedProjectPath(const std::string& path)
+    {
+        return endsWithInsensitive(path, ".pxanim")
+            || endsWithInsensitive(path, ".pxanim.json")
+            || endsWithInsensitive(path, ".json");
+    }
+
     std::string normalizeSavePath(const std::string& path, App::ProjectFileFormat preferredFormat)
     {
         if (path.empty())
@@ -286,9 +293,30 @@ void App::processEvents()
         ImGui_ImplSDL3_ProcessEvent(&event);
         if (event.type == SDL_EVENT_QUIT)
             done_ = true;
+
         if (event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED
             && event.window.windowID == SDL_GetWindowID(window_))
             done_ = true;
+        
+        if(event.type == SDL_EVENT_DROP_FILE)
+        {
+            // 只处理主窗口上的拖拽
+            if(event.drop.windowID != SDL_GetWindowID(window_))
+                continue;
+
+            // SDL 事件里的 data 生命周期只保证事件处理期间有效，这里先拷贝到 std::string。
+            const std::string droppedPath = event.drop.data ? event.drop.data : "";
+            if (droppedPath.empty())
+                continue;
+
+            if (!isSupportedProjectPath(droppedPath))
+            {
+                showError("Unsupported file type. Please drop .pxanim or .pxanim.json files.");
+                continue;
+            }
+
+            openProjectFromPath(droppedPath);
+        }
     }
 }
 
