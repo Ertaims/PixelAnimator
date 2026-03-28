@@ -27,6 +27,7 @@ set(SOURCES
     src/core/Project.cpp
     src/io/ProjectSerializer.cpp
     src/io/ProjectJsonSerializer.cpp
+    src/io/ImageExporter.cpp
     src/tools/BrushTool.cpp
     src/tools/EraserTool.cpp
     src/tools/EyedropperTool.cpp

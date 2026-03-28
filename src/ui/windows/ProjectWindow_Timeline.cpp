@@ -9,6 +9,7 @@
 #include <SDL3_image/SDL_image.h>
 
 #include <algorithm>
+#include <vector>
 
 namespace
 {
@@ -80,17 +81,22 @@ void ProjectWindow::renderTimelinePanel(Project* project)
     if (timelineState_.isPlaying && timelineState_.fps > 0.0f)
         timelineState_.accumulator += dt;
 
+    // 进入时间轴渲染前先做一次选区校正：
+    // - 删除越界选中项
+    // - 保证至少有一个选中帧
+    context->sanitizeFrameSelection(project->getFrameCount(), context->getCurrentFrameIndex());
+
     {
         const ImVec2 btnSize(22.0f, 18.0f);
         if (ImGui::Button("<<", btnSize))
-            context->setCurrentFrameIndex(0);
+            context->setSingleFrameSelection(0, project->getFrameCount());
         ImGui::SameLine();
         if (ImGui::Button("<", btnSize))
         {
             const int frameCount = project->getFrameCount();
             const int current = context->getCurrentFrameIndex();
             if (frameCount > 0)
-                context->setCurrentFrameIndex(std::max(0, current - 1));
+                context->setSingleFrameSelection(std::max(0, current - 1), frameCount);
         }
         ImGui::SameLine();
         if (ImGui::Button(">", btnSize))
@@ -98,14 +104,14 @@ void ProjectWindow::renderTimelinePanel(Project* project)
             const int frameCount = project->getFrameCount();
             const int current = context->getCurrentFrameIndex();
             if (frameCount > 0)
-                context->setCurrentFrameIndex(std::min(frameCount - 1, current + 1));
+                context->setSingleFrameSelection(std::min(frameCount - 1, current + 1), frameCount);
         }
         ImGui::SameLine();
         if (ImGui::Button(">>", btnSize))
         {
             const int frameCount = project->getFrameCount();
             if (frameCount > 0)
-                context->setCurrentFrameIndex(frameCount - 1);
+                context->setSingleFrameSelection(frameCount - 1, frameCount);
         }
         ImGui::SameLine();
         const char* loopLabel = timelineState_.loopEnabled ? "Loop" : "Once";
@@ -116,7 +122,7 @@ void ProjectWindow::renderTimelinePanel(Project* project)
         {
             const int current = context->getCurrentFrameIndex();
             project->insertFrameAfter(current, 0x00000000);
-            context->setCurrentFrameIndex(current + 1);
+            context->setSingleFrameSelection(current + 1, project->getFrameCount());
             context->setProjectDirty(true);
         }
         ImGui::SameLine();
@@ -128,7 +134,7 @@ void ProjectWindow::renderTimelinePanel(Project* project)
                 const int current = context->getCurrentFrameIndex();
                 project->removeFrame(current);
                 const int newCount = project->getFrameCount();
-                context->setCurrentFrameIndex(std::min(current, newCount - 1));
+                context->setSingleFrameSelection(std::min(current, newCount - 1), newCount);
                 context->setProjectDirty(true);
             }
         }
@@ -203,7 +209,9 @@ void ProjectWindow::renderTimelinePanel(Project* project)
     ImGui::Separator();
 
     const int frameCount = project->getFrameCount();
-    int current = context->getCurrentFrameIndex();
+    // 当前显示帧取“主选中帧”（多选时选区第一个）。
+    context->sanitizeFrameSelection(frameCount, context->getCurrentFrameIndex());
+    int current = context->getPrimarySelectedFrameIndex();
     current = std::clamp(current, 0, std::max(0, frameCount - 1));
     context->setCurrentFrameIndex(current);
 
@@ -227,7 +235,8 @@ void ProjectWindow::renderTimelinePanel(Project* project)
                     timelineState_.accumulator = 0.0;
                 }
             }
-            context->setCurrentFrameIndex(next);
+            // 播放切帧属于“显示帧切换”，同步为单选，避免与手动多选语义冲突。
+            context->setSingleFrameSelection(next, frameCount);
         }
     }
 
@@ -249,13 +258,24 @@ void ProjectWindow::renderTimelinePanel(Project* project)
     for (int i = 0; i < frameCount; ++i)
     {
         ImGui::PushID(i);
-        const bool selected = (i == current);
+        // 多选高亮：选区内任意帧都高亮；主帧会因 current 同步显示在画布。
+        const std::vector<int>& selectedFrames = context->getSelectedFrameIndices();
+        const bool selected = std::find(selectedFrames.begin(), selectedFrames.end(), i) != selectedFrames.end();
         const ImVec4 col = selected ? ImVec4(0.2f, 0.5f, 0.9f, 0.9f) : ImVec4(0.35f, 0.35f, 0.35f, 0.9f);
         ImGui::PushStyleColor(ImGuiCol_Button, col);
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(col.x + 0.1f, col.y + 0.1f, col.z + 0.1f, 1.0f));
         ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(col.x + 0.15f, col.y + 0.15f, col.z + 0.15f, 1.0f));
         if (ImGui::Button("##frame_cell", ImVec2(cellW, cellH)))
-            context->setCurrentFrameIndex(i);
+        {
+            // Ctrl+点击：切换多选；普通点击：单选。
+            if (ImGui::GetIO().KeyCtrl)
+                context->toggleFrameSelection(i, frameCount);
+            else
+                context->setSingleFrameSelection(i, frameCount);
+
+            // 画布总是显示主选中帧。
+            context->setCurrentFrameIndex(context->getPrimarySelectedFrameIndex());
+        }
         ImGui::PopStyleColor(3);
         ImGui::PopID();
         ImGui::SameLine();

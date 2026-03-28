@@ -7,6 +7,7 @@
 
 #include "core/AppContext.h"
 #include "core/Project.h"
+#include "io/ImageExporter.h"
 #include "io/ProjectJsonSerializer.h"
 #include "io/ProjectSerializer.h"
 #include "imgui.h"
@@ -126,6 +127,15 @@ namespace
         if (endsWithInsensitive(path, ".json"))
             return path.substr(0, path.size() - 5) + ".pxanim";
         return path + ".pxanim";
+    }
+
+    std::string normalizePngPath(const std::string& path)
+    {
+        if (path.empty())
+            return path;
+        if (endsWithInsensitive(path, ".png"))
+            return path;
+        return path + ".png";
     }
 }
 
@@ -256,6 +266,11 @@ void App::createMenuAndWindows()
         [this]() { saveActiveProject(); },
         [this]() { requestSaveAsDialog(ProjectFileFormat::Binary); },
         [this]() { requestSaveAsDialog(ProjectFileFormat::Json); },
+        [this]() { requestExportDialog(ExportKind::CurrentFramePng); },
+        [this]() { requestExportDialog(ExportKind::SpriteSheetRowAllPng); },
+        [this]() { requestExportDialog(ExportKind::SpriteSheetRowSelectedPng); },
+        [this]() { requestExportDialog(ExportKind::SpriteSheetColumnAllPng); },
+        [this]() { requestExportDialog(ExportKind::SpriteSheetColumnSelectedPng); },
         [this]() { closeProjectByContext(activeContext_); },
         [this]() { closeAllProjects(); });
 
@@ -713,6 +728,60 @@ void App::requestSaveAsDialog(ProjectFileFormat format)
         defaultLocation);
 }
 
+void App::requestExportDialog(ExportKind kind)
+{
+    if (exportDialogInFlight_)
+        return;
+    if (!activeContext_ || !activeContext_->hasProject())
+    {
+        showError("No active project to export.");
+        return;
+    }
+
+    exportDialogKind_ = kind;
+    static const SDL_DialogFileFilter filters[] = {
+        {"PNG Image", "png"},
+        {"All Files", "*"}
+    };
+
+    std::string baseName = "export";
+    const Project* project = activeContext_->getProject();
+    if (project && !project->getName().empty())
+        baseName = project->getName();
+
+    std::string defaultPath;
+    if (kind == ExportKind::CurrentFramePng)
+    {
+        defaultPath = baseName + "_frame_"
+            + std::to_string(activeContext_->getCurrentFrameIndex() + 1) + ".png";
+    }
+    else if (kind == ExportKind::SpriteSheetRowAllPng)
+    {
+        defaultPath = baseName + "_spritesheet_row_all.png";
+    }
+    else if (kind == ExportKind::SpriteSheetRowSelectedPng)
+    {
+        defaultPath = baseName + "_spritesheet_row_selected.png";
+    }
+    else if (kind == ExportKind::SpriteSheetColumnAllPng)
+    {
+        defaultPath = baseName + "_spritesheet_column_all.png";
+    }
+    else
+    {
+        defaultPath = baseName + "_spritesheet_column_selected.png";
+    }
+
+    exportDialogInFlight_ = true;
+    SDL_ShowSaveFileDialog(
+        &App::onExportDialogClosed,
+        this,
+        window_,
+        filters,
+        2,
+        defaultPath.c_str());
+}
+
 void SDLCALL App::onOpenDialogClosed(void* userdata, const char* const* filelist, int filter)
 {
     (void)filter;
@@ -766,12 +835,41 @@ void SDLCALL App::onSaveDialogClosed(void* userdata, const char* const* filelist
     app->pendingSaveFormat_ = app->saveDialogFormat_;
 }
 
+void SDLCALL App::onExportDialogClosed(void* userdata, const char* const* filelist, int filter)
+{
+    (void)filter;
+    App* app = static_cast<App*>(userdata);
+    if (!app)
+        return;
+
+    std::lock_guard<std::mutex> guard(app->dialogMutex_);
+    app->exportDialogInFlight_ = false;
+
+    if (!filelist)
+    {
+        app->pendingDialogError_ = SDL_GetError();
+        if (app->pendingDialogError_.empty())
+            app->pendingDialogError_ = "Export dialog failed.";
+        app->pendingDialogErrorReady_ = true;
+        return;
+    }
+
+    if (!filelist[0])
+        return;
+
+    app->pendingExportPath_ = filelist[0];
+    app->pendingExportKind_ = app->exportDialogKind_;
+    app->pendingExportReady_ = true;
+}
+
 void App::pollDialogResults()
 {
     std::string openPath;
     std::string savePath;
+    std::string exportPath;
     std::string dialogError;
     ProjectFileFormat saveFormat = ProjectFileFormat::Binary;
+    ExportKind exportKind = ExportKind::CurrentFramePng;
     {
         std::lock_guard<std::mutex> guard(dialogMutex_);
         if (pendingOpenReady_)
@@ -793,6 +891,13 @@ void App::pollDialogResults()
             pendingDialogError_.clear();
             pendingDialogErrorReady_ = false;
         }
+        if (pendingExportReady_)
+        {
+            exportPath = pendingExportPath_;
+            pendingExportPath_.clear();
+            pendingExportReady_ = false;
+            exportKind = pendingExportKind_;
+        }
     }
 
     if (!dialogError.empty())
@@ -801,6 +906,8 @@ void App::pollDialogResults()
         openProjectFromPath(openPath);
     if (!savePath.empty())
         saveActiveProjectAs(savePath, saveFormat);
+    if (!exportPath.empty())
+        exportToPath(exportPath, exportKind);
 }
 
 void App::renderErrorPopup()
@@ -891,6 +998,64 @@ bool App::saveActiveProjectAs(const std::string& path, ProjectFileFormat preferr
     return saveProjectAs(activeContext_, path, preferredFormat);
 }
 
+bool App::exportToPath(const std::string& path, ExportKind kind)
+{
+    if (!activeContext_ || !activeContext_->hasProject())
+    {
+        showError("No active project to export.");
+        return false;
+    }
+
+    Project* project = activeContext_->getProject();
+    if (!project)
+    {
+        showError("No project data to export.");
+        return false;
+    }
+
+    const std::string finalPath = normalizePngPath(path);
+    std::string error;
+
+    if (kind == ExportKind::CurrentFramePng)
+    {
+        if (!ImageExporter::exportSingleFramePng(*project, activeContext_->getCurrentFrameIndex(), finalPath, &error))
+        {
+            showError(error.empty() ? "Failed to export current frame." : error);
+            return false;
+        }
+        return true;
+    }
+
+    // 行/列排版由导出类型决定。
+    const ImageExporter::SpriteSheetLayout layout =
+        (kind == ExportKind::SpriteSheetColumnAllPng || kind == ExportKind::SpriteSheetColumnSelectedPng)
+            ? ImageExporter::SpriteSheetLayout::Column
+            : ImageExporter::SpriteSheetLayout::Row;
+
+    // 导出范围由导出类型决定：
+    // - All: 传空列表，导出器内部会扩展为全部帧
+    // - Selected: 使用时间轴当前选区
+    std::vector<int> frameIndices;
+    const bool exportSelected = (kind == ExportKind::SpriteSheetRowSelectedPng
+                                 || kind == ExportKind::SpriteSheetColumnSelectedPng);
+    if (exportSelected)
+    {
+        frameIndices = activeContext_->getSelectedFrameIndices();
+        if (frameIndices.empty())
+        {
+            showError("No selected frames to export.");
+            return false;
+        }
+    }
+
+    if (!ImageExporter::exportSpriteSheetPng(*project, frameIndices, layout, finalPath, &error))
+    {
+        showError(error.empty() ? "Failed to export sprite sheet." : error);
+        return false;
+    }
+    return true;
+}
+
 bool App::openProjectFromPath(const std::string& path)
 {
     if (path.empty())
@@ -927,6 +1092,8 @@ void App::createSessionFromProject(std::unique_ptr<Project> project, const std::
     session.context->setProjectDirty(false);
     session.context->setCurrentAnimationIndex(0);
     session.context->setCurrentFrameIndex(0);
+    // 会话初始化时明确为单选第 0 帧，避免出现空选区。
+    session.context->setSingleFrameSelection(0, session.project ? session.project->getFrameCount() : 1);
     session.context->setCanvasPan(0.0f, 0.0f);
     session.context->setCanvasZoom(4);
     session.context->setCheckerboardBackgroundEnabled(true);
@@ -961,6 +1128,8 @@ void App::createNewProject(int width, int height, int frameCount, uint32_t fillC
     session.context->setProjectDirty(false);
     session.context->setCurrentAnimationIndex(0);
     session.context->setCurrentFrameIndex(0);
+    // 新建项目默认选中第 0 帧。
+    session.context->setSingleFrameSelection(0, session.project ? session.project->getFrameCount() : 1);
     session.context->setCanvasPan(0.0f, 0.0f);
     session.context->setCanvasZoom(4);
     session.context->setCheckerboardBackgroundEnabled(checkerboardBackground);

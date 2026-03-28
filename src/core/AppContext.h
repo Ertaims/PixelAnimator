@@ -10,6 +10,7 @@
 
 #include <cstdint>
 #include <string>
+#include <vector>
 
 // 前向声明，避免在头文件中包含尚未实现的类型，减少编译依赖与循环引用
 class Project;
@@ -32,7 +33,7 @@ enum class ToolType : int
     Count          // 工具数量，用于遍历与边界检查
 };
 
-/**
+/*
  * @brief 应用程序/编辑器上下文
  *
  * 职责：
@@ -127,6 +128,74 @@ public:
     { 
         currentFrameIndex_ = index; 
     }
+
+    /**
+     * @brief 获取当前帧多选列表。
+     *
+     * 约定：
+     * - selectedFrameIndices_[0] 视为“主帧”（Primary），
+     *   多选状态下画布应显示这帧。
+     */
+    const std::vector<int>& getSelectedFrameIndices() const
+    {
+        return selectedFrameIndices_;
+    }
+
+    /**
+     * @brief 是否处于多选状态（选中帧数 > 1）。
+     */
+    bool hasMultiFrameSelection() const
+    {
+        return selectedFrameIndices_.size() > 1;
+    }
+
+    /**
+     * @brief 获取主选中帧索引。
+     *
+     * 返回策略：
+     * - 若选区非空，返回 selectedFrameIndices_[0]
+     * - 否则回退到 currentFrameIndex_
+     */
+    int getPrimarySelectedFrameIndex() const
+    {
+        if (!selectedFrameIndices_.empty())
+            return selectedFrameIndices_.front();
+        return currentFrameIndex_;
+    }
+
+    /**
+     * @brief 强制设置“单选帧”。
+     *
+     * 常用于：
+     * - 普通点击时间轴帧
+     * - 画布编辑后取消多选
+     * - 播放/导航按钮切帧后同步选中态
+     *
+     * @param frameIndex 要选中的帧索引。
+     * @param frameCount 当前项目总帧数（用于边界校验）。
+     */
+    void setSingleFrameSelection(int frameIndex, int frameCount);
+
+    /**
+     * @brief Ctrl+点击行为：切换某一帧的选中状态。
+     *
+     * 规则：
+     * - 已选中 -> 取消选中
+     * - 未选中 -> 追加到选区末尾
+     * - 至少保留一个选中帧（不会出现空选区）
+     *
+     * @param frameIndex 目标帧索引。
+     * @param frameCount 当前项目总帧数（用于边界校验）。
+     */
+    void toggleFrameSelection(int frameIndex, int frameCount);
+
+    /**
+     * @brief 校正选区，移除越界帧并保证至少一个有效选中。
+     *
+     * @param frameCount 当前项目总帧数。
+     * @param fallbackIndex 当选区为空时回退使用的帧索引。
+     */
+    void sanitizeFrameSelection(int frameCount, int fallbackIndex);
 
     // -------------------------------------------------------------------------
     // 绘图工具与颜色
@@ -295,6 +364,7 @@ private:
     // 动画与帧
     int currentAnimationIndex_ = 0;
     int currentFrameIndex_ = 0;
+    std::vector<int> selectedFrameIndices_ = {0};
 
     // 工具与颜色
     ToolType tool_ = ToolType::Brush;

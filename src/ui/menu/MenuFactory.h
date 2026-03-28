@@ -42,6 +42,11 @@ public:
                                       const std::function<void()>& onSaveProjectCallback,
                                       const std::function<void()>& onSaveAsBinaryProjectCallback,
                                       const std::function<void()>& onSaveAsJsonProjectCallback,
+                                      const std::function<void()>& onExportCurrentFramePngCallback,
+                                      const std::function<void()>& onExportSpriteSheetRowAllPngCallback,
+                                      const std::function<void()>& onExportSpriteSheetRowSelectedPngCallback,
+                                      const std::function<void()>& onExportSpriteSheetColumnAllPngCallback,
+                                      const std::function<void()>& onExportSpriteSheetColumnSelectedPngCallback,
                                       const std::function<void()>& onCloseProjectCallback,
                                       const std::function<void()>& onCloseAllProjectsCallback) = 0;
 
@@ -68,6 +73,11 @@ public:
                               const std::function<void()>& onSaveProjectCallback,
                               const std::function<void()>& onSaveAsBinaryProjectCallback,
                               const std::function<void()>& onSaveAsJsonProjectCallback,
+                              const std::function<void()>& onExportCurrentFramePngCallback,
+                              const std::function<void()>& onExportSpriteSheetRowAllPngCallback,
+                              const std::function<void()>& onExportSpriteSheetRowSelectedPngCallback,
+                              const std::function<void()>& onExportSpriteSheetColumnAllPngCallback,
+                              const std::function<void()>& onExportSpriteSheetColumnSelectedPngCallback,
                               const std::function<void()>& onCloseProjectCallback,
                               const std::function<void()>& onCloseAllProjectsCallback) override {
         Menu* fileMenu = manager->addMenu("File");
@@ -80,6 +90,11 @@ public:
             onSaveProjectCallback,
             onSaveAsBinaryProjectCallback,
             onSaveAsJsonProjectCallback,
+            onExportCurrentFramePngCallback,
+            onExportSpriteSheetRowAllPngCallback,
+            onExportSpriteSheetRowSelectedPngCallback,
+            onExportSpriteSheetColumnAllPngCallback,
+            onExportSpriteSheetColumnSelectedPngCallback,
             onCloseProjectCallback,
             onCloseAllProjectsCallback);
         menuFile->initialize();

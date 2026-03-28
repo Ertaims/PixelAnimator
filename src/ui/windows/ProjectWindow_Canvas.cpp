@@ -43,7 +43,11 @@ void ProjectWindow::renderCanvasPanel(Project* project)
     const int width = project->getWidth();
     const int height = project->getHeight();
     int zoom = context->getCanvasZoom();
-    const int frameIndex = context->getCurrentFrameIndex();
+    // 多选状态下，画布始终显示“主选中帧”（选区第一帧）。
+    context->sanitizeFrameSelection(project->getFrameCount(), context->getCurrentFrameIndex());
+    int frameIndex = context->getPrimarySelectedFrameIndex();
+    frameIndex = std::clamp(frameIndex, 0, std::max(0, project->getFrameCount() - 1));
+    context->setCurrentFrameIndex(frameIndex);
     const int frameCount = project->getFrameCount();
     ImGui::Text("Canvas  %dx%d   Zoom %dx   Frame %d/%d", width, height, zoom, frameIndex + 1, frameCount);
     ImGui::Separator();
@@ -171,7 +175,12 @@ void ProjectWindow::renderCanvasPanel(Project* project)
                 *context,
                 ImGui::IsMouseClicked(ImGuiMouseButton_Left));
             if (changed)
+            {
+                // 在多选状态下发生实际编辑时，自动退出多选并保留当前帧单选。
+                if (context->hasMultiFrameSelection())
+                    context->setSingleFrameSelection(frameIndex, frameCount);
                 context->setProjectDirty(true);
+            }
         }
     }
 

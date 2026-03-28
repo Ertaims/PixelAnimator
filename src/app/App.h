@@ -34,6 +34,15 @@ public:
         Json
     };
 
+    enum class ExportKind
+    {
+        CurrentFramePng,
+        SpriteSheetRowAllPng,
+        SpriteSheetRowSelectedPng,
+        SpriteSheetColumnAllPng,
+        SpriteSheetColumnSelectedPng
+    };
+
     App();
     ~App();
 
@@ -97,6 +106,8 @@ private:
     void requestOpenProjectDialog();
     // 创建保存项目弹窗
     void requestSaveAsDialog(ProjectFileFormat format);
+    // 创建导出图片弹窗
+    void requestExportDialog(ExportKind kind);
     // 创建新项目
     void createNewProject(int width,
                           int height,
@@ -109,6 +120,7 @@ private:
     bool saveActiveProject();
     // 另存当前项目
     bool saveActiveProjectAs(const std::string& path, ProjectFileFormat preferredFormat);
+    bool exportToPath(const std::string& path, ExportKind kind);
     // 打开项目
     bool openProjectFromPath(const std::string& path);
     // 创建会话
@@ -119,6 +131,7 @@ private:
     static void SDLCALL onOpenDialogClosed(void* userdata, const char* const* filelist, int filter);
     // 保存项目弹窗
     static void SDLCALL onSaveDialogClosed(void* userdata, const char* const* filelist, int filter);
+    static void SDLCALL onExportDialogClosed(void* userdata, const char* const* filelist, int filter);
 
     // ---------------- 活跃上下文与会话管理 ----------------
     void setActiveContext(AppContext* context);                         // 设置当前活跃窗口
@@ -158,14 +171,19 @@ private:
     // ---------------- Open/Save 最小可用弹窗状态 ----------------
     bool openDialogInFlight_ = false;
     bool saveDialogInFlight_ = false;
+    bool exportDialogInFlight_ = false;
     std::mutex dialogMutex_;
     std::string pendingOpenPath_;
     std::string pendingSavePath_;
     std::string pendingDialogError_;
+    std::string pendingExportPath_;
     bool pendingOpenReady_ = false;
     bool pendingSaveReady_ = false;
+    bool pendingExportReady_ = false;
     ProjectFileFormat pendingSaveFormat_ = ProjectFileFormat::Binary;
     ProjectFileFormat saveDialogFormat_ = ProjectFileFormat::Binary;
+    ExportKind pendingExportKind_ = ExportKind::CurrentFramePng;
+    ExportKind exportDialogKind_ = ExportKind::CurrentFramePng;
     bool pendingDialogErrorReady_ = false;
     std::string pendingErrorMessage_;
 };
