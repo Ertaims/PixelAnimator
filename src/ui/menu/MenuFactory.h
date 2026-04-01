@@ -34,6 +34,7 @@ public:
     // context：当前活动上下文（可为 nullptr，后续再注入）
     // onExitCallback：点击 Exit 时触发
     // onNewProjectCallback：点击 New 时触发
+    // onExportSpriteSheetConfigCallback：点击 Sprite Sheet (PNG)... 时触发（打开配置弹窗）
     virtual Menu_File* createFileMenu(MenuManager* manager,
                                       AppContext* context,
                                       const std::function<void()>& onExitCallback,
@@ -43,10 +44,7 @@ public:
                                       const std::function<void()>& onSaveAsBinaryProjectCallback,
                                       const std::function<void()>& onSaveAsJsonProjectCallback,
                                       const std::function<void()>& onExportCurrentFramePngCallback,
-                                      const std::function<void()>& onExportSpriteSheetRowAllPngCallback,
-                                      const std::function<void()>& onExportSpriteSheetRowSelectedPngCallback,
-                                      const std::function<void()>& onExportSpriteSheetColumnAllPngCallback,
-                                      const std::function<void()>& onExportSpriteSheetColumnSelectedPngCallback,
+                                      const std::function<void()>& onExportSpriteSheetConfigCallback,
                                       const std::function<void()>& onCloseProjectCallback,
                                       const std::function<void()>& onCloseAllProjectsCallback) = 0;
 
@@ -74,10 +72,7 @@ public:
                               const std::function<void()>& onSaveAsBinaryProjectCallback,
                               const std::function<void()>& onSaveAsJsonProjectCallback,
                               const std::function<void()>& onExportCurrentFramePngCallback,
-                              const std::function<void()>& onExportSpriteSheetRowAllPngCallback,
-                              const std::function<void()>& onExportSpriteSheetRowSelectedPngCallback,
-                              const std::function<void()>& onExportSpriteSheetColumnAllPngCallback,
-                              const std::function<void()>& onExportSpriteSheetColumnSelectedPngCallback,
+                              const std::function<void()>& onExportSpriteSheetConfigCallback,
                               const std::function<void()>& onCloseProjectCallback,
                               const std::function<void()>& onCloseAllProjectsCallback) override {
         Menu* fileMenu = manager->addMenu("File");
@@ -91,10 +86,7 @@ public:
             onSaveAsBinaryProjectCallback,
             onSaveAsJsonProjectCallback,
             onExportCurrentFramePngCallback,
-            onExportSpriteSheetRowAllPngCallback,
-            onExportSpriteSheetRowSelectedPngCallback,
-            onExportSpriteSheetColumnAllPngCallback,
-            onExportSpriteSheetColumnSelectedPngCallback,
+            onExportSpriteSheetConfigCallback,
             onCloseProjectCallback,
             onCloseAllProjectsCallback);
         menuFile->initialize();

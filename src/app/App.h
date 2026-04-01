@@ -37,10 +37,17 @@ public:
     enum class ExportKind
     {
         CurrentFramePng,
-        SpriteSheetRowAllPng,
-        SpriteSheetRowSelectedPng,
-        SpriteSheetColumnAllPng,
-        SpriteSheetColumnSelectedPng
+        SpriteSheetConfiguredPng
+    };
+
+    /**
+     * @brief 精灵图导出模式（对应弹窗中的三种布局）。
+     */
+    enum class SpriteSheetExportMode
+    {
+        Row = 0,      // 所有帧一行
+        Column,       // 所有帧一列
+        RowColumn     // 按“每行列数”自动换行
     };
 
     App();
@@ -62,6 +69,35 @@ public:
     const AppContext& getContext() const;
 
 private:
+    /**
+     * @brief 精灵图“自定义分组”在弹窗中的编辑态数据。
+     *
+     * 说明：
+     * - frameListText 使用文本输入，便于用户快速录入，如 "1,2,3,8"；
+     * - mode 表示该组内部布局（行排或列排）；
+     * - name 用于导出配置识别与后续扩展（当前不强制唯一）。
+     */
+    struct SpriteSheetGroupDraft
+    {
+        std::string name = "Group";
+        SpriteSheetExportMode mode = SpriteSheetExportMode::Row;
+        std::string frameListText = "1";
+    };
+
+    /**
+     * @brief 精灵图“自定义分组”在导出执行前的解析结果。
+     *
+     * 说明：
+     * - frameIndices 为 0-based 帧索引；
+     * - 由弹窗录入文本解析得到，确保导出层拿到的是可直接使用的结构。
+     */
+    struct SpriteSheetGroupResolved
+    {
+        std::string name;
+        SpriteSheetExportMode mode = SpriteSheetExportMode::Row;
+        std::vector<int> frameIndices;
+    };
+
     /**
      * @brief 一个项目会话对应一个独立窗口
      *
@@ -100,6 +136,8 @@ private:
     void renderNewProjectPopup();
     // 渲染错误弹窗
     void renderErrorPopup();
+    // 渲染精灵图导出配置弹窗
+    void renderSpriteSheetExportPopup();
     // 轮询结果
     void pollDialogResults();
     // 创建打开项目弹窗
@@ -120,7 +158,19 @@ private:
     bool saveActiveProject();
     // 另存当前项目
     bool saveActiveProjectAs(const std::string& path, ProjectFileFormat preferredFormat);
-    bool exportToPath(const std::string& path, ExportKind kind);
+    bool exportToPath(const std::string& path,
+                      ExportKind kind,
+                      SpriteSheetExportMode spriteMode,
+                      bool useSelectedFrames,
+                      int columnsPerRow,
+                      bool useCustomGroups,
+                      const std::vector<SpriteSheetGroupResolved>& customGroups,
+                      int groupSpacing);
+    bool parseFrameListText(const std::string& text,
+                            int maxFrameCount,
+                            std::vector<int>& outIndices,
+                            std::string& outError) const;
+    bool buildResolvedSpriteGroups(std::vector<SpriteSheetGroupResolved>& outGroups, std::string& outError) const;
     // 打开项目
     bool openProjectFromPath(const std::string& path);
     // 创建会话
@@ -168,6 +218,19 @@ private:
     ImVec4 newProjectBgColor_ = ImVec4(0.0f, 0.0f, 0.0f, 0.0f);
     int newProjectCanvasBgMode_ = 0; // 0=Checkerboard, 1=White
 
+    // ---------------- Sprite Sheet 导出弹窗状态 ----------------
+    bool spriteSheetExportPopupRequested_ = false;
+    SpriteSheetExportMode spriteSheetExportMode_ = SpriteSheetExportMode::Row;
+    bool spriteSheetExportUseSelectedFrames_ = false;
+    int spriteSheetExportColumnsPerRow_ = 4;
+    bool spriteSheetExportUseCustomGroups_ = false;
+    int spriteSheetExportGroupSpacing_ = 8;
+    std::vector<SpriteSheetGroupDraft> spriteSheetExportGroups_;
+    bool spriteSheetExportIconsLoaded_ = false;
+    unsigned int spriteSheetRowIconTexture_ = 0;
+    unsigned int spriteSheetColumnIconTexture_ = 0;
+    unsigned int spriteSheetRowColumnIconTexture_ = 0;
+
     // ---------------- Open/Save 最小可用弹窗状态 ----------------
     bool openDialogInFlight_ = false;
     bool saveDialogInFlight_ = false;
@@ -184,6 +247,18 @@ private:
     ProjectFileFormat saveDialogFormat_ = ProjectFileFormat::Binary;
     ExportKind pendingExportKind_ = ExportKind::CurrentFramePng;
     ExportKind exportDialogKind_ = ExportKind::CurrentFramePng;
+    SpriteSheetExportMode pendingExportSpriteMode_ = SpriteSheetExportMode::Row;
+    SpriteSheetExportMode exportDialogSpriteMode_ = SpriteSheetExportMode::Row;
+    bool pendingExportUseSelectedFrames_ = false;
+    bool exportDialogUseSelectedFrames_ = false;
+    int pendingExportColumnsPerRow_ = 4;
+    int exportDialogColumnsPerRow_ = 4;
+    bool pendingExportUseCustomGroups_ = false;
+    bool exportDialogUseCustomGroups_ = false;
+    int pendingExportGroupSpacing_ = 8;
+    int exportDialogGroupSpacing_ = 8;
+    std::vector<SpriteSheetGroupResolved> pendingExportCustomGroups_;
+    std::vector<SpriteSheetGroupResolved> exportDialogCustomGroups_;
     bool pendingDialogErrorReady_ = false;
     std::string pendingErrorMessage_;
 };

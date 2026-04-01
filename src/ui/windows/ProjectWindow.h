@@ -82,6 +82,9 @@ private:
         unsigned int playIconTexture = 0;   ///< 播放图标纹理 ID。
         unsigned int pauseIconTexture = 0;  ///< 暂停图标纹理 ID。
         bool iconsLoaded = false;           ///< 图标是否已加载。
+        bool openCreateGroupNamePopup = false; ///< 是否请求打开“创建分组”命名弹窗。
+        char pendingGroupName[64] = "Group 1"; ///< 分组命名输入缓存（弹窗内编辑）。
+        std::vector<int> pendingGroupFrames;    ///< 待创建分组的帧索引快照（0-based）。
     };
 
     

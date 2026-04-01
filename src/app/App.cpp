@@ -24,6 +24,7 @@
 
 #include <SDL3/SDL_dialog.h>
 #include <SDL3/SDL_opengl.h>
+#include <SDL3_image/SDL_image.h>
 #include <algorithm>
 #include <cassert>
 #include <cctype>
@@ -31,6 +32,7 @@
 #include <cstdio>
 #include <filesystem>
 #include <iostream>
+#include <sstream>
 #include <string_view>
 
 namespace
@@ -136,6 +138,46 @@ namespace
         if (endsWithInsensitive(path, ".png"))
             return path;
         return path + ".png";
+    }
+
+    /**
+     * @brief 从文件加载 OpenGL 纹理（用于导出模式图标按钮）。
+     */
+    unsigned int loadTextureFromFile(const char* path)
+    {
+        SDL_Surface* surface = IMG_Load(path);
+        if (!surface)
+            return 0;
+
+        SDL_Surface* rgbaSurface = surface;
+        if (surface->format != SDL_PIXELFORMAT_RGBA32)
+        {
+            rgbaSurface = SDL_ConvertSurface(surface, SDL_PIXELFORMAT_RGBA32);
+            SDL_DestroySurface(surface);
+            if (!rgbaSurface)
+                return 0;
+        }
+
+        unsigned int texture = 0;
+        glGenTextures(1, &texture);
+        glBindTexture(GL_TEXTURE_2D, texture);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+        glTexImage2D(GL_TEXTURE_2D,
+                     0,
+                     GL_RGBA8,
+                     rgbaSurface->w,
+                     rgbaSurface->h,
+                     0,
+                     GL_RGBA,
+                     GL_UNSIGNED_BYTE,
+                     rgbaSurface->pixels);
+
+        SDL_DestroySurface(rgbaSurface);
+        return texture;
     }
 }
 
@@ -267,10 +309,7 @@ void App::createMenuAndWindows()
         [this]() { requestSaveAsDialog(ProjectFileFormat::Binary); },
         [this]() { requestSaveAsDialog(ProjectFileFormat::Json); },
         [this]() { requestExportDialog(ExportKind::CurrentFramePng); },
-        [this]() { requestExportDialog(ExportKind::SpriteSheetRowAllPng); },
-        [this]() { requestExportDialog(ExportKind::SpriteSheetRowSelectedPng); },
-        [this]() { requestExportDialog(ExportKind::SpriteSheetColumnAllPng); },
-        [this]() { requestExportDialog(ExportKind::SpriteSheetColumnSelectedPng); },
+        [this]() { spriteSheetExportPopupRequested_ = true; },
         [this]() { closeProjectByContext(activeContext_); },
         [this]() { closeAllProjects(); });
 
@@ -349,6 +388,7 @@ void App::renderFrame()
     // 每帧更新：New Project 弹窗、快捷切换、窗口标题脏标记
     pollDialogResults();
     renderNewProjectPopup();
+    renderSpriteSheetExportPopup();
     renderErrorPopup();
     handleProjectSwitchShortcut();
     refreshWindowLabels();
@@ -424,6 +464,23 @@ void App::renderFrame()
 
 void App::shutdown()
 {
+    // 先释放导出模式图标纹理，避免 GL 资源泄漏。
+    if (spriteSheetRowIconTexture_ != 0)
+    {
+        glDeleteTextures(1, &spriteSheetRowIconTexture_);
+        spriteSheetRowIconTexture_ = 0;
+    }
+    if (spriteSheetColumnIconTexture_ != 0)
+    {
+        glDeleteTextures(1, &spriteSheetColumnIconTexture_);
+        spriteSheetColumnIconTexture_ = 0;
+    }
+    if (spriteSheetRowColumnIconTexture_ != 0)
+    {
+        glDeleteTextures(1, &spriteSheetRowColumnIconTexture_);
+        spriteSheetRowColumnIconTexture_ = 0;
+    }
+
     // 先销毁窗口，再清空会话，防止悬空指针
     WindowFactory::getInstance().cleanup();
     projectSessions_.clear();
@@ -739,6 +796,23 @@ void App::requestExportDialog(ExportKind kind)
     }
 
     exportDialogKind_ = kind;
+    exportDialogSpriteMode_ = spriteSheetExportMode_;
+    exportDialogUseSelectedFrames_ = spriteSheetExportUseSelectedFrames_;
+    exportDialogColumnsPerRow_ = std::max(1, spriteSheetExportColumnsPerRow_);
+    exportDialogUseCustomGroups_ = spriteSheetExportUseCustomGroups_;
+    exportDialogGroupSpacing_ = std::max(0, spriteSheetExportGroupSpacing_);
+    exportDialogCustomGroups_.clear();
+    if (spriteSheetExportUseCustomGroups_)
+    {
+        // 仅在“分组模式”下解析分组，避免影响原有行/列/网格流程。
+        std::string parseError;
+        if (!buildResolvedSpriteGroups(exportDialogCustomGroups_, parseError))
+        {
+            showError(parseError.empty() ? "Invalid custom sprite groups." : parseError);
+            return;
+        }
+    }
+
     static const SDL_DialogFileFilter filters[] = {
         {"PNG Image", "png"},
         {"All Files", "*"}
@@ -755,21 +829,21 @@ void App::requestExportDialog(ExportKind kind)
         defaultPath = baseName + "_frame_"
             + std::to_string(activeContext_->getCurrentFrameIndex() + 1) + ".png";
     }
-    else if (kind == ExportKind::SpriteSheetRowAllPng)
-    {
-        defaultPath = baseName + "_spritesheet_row_all.png";
-    }
-    else if (kind == ExportKind::SpriteSheetRowSelectedPng)
-    {
-        defaultPath = baseName + "_spritesheet_row_selected.png";
-    }
-    else if (kind == ExportKind::SpriteSheetColumnAllPng)
-    {
-        defaultPath = baseName + "_spritesheet_column_all.png";
-    }
     else
     {
-        defaultPath = baseName + "_spritesheet_column_selected.png";
+        // 根据配置模式拼接默认导出文件名，方便用户区分不同布局。
+        const char* modeText = "row";
+        if (spriteSheetExportUseCustomGroups_)
+            modeText = "grouped";
+        else if (spriteSheetExportMode_ == SpriteSheetExportMode::Column)
+            modeText = "column";
+        else if (spriteSheetExportMode_ == SpriteSheetExportMode::RowColumn)
+            modeText = "rowcolumn";
+
+        const char* scopeText = spriteSheetExportUseCustomGroups_
+            ? "custom"
+            : (spriteSheetExportUseSelectedFrames_ ? "selected" : "all");
+        defaultPath = baseName + "_spritesheet_" + modeText + "_" + scopeText + ".png";
     }
 
     exportDialogInFlight_ = true;
@@ -859,6 +933,12 @@ void SDLCALL App::onExportDialogClosed(void* userdata, const char* const* fileli
 
     app->pendingExportPath_ = filelist[0];
     app->pendingExportKind_ = app->exportDialogKind_;
+    app->pendingExportSpriteMode_ = app->exportDialogSpriteMode_;
+    app->pendingExportUseSelectedFrames_ = app->exportDialogUseSelectedFrames_;
+    app->pendingExportColumnsPerRow_ = app->exportDialogColumnsPerRow_;
+    app->pendingExportUseCustomGroups_ = app->exportDialogUseCustomGroups_;
+    app->pendingExportGroupSpacing_ = app->exportDialogGroupSpacing_;
+    app->pendingExportCustomGroups_ = app->exportDialogCustomGroups_;
     app->pendingExportReady_ = true;
 }
 
@@ -870,6 +950,12 @@ void App::pollDialogResults()
     std::string dialogError;
     ProjectFileFormat saveFormat = ProjectFileFormat::Binary;
     ExportKind exportKind = ExportKind::CurrentFramePng;
+    SpriteSheetExportMode exportSpriteMode = SpriteSheetExportMode::Row;
+    bool exportUseSelectedFrames = false;
+    int exportColumnsPerRow = 4;
+    bool exportUseCustomGroups = false;
+    int exportGroupSpacing = 8;
+    std::vector<SpriteSheetGroupResolved> exportCustomGroups;
     {
         std::lock_guard<std::mutex> guard(dialogMutex_);
         if (pendingOpenReady_)
@@ -897,6 +983,13 @@ void App::pollDialogResults()
             pendingExportPath_.clear();
             pendingExportReady_ = false;
             exportKind = pendingExportKind_;
+            exportSpriteMode = pendingExportSpriteMode_;
+            exportUseSelectedFrames = pendingExportUseSelectedFrames_;
+            exportColumnsPerRow = pendingExportColumnsPerRow_;
+            exportUseCustomGroups = pendingExportUseCustomGroups_;
+            exportGroupSpacing = pendingExportGroupSpacing_;
+            exportCustomGroups = pendingExportCustomGroups_;
+            pendingExportCustomGroups_.clear();
         }
     }
 
@@ -907,7 +1000,14 @@ void App::pollDialogResults()
     if (!savePath.empty())
         saveActiveProjectAs(savePath, saveFormat);
     if (!exportPath.empty())
-        exportToPath(exportPath, exportKind);
+        exportToPath(exportPath,
+                     exportKind,
+                     exportSpriteMode,
+                     exportUseSelectedFrames,
+                     exportColumnsPerRow,
+                     exportUseCustomGroups,
+                     exportCustomGroups,
+                     exportGroupSpacing);
 }
 
 void App::renderErrorPopup()
@@ -998,7 +1098,14 @@ bool App::saveActiveProjectAs(const std::string& path, ProjectFileFormat preferr
     return saveProjectAs(activeContext_, path, preferredFormat);
 }
 
-bool App::exportToPath(const std::string& path, ExportKind kind)
+bool App::exportToPath(const std::string& path,
+                       ExportKind kind,
+                       SpriteSheetExportMode spriteMode,
+                       bool useSelectedFrames,
+                       int columnsPerRow,
+                       bool useCustomGroups,
+                       const std::vector<SpriteSheetGroupResolved>& customGroups,
+                       int groupSpacing)
 {
     if (!activeContext_ || !activeContext_->hasProject())
     {
@@ -1026,19 +1133,44 @@ bool App::exportToPath(const std::string& path, ExportKind kind)
         return true;
     }
 
-    // 行/列排版由导出类型决定。
-    const ImageExporter::SpriteSheetLayout layout =
-        (kind == ExportKind::SpriteSheetColumnAllPng || kind == ExportKind::SpriteSheetColumnSelectedPng)
-            ? ImageExporter::SpriteSheetLayout::Column
-            : ImageExporter::SpriteSheetLayout::Row;
+    // 分组模式优先：每组可独立行排/列排，再进行组级拼接。
+    if (useCustomGroups)
+    {
+        std::vector<ImageExporter::SpriteGroup> groups;
+        groups.reserve(customGroups.size());
+        for (const SpriteSheetGroupResolved& customGroup : customGroups)
+        {
+            ImageExporter::SpriteGroup group;
+            group.name = customGroup.name;
+            group.frameIndices = customGroup.frameIndices;
+            group.layout = customGroup.mode == SpriteSheetExportMode::Column
+                ? ImageExporter::SpriteSheetLayout::Column
+                : ImageExporter::SpriteSheetLayout::Row;
+            groups.push_back(std::move(group));
+        }
 
-    // 导出范围由导出类型决定：
-    // - All: 传空列表，导出器内部会扩展为全部帧
-    // - Selected: 使用时间轴当前选区
+        if (!ImageExporter::exportGroupedSpriteSheetPng(
+                *project,
+                groups,
+                std::max(0, groupSpacing),
+                finalPath,
+                &error))
+        {
+            showError(error.empty() ? "Failed to export grouped sprite sheet." : error);
+            return false;
+        }
+        return true;
+    }
+
+    // 传统模式：行 / 列 / 行列网格。
+    ImageExporter::SpriteSheetLayout layout = ImageExporter::SpriteSheetLayout::Row;
+    if (spriteMode == SpriteSheetExportMode::Column)
+        layout = ImageExporter::SpriteSheetLayout::Column;
+    else if (spriteMode == SpriteSheetExportMode::RowColumn)
+        layout = ImageExporter::SpriteSheetLayout::RowColumn;
+
     std::vector<int> frameIndices;
-    const bool exportSelected = (kind == ExportKind::SpriteSheetRowSelectedPng
-                                 || kind == ExportKind::SpriteSheetColumnSelectedPng);
-    if (exportSelected)
+    if (useSelectedFrames)
     {
         frameIndices = activeContext_->getSelectedFrameIndices();
         if (frameIndices.empty())
@@ -1048,12 +1180,400 @@ bool App::exportToPath(const std::string& path, ExportKind kind)
         }
     }
 
-    if (!ImageExporter::exportSpriteSheetPng(*project, frameIndices, layout, finalPath, &error))
+    if (!ImageExporter::exportSpriteSheetPng(*project,
+                                             frameIndices,
+                                             layout,
+                                             std::max(1, columnsPerRow),
+                                             finalPath,
+                                             &error))
     {
         showError(error.empty() ? "Failed to export sprite sheet." : error);
         return false;
     }
     return true;
+}
+
+bool App::parseFrameListText(const std::string& text,
+                             int maxFrameCount,
+                             std::vector<int>& outIndices,
+                             std::string& outError) const
+{
+    outIndices.clear();
+    outError.clear();
+
+    if (maxFrameCount <= 0)
+    {
+        outError = "Project has no frames.";
+        return false;
+    }
+
+    // 支持输入格式：
+    // 1) 单值：1, 5, 12
+    // 2) 区间：3-7（闭区间）
+    // 3) 混合：1,2,5-8,10
+    // 分隔符支持逗号/空格/分号，统一先归一化为逗号再解析。
+    std::string normalized = text;
+    for (char& ch : normalized)
+    {
+        if (ch == ' ' || ch == ';' || ch == '\t' || ch == '\n' || ch == '\r')
+            ch = ',';
+    }
+
+    std::vector<bool> used(static_cast<size_t>(maxFrameCount), false);
+    std::stringstream ss(normalized);
+    std::string token;
+    while (std::getline(ss, token, ','))
+    {
+        if (token.empty())
+            continue;
+
+        const size_t dashPos = token.find('-');
+        if (dashPos == std::string::npos)
+        {
+            int value = 0;
+            try
+            {
+                value = std::stoi(token);
+            }
+            catch (...)
+            {
+                outError = "Invalid frame token: " + token;
+                return false;
+            }
+
+            if (value < 1 || value > maxFrameCount)
+            {
+                outError = "Frame index out of range (1-based): " + std::to_string(value);
+                return false;
+            }
+
+            const int idx = value - 1;
+            if (!used[static_cast<size_t>(idx)])
+            {
+                outIndices.push_back(idx);
+                used[static_cast<size_t>(idx)] = true;
+            }
+            continue;
+        }
+
+        const std::string left = token.substr(0, dashPos);
+        const std::string right = token.substr(dashPos + 1);
+        int startValue = 0;
+        int endValue = 0;
+        try
+        {
+            startValue = std::stoi(left);
+            endValue = std::stoi(right);
+        }
+        catch (...)
+        {
+            outError = "Invalid frame range token: " + token;
+            return false;
+        }
+
+        if (startValue < 1 || endValue < 1 || startValue > maxFrameCount || endValue > maxFrameCount)
+        {
+            outError = "Frame range out of bounds (1-based): " + token;
+            return false;
+        }
+
+        if (startValue > endValue)
+            std::swap(startValue, endValue);
+
+        for (int value = startValue; value <= endValue; ++value)
+        {
+            const int idx = value - 1;
+            if (!used[static_cast<size_t>(idx)])
+            {
+                outIndices.push_back(idx);
+                used[static_cast<size_t>(idx)] = true;
+            }
+        }
+    }
+
+    if (outIndices.empty())
+    {
+        outError = "Frame list is empty.";
+        return false;
+    }
+    return true;
+}
+
+bool App::buildResolvedSpriteGroups(std::vector<SpriteSheetGroupResolved>& outGroups, std::string& outError) const
+{
+    outGroups.clear();
+    outError.clear();
+
+    if (!activeContext_ || !activeContext_->hasProject())
+    {
+        outError = "No active project to export.";
+        return false;
+    }
+
+    Project* project = activeContext_->getProject();
+    if (!project)
+    {
+        outError = "No project data to export.";
+        return false;
+    }
+
+    const int frameCount = project->getFrameCount();
+    if (frameCount <= 0)
+    {
+        outError = "Project has no frames.";
+        return false;
+    }
+
+    // 自定义分组导出直接沿用“时间轴右键创建”的分组数据，
+    // 不再要求用户在导出弹窗重复输入帧号。
+    const std::vector<AppContext::FrameGroup>& groups = activeContext_->getFrameGroups();
+    if (groups.empty())
+    {
+        outError = "No frame groups. Please create groups in timeline first.";
+        return false;
+    }
+
+    for (size_t i = 0; i < groups.size(); ++i)
+    {
+        const AppContext::FrameGroup& group = groups[i];
+        if (group.frameIndices.empty())
+            continue;
+
+        SpriteSheetGroupResolved resolved;
+        resolved.name = group.name.empty() ? ("Group " + std::to_string(i + 1)) : group.name;
+        resolved.mode = SpriteSheetExportMode::Row; // 当前分组导出先默认“组内按行排”
+        resolved.frameIndices = group.frameIndices;
+        outGroups.push_back(std::move(resolved));
+    }
+
+    if (outGroups.empty())
+    {
+        outError = "No valid frame groups to export.";
+        return false;
+    }
+
+    return true;
+}
+
+void App::renderSpriteSheetExportPopup()
+{
+    // 菜单点击后只设置请求标志，真正 OpenPopup 放在渲染帧中执行。
+    if (spriteSheetExportPopupRequested_)
+    {
+        ImGui::OpenPopup("Export Sprite Sheet");
+        spriteSheetExportPopupRequested_ = false;
+    }
+
+    if (!ImGui::BeginPopupModal("Export Sprite Sheet", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+        return;
+
+    // 首次打开时加载模式图标（row/column/row&column）。
+    if (!spriteSheetExportIconsLoaded_)
+    {
+        const char* rowCandidates[] = {"src/assets/row.png", "../src/assets/row.png", "../../src/assets/row.png"};
+        const char* colCandidates[] = {"src/assets/column.png", "../src/assets/column.png", "../../src/assets/column.png"};
+        const char* rowColCandidates[] = {"src/assets/row&column.png", "../src/assets/row&column.png", "../../src/assets/row&column.png"};
+
+        for (const char* p : rowCandidates)
+        {
+            spriteSheetRowIconTexture_ = loadTextureFromFile(p);
+            if (spriteSheetRowIconTexture_ != 0)
+                break;
+        }
+        for (const char* p : colCandidates)
+        {
+            spriteSheetColumnIconTexture_ = loadTextureFromFile(p);
+            if (spriteSheetColumnIconTexture_ != 0)
+                break;
+        }
+        for (const char* p : rowColCandidates)
+        {
+            spriteSheetRowColumnIconTexture_ = loadTextureFromFile(p);
+            if (spriteSheetRowColumnIconTexture_ != 0)
+                break;
+        }
+        spriteSheetExportIconsLoaded_ = true;
+    }
+
+    ImGui::TextUnformatted("Select sprite sheet mode");
+    ImGui::Separator();
+
+    auto drawModeButton = [this](SpriteSheetExportMode mode, unsigned int texture, const char* fallbackLabel) {
+        const bool selected = (!spriteSheetExportUseCustomGroups_ && spriteSheetExportMode_ == mode);
+        if (selected)
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.20f, 0.45f, 0.75f, 0.90f));
+
+        bool clicked = false;
+        if (texture != 0)
+        {
+            clicked = ImGui::ImageButton(
+                fallbackLabel,
+                reinterpret_cast<ImTextureID>(static_cast<uintptr_t>(texture)),
+                ImVec2(44.0f, 44.0f));
+        }
+        else
+        {
+            clicked = ImGui::Button(fallbackLabel, ImVec2(80.0f, 44.0f));
+        }
+
+        if (selected)
+            ImGui::PopStyleColor();
+
+        if (clicked)
+        {
+            spriteSheetExportUseCustomGroups_ = false;
+            spriteSheetExportMode_ = mode;
+        }
+    };
+
+    drawModeButton(SpriteSheetExportMode::Row, spriteSheetRowIconTexture_, "Row");
+    ImGui::SameLine();
+    drawModeButton(SpriteSheetExportMode::Column, spriteSheetColumnIconTexture_, "Column");
+    ImGui::SameLine();
+    drawModeButton(SpriteSheetExportMode::RowColumn, spriteSheetRowColumnIconTexture_, "Row+Column");
+
+    ImGui::SameLine();
+    // 第四种逻辑模式：分组自定义（不使用图标，使用文本按钮避免增加资源依赖）。
+    //
+    // 关键修复说明：
+    // - 这里必须用“点击前状态”控制 Push/Pop 是否配对；
+    // - 不能在 Button 点击后再用 spriteSheetExportUseCustomGroups_ 判断 Pop，
+    //   否则当按钮把 false 改成 true 时，会出现“未 Push 却 Pop”的栈失衡，
+    //   进而触发 ImGui 的 "Calling PopStyleColor() too many times!" 断言。
+    const bool customModeSelectedBeforeClick = spriteSheetExportUseCustomGroups_;
+    if (customModeSelectedBeforeClick)
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.20f, 0.45f, 0.75f, 0.90f));
+    if (ImGui::Button("Custom Groups", ImVec2(130.0f, 44.0f)))
+        spriteSheetExportUseCustomGroups_ = true;
+    if (customModeSelectedBeforeClick)
+        ImGui::PopStyleColor();
+
+    ImGui::Separator();
+
+    if (!spriteSheetExportUseCustomGroups_)
+    {
+        // 传统模式配置（保持原逻辑）。
+        ImGui::TextUnformatted("Export range");
+        int range = spriteSheetExportUseSelectedFrames_ ? 1 : 0;
+        ImGui::RadioButton("All Frames", &range, 0);
+        ImGui::SameLine();
+        ImGui::RadioButton("Selected Frames", &range, 1);
+        spriteSheetExportUseSelectedFrames_ = (range == 1);
+
+        if (spriteSheetExportMode_ == SpriteSheetExportMode::RowColumn)
+        {
+            ImGui::TextUnformatted("Grid config");
+            ImGui::SetNextItemWidth(120.0f);
+            ImGui::InputInt("Columns Per Row", &spriteSheetExportColumnsPerRow_);
+            if (spriteSheetExportColumnsPerRow_ < 1)
+                spriteSheetExportColumnsPerRow_ = 1;
+        }
+
+        // 预估输出尺寸，帮助用户在导出前确认布局结果。
+        if (activeContext_ && activeContext_->hasProject())
+        {
+            Project* project = activeContext_->getProject();
+            const int frameW = project->getWidth();
+            const int frameH = project->getHeight();
+            int frameCount = project->getFrameCount();
+            if (spriteSheetExportUseSelectedFrames_)
+                frameCount = static_cast<int>(activeContext_->getSelectedFrameIndices().size());
+
+            frameCount = std::max(0, frameCount);
+            int outW = 0;
+            int outH = 0;
+            if (frameCount > 0)
+            {
+                if (spriteSheetExportMode_ == SpriteSheetExportMode::Row)
+                {
+                    outW = frameW * frameCount;
+                    outH = frameH;
+                }
+                else if (spriteSheetExportMode_ == SpriteSheetExportMode::Column)
+                {
+                    outW = frameW;
+                    outH = frameH * frameCount;
+                }
+                else
+                {
+                    const int cols = std::min(frameCount, std::max(1, spriteSheetExportColumnsPerRow_));
+                    const int rows = (frameCount + cols - 1) / cols;
+                    outW = frameW * cols;
+                    outH = frameH * rows;
+                }
+            }
+            ImGui::Text("Preview: frames=%d, output=%dx%d", frameCount, outW, outH);
+        }
+    }
+    else
+    {
+        // 分组自定义模式配置（读取时间轴分组）：
+        // - 不再手工输入帧号；
+        // - 引导用户在时间轴中 Ctrl 多选 + 右键创建分组。
+        ImGui::TextUnformatted("Custom group settings");
+        ImGui::SetNextItemWidth(120.0f);
+        ImGui::InputInt("Group Spacing", &spriteSheetExportGroupSpacing_);
+        if (spriteSheetExportGroupSpacing_ < 0)
+            spriteSheetExportGroupSpacing_ = 0;
+
+        const std::vector<AppContext::FrameGroup>* groups = activeContext_
+            ? &activeContext_->getFrameGroups()
+            : nullptr;
+        if (!groups || groups->empty())
+        {
+            ImGui::Separator();
+            ImGui::TextUnformatted("No timeline groups found.");
+            ImGui::TextUnformatted("Create groups in Timeline: Ctrl+Click frames -> Right Click -> Group Selected Frames...");
+        }
+        else
+        {
+            ImGui::Separator();
+            ImGui::Text("Groups from timeline: %d", static_cast<int>(groups->size()));
+            for (size_t i = 0; i < groups->size(); ++i)
+            {
+                const AppContext::FrameGroup& group = (*groups)[i];
+                ImGui::BulletText("%s  (frames: %d)", group.name.c_str(), static_cast<int>(group.frameIndices.size()));
+            }
+        }
+    }
+
+    ImGui::Separator();
+    if (ImGui::Button("Export", ImVec2(120.0f, 0.0f)))
+    {
+        if (!spriteSheetExportUseCustomGroups_
+            && spriteSheetExportUseSelectedFrames_
+            && (!activeContext_ || activeContext_->getSelectedFrameIndices().empty()))
+        {
+            showError("No selected frames to export.");
+        }
+        else if (spriteSheetExportUseCustomGroups_)
+        {
+            // 先在弹窗内做一次解析校验，错误尽早反馈给用户。
+            std::vector<SpriteSheetGroupResolved> resolvedGroups;
+            std::string parseError;
+            if (!buildResolvedSpriteGroups(resolvedGroups, parseError))
+            {
+                showError(parseError.empty() ? "Invalid custom groups." : parseError);
+            }
+            else
+            {
+                requestExportDialog(ExportKind::SpriteSheetConfiguredPng);
+                ImGui::CloseCurrentPopup();
+            }
+        }
+        else
+        {
+            requestExportDialog(ExportKind::SpriteSheetConfiguredPng);
+            ImGui::CloseCurrentPopup();
+        }
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Cancel", ImVec2(120.0f, 0.0f)))
+    {
+        ImGui::CloseCurrentPopup();
+    }
+
+    ImGui::EndPopup();
 }
 
 bool App::openProjectFromPath(const std::string& path)

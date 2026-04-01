@@ -49,6 +49,21 @@ enum class ToolType : int
 class AppContext
 {
 public:
+    /**
+     * @brief 时间轴帧分组结构。
+     *
+     * 用途：
+     * - 为“多选帧右键分组”提供数据承载；
+     * - 为时间轴视觉区分提供颜色；
+     * - 为精灵图分组导出提供直接数据来源。
+     */
+    struct FrameGroup
+    {
+        std::string name;              // 分组名称（用户命名）
+        std::vector<int> frameIndices; // 组内帧索引（0-based）
+        uint32_t colorRGBA = 0xFFFFFFFF; // 组高亮颜色（RGBA8888）
+    };
+
     AppContext();
     ~AppContext();
 
@@ -196,6 +211,65 @@ public:
      * @param fallbackIndex 当选区为空时回退使用的帧索引。
      */
     void sanitizeFrameSelection(int frameCount, int fallbackIndex);
+
+    /**
+     * @brief 获取当前项目的帧分组列表。
+     */
+    const std::vector<FrameGroup>& getFrameGroups() const
+    {
+        return frameGroups_;
+    }
+
+    /**
+     * @brief 使用给定帧列表创建一个新分组。
+     *
+     * 行为约定：
+     * - 会先去重并过滤越界帧；
+     * - 被本次分组包含的帧，会从其他旧分组中移除（避免重叠归属混乱）；
+     * - 若旧分组因此为空，会被自动删除；
+     * - 新分组会追加到列表末尾。
+     *
+     * @param groupName 分组名称（空字符串时自动命名）。
+     * @param frameIndices 分组帧列表（0-based）。
+     * @param frameCount 当前总帧数（用于边界过滤）。
+     * @param colorRGBA 分组颜色（RGBA8888）。
+     */
+    void addFrameGroup(const std::string& groupName,
+                       const std::vector<int>& frameIndices,
+                       int frameCount,
+                       uint32_t colorRGBA);
+
+    /**
+     * @brief 按当前帧总数清理分组越界帧，并删除空分组。
+     */
+    void sanitizeFrameGroups(int frameCount);
+
+    /**
+     * @brief 在时间轴插入新帧后，同步更新所有分组索引。
+     *
+     * 规则：
+     * - 所有 >= insertedFrameIndex 的索引整体 +1（因为项目帧数组后移）；
+     * - 若 anchorFrameIndex 所在分组存在，则把新帧 insertedFrameIndex
+     *   插入到该分组中 anchorFrameIndex 的后面，保持组内相对顺序。
+     *
+     * @param insertedFrameIndex 新插入帧的索引（0-based）。
+     * @param anchorFrameIndex 插帧参照帧（通常是“当前帧”）。
+     * @param frameCount 插帧后的总帧数（用于最终校验）。
+     */
+    void onFrameInserted(int insertedFrameIndex, int anchorFrameIndex, int frameCount);
+
+    /**
+     * @brief 在时间轴删除帧后，同步更新所有分组索引。
+     *
+     * 规则：
+     * - 等于 removedFrameIndex 的分组成员被删除；
+     * - 大于 removedFrameIndex 的索引整体 -1；
+     * - 空分组自动清理。
+     *
+     * @param removedFrameIndex 被删除帧索引（0-based）。
+     * @param frameCount 删帧后的总帧数（用于最终校验）。
+     */
+    void onFrameRemoved(int removedFrameIndex, int frameCount);
 
     // -------------------------------------------------------------------------
     // 绘图工具与颜色
@@ -365,6 +439,7 @@ private:
     int currentAnimationIndex_ = 0;
     int currentFrameIndex_ = 0;
     std::vector<int> selectedFrameIndices_ = {0};
+    std::vector<FrameGroup> frameGroups_;
 
     // 工具与颜色
     ToolType tool_ = ToolType::Brush;

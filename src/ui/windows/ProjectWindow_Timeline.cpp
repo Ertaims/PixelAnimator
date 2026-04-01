@@ -9,6 +9,7 @@
 #include <SDL3_image/SDL_image.h>
 
 #include <algorithm>
+#include <cstdio>
 #include <vector>
 
 namespace
@@ -64,6 +65,42 @@ void ensureTimelineIconTextures(GLuint& playIcon, GLuint& pauseIcon, bool& loade
     }
 
     loaded = true;
+}
+
+ImVec4 rgbaToImVec4(uint32_t rgba)
+{
+    const float r = static_cast<float>((rgba >> 0) & 0xFF) / 255.0f;
+    const float g = static_cast<float>((rgba >> 8) & 0xFF) / 255.0f;
+    const float b = static_cast<float>((rgba >> 16) & 0xFF) / 255.0f;
+    const float a = static_cast<float>((rgba >> 24) & 0xFF) / 255.0f;
+    return ImVec4(r, g, b, a);
+}
+
+uint32_t pickGroupColorByIndex(size_t index)
+{
+    // 预置一组区分度较高的颜色，方便时间轴直观区分不同分组。
+    static const uint32_t kPalette[] = {
+        0x5EA1FFFFu, // 天蓝
+        0x6ED6A0FFu, // 薄荷绿
+        0xF2B566FFu, // 橙黄
+        0xC98CFFFFu, // 紫粉
+        0x82D8F4FFu, // 青蓝
+        0xF48AA1FFu, // 珊瑚粉
+        0xA2D56DFFu, // 黄绿
+        0xF4D36AFFu  // 暖黄
+    };
+    return kPalette[index % (sizeof(kPalette) / sizeof(kPalette[0]))];
+}
+
+int findFrameGroupIndex(const std::vector<AppContext::FrameGroup>& groups, int frameIndex)
+{
+    for (size_t gi = 0; gi < groups.size(); ++gi)
+    {
+        const std::vector<int>& frames = groups[gi].frameIndices;
+        if (std::find(frames.begin(), frames.end(), frameIndex) != frames.end())
+            return static_cast<int>(gi);
+    }
+    return -1;
 }
 } // namespace
 
@@ -122,6 +159,10 @@ void ProjectWindow::renderTimelinePanel(Project* project)
         {
             const int current = context->getCurrentFrameIndex();
             project->insertFrameAfter(current, 0x00000000);
+            // 插帧后同步分组索引：
+            // - 新帧索引 = current + 1；
+            // - 若当前帧属于某分组，新帧自动并入该分组并跟在当前帧后面。
+            context->onFrameInserted(current + 1, current, project->getFrameCount());
             context->setSingleFrameSelection(current + 1, project->getFrameCount());
             context->setProjectDirty(true);
         }
@@ -134,6 +175,8 @@ void ProjectWindow::renderTimelinePanel(Project* project)
                 const int current = context->getCurrentFrameIndex();
                 project->removeFrame(current);
                 const int newCount = project->getFrameCount();
+                // 删帧后同步分组索引，避免组成员索引错位。
+                context->onFrameRemoved(current, newCount);
                 context->setSingleFrameSelection(std::min(current, newCount - 1), newCount);
                 context->setProjectDirty(true);
             }
@@ -209,6 +252,9 @@ void ProjectWindow::renderTimelinePanel(Project* project)
     ImGui::Separator();
 
     const int frameCount = project->getFrameCount();
+    context->sanitizeFrameGroups(frameCount);
+    const std::vector<AppContext::FrameGroup>& frameGroups = context->getFrameGroups();
+
     // 当前显示帧取“主选中帧”（多选时选区第一个）。
     context->sanitizeFrameSelection(frameCount, context->getCurrentFrameIndex());
     int current = context->getPrimarySelectedFrameIndex();
@@ -261,7 +307,24 @@ void ProjectWindow::renderTimelinePanel(Project* project)
         // 多选高亮：选区内任意帧都高亮；主帧会因 current 同步显示在画布。
         const std::vector<int>& selectedFrames = context->getSelectedFrameIndices();
         const bool selected = std::find(selectedFrames.begin(), selectedFrames.end(), i) != selectedFrames.end();
-        const ImVec4 col = selected ? ImVec4(0.2f, 0.5f, 0.9f, 0.9f) : ImVec4(0.35f, 0.35f, 0.35f, 0.9f);
+        const int groupIndex = findFrameGroupIndex(frameGroups, i);
+        const bool grouped = groupIndex >= 0;
+        const ImVec4 groupCol = grouped
+            ? rgbaToImVec4(frameGroups[static_cast<size_t>(groupIndex)].colorRGBA)
+            : ImVec4(0.35f, 0.35f, 0.35f, 0.9f);
+
+        // 颜色策略：
+        // - 普通：灰色
+        // - 分组：使用组颜色
+        // - 选中：在当前底色基础上进一步提亮，保证选中态优先可见
+        ImVec4 col = groupCol;
+        if (selected)
+        {
+            col.x = std::min(1.0f, col.x + 0.15f);
+            col.y = std::min(1.0f, col.y + 0.15f);
+            col.z = std::min(1.0f, col.z + 0.15f);
+            col.w = 0.95f;
+        }
         ImGui::PushStyleColor(ImGuiCol_Button, col);
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(col.x + 0.1f, col.y + 0.1f, col.z + 0.1f, 1.0f));
         ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(col.x + 0.15f, col.y + 0.15f, col.z + 0.15f, 1.0f));
@@ -276,9 +339,82 @@ void ProjectWindow::renderTimelinePanel(Project* project)
             // 画布总是显示主选中帧。
             context->setCurrentFrameIndex(context->getPrimarySelectedFrameIndex());
         }
+
+        // 为已分组帧绘制一个顶部细条，增强视觉区分度（即使未选中也可识别归组）。
+        if (grouped)
+        {
+            const ImVec2 minPos = ImGui::GetItemRectMin();
+            const ImVec2 maxPos = ImGui::GetItemRectMax();
+            ImGui::GetWindowDrawList()->AddRectFilled(
+                ImVec2(minPos.x, minPos.y),
+                ImVec2(maxPos.x, minPos.y + 2.5f),
+                ImGui::GetColorU32(groupCol));
+        }
+
+        // 右键菜单：对“当前多选帧”创建分组。
+        if (ImGui::BeginPopupContextItem("##frame_context"))
+        {
+            const size_t selectedCount = selectedFrames.size();
+            if (selectedCount >= 2)
+            {
+                if (ImGui::MenuItem("Group Selected Frames..."))
+                {
+                    timelineState_.pendingGroupFrames = selectedFrames;
+                    std::snprintf(timelineState_.pendingGroupName,
+                                  sizeof(timelineState_.pendingGroupName),
+                                  "Group %d",
+                                  static_cast<int>(frameGroups.size() + 1));
+                    timelineState_.openCreateGroupNamePopup = true;
+                }
+            }
+            else
+            {
+                ImGui::BeginDisabled();
+                ImGui::MenuItem("Group Selected Frames...");
+                ImGui::EndDisabled();
+                ImGui::TextUnformatted("Tip: Ctrl+Click select at least 2 frames.");
+            }
+            ImGui::EndPopup();
+        }
+
         ImGui::PopStyleColor(3);
         ImGui::PopID();
         ImGui::SameLine();
+    }
+
+    // 统一在帧区域末尾打开命名弹窗，避免与单元格循环中的 PushID 状态耦合。
+    if (timelineState_.openCreateGroupNamePopup)
+    {
+        ImGui::OpenPopup("Create Frame Group");
+        timelineState_.openCreateGroupNamePopup = false;
+    }
+
+    if (ImGui::BeginPopupModal("Create Frame Group", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+    {
+        ImGui::TextUnformatted("Group Name");
+        ImGui::SetNextItemWidth(220.0f);
+        ImGui::InputText("##group_name", timelineState_.pendingGroupName, sizeof(timelineState_.pendingGroupName));
+
+        ImGui::Separator();
+        ImGui::Text("Frames: %d selected", static_cast<int>(timelineState_.pendingGroupFrames.size()));
+
+        if (ImGui::Button("Create", ImVec2(120.0f, 0.0f)))
+        {
+            const uint32_t color = pickGroupColorByIndex(frameGroups.size());
+            context->addFrameGroup(timelineState_.pendingGroupName,
+                                   timelineState_.pendingGroupFrames,
+                                   frameCount,
+                                   color);
+            timelineState_.pendingGroupFrames.clear();
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel", ImVec2(120.0f, 0.0f)))
+        {
+            timelineState_.pendingGroupFrames.clear();
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndPopup();
     }
 
     ImGui::EndChild();

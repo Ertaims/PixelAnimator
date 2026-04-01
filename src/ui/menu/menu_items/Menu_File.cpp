@@ -13,10 +13,7 @@ Menu_File::Menu_File(Menu* menu,
                      const std::function<void()>& onSaveAsBinaryProjectCallback,
                      const std::function<void()>& onSaveAsJsonProjectCallback,
                      const std::function<void()>& onExportCurrentFramePngCallback,
-                     const std::function<void()>& onExportSpriteSheetRowAllPngCallback,
-                     const std::function<void()>& onExportSpriteSheetRowSelectedPngCallback,
-                     const std::function<void()>& onExportSpriteSheetColumnAllPngCallback,
-                     const std::function<void()>& onExportSpriteSheetColumnSelectedPngCallback,
+                     const std::function<void()>& onExportSpriteSheetConfigCallback,
                      const std::function<void()>& onCloseProjectCallback,
                      const std::function<void()>& onCloseAllProjectsCallback)
     : MenuOptionBase(menu),
@@ -28,10 +25,7 @@ Menu_File::Menu_File(Menu* menu,
       onSaveAsBinaryProjectCallback_(onSaveAsBinaryProjectCallback),
       onSaveAsJsonProjectCallback_(onSaveAsJsonProjectCallback),
       onExportCurrentFramePngCallback_(onExportCurrentFramePngCallback),
-      onExportSpriteSheetRowAllPngCallback_(onExportSpriteSheetRowAllPngCallback),
-      onExportSpriteSheetRowSelectedPngCallback_(onExportSpriteSheetRowSelectedPngCallback),
-      onExportSpriteSheetColumnAllPngCallback_(onExportSpriteSheetColumnAllPngCallback),
-      onExportSpriteSheetColumnSelectedPngCallback_(onExportSpriteSheetColumnSelectedPngCallback),
+      onExportSpriteSheetConfigCallback_(onExportSpriteSheetConfigCallback),
       onCloseProjectCallback_(onCloseProjectCallback),
       onCloseAllProjectsCallback_(onCloseAllProjectsCallback) {}
 
@@ -95,34 +89,20 @@ void Menu_File::initialize() {
 
     Menu* exportMenu = new Menu("Export");
     getMenu()->addItem("Export", exportMenu);
+
+    // 单帧导出保持独立入口，方便快速导出当前帧。
     MenuItem* exportCurrentFramePng = exportMenu->addItem("Current Frame (PNG)...");
     exportCurrentFramePng->setCallback([this]() {
         if (onExportCurrentFramePngCallback_)
             onExportCurrentFramePngCallback_();
     });
 
-    MenuItem* exportSpriteSheetRowAllPng = exportMenu->addItem("Sprite Sheet Row - All Frames (PNG)...");
-    exportSpriteSheetRowAllPng->setCallback([this]() {
-        if (onExportSpriteSheetRowAllPngCallback_)
-            onExportSpriteSheetRowAllPngCallback_();
-    });
-
-    MenuItem* exportSpriteSheetRowSelectedPng = exportMenu->addItem("Sprite Sheet Row - Selected Frames (PNG)...");
-    exportSpriteSheetRowSelectedPng->setCallback([this]() {
-        if (onExportSpriteSheetRowSelectedPngCallback_)
-            onExportSpriteSheetRowSelectedPngCallback_();
-    });
-
-    MenuItem* exportSpriteSheetColumnAllPng = exportMenu->addItem("Sprite Sheet Column - All Frames (PNG)...");
-    exportSpriteSheetColumnAllPng->setCallback([this]() {
-        if (onExportSpriteSheetColumnAllPngCallback_)
-            onExportSpriteSheetColumnAllPngCallback_();
-    });
-
-    MenuItem* exportSpriteSheetColumnSelectedPng = exportMenu->addItem("Sprite Sheet Column - Selected Frames (PNG)...");
-    exportSpriteSheetColumnSelectedPng->setCallback([this]() {
-        if (onExportSpriteSheetColumnSelectedPngCallback_)
-            onExportSpriteSheetColumnSelectedPngCallback_();
+    // 精灵图导出合并为“单入口”：
+    // 点击后由 App 弹出配置对话框，用户在弹窗里选择行/列/行列模式及其它参数。
+    MenuItem* exportSpriteSheetPng = exportMenu->addItem("Sprite Sheet (PNG)...");
+    exportSpriteSheetPng->setCallback([this]() {
+        if (onExportSpriteSheetConfigCallback_)
+            onExportSpriteSheetConfigCallback_();
     });
 
     Menu* importMenu = new Menu("Import");
@@ -164,20 +144,8 @@ void Menu_File::setOnExportCurrentFramePngCallback(const std::function<void()>& 
     onExportCurrentFramePngCallback_ = callback;
 }
 
-void Menu_File::setOnExportSpriteSheetRowAllPngCallback(const std::function<void()>& callback) {
-    onExportSpriteSheetRowAllPngCallback_ = callback;
-}
-
-void Menu_File::setOnExportSpriteSheetRowSelectedPngCallback(const std::function<void()>& callback) {
-    onExportSpriteSheetRowSelectedPngCallback_ = callback;
-}
-
-void Menu_File::setOnExportSpriteSheetColumnAllPngCallback(const std::function<void()>& callback) {
-    onExportSpriteSheetColumnAllPngCallback_ = callback;
-}
-
-void Menu_File::setOnExportSpriteSheetColumnSelectedPngCallback(const std::function<void()>& callback) {
-    onExportSpriteSheetColumnSelectedPngCallback_ = callback;
+void Menu_File::setOnExportSpriteSheetConfigCallback(const std::function<void()>& callback) {
+    onExportSpriteSheetConfigCallback_ = callback;
 }
 
 void Menu_File::setOnCloseProjectCallback(const std::function<void()>& callback) {

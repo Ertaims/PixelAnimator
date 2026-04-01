@@ -6,6 +6,7 @@
 #include "AppContext.h"
 
 #include <algorithm>
+#include <unordered_set>
 
 // 后续实现 CommandStack 后在此包含，并取消下方 TODO 注释
 // #include "CommandStack.h"
@@ -102,6 +103,156 @@ void AppContext::sanitizeFrameSelection(int frameCount, int fallbackIndex)
 
     // 主帧始终是第一个选中帧；画布显示与 currentFrameIndex_ 对齐。
     currentFrameIndex_ = selectedFrameIndices_.front();
+
+    // 帧数量变化后，同步清理分组中的越界帧，避免时间轴高亮访问非法索引。
+    sanitizeFrameGroups(frameCount);
+}
+
+void AppContext::addFrameGroup(const std::string& groupName,
+                               const std::vector<int>& frameIndices,
+                               int frameCount,
+                               uint32_t colorRGBA)
+{
+    if (frameCount <= 0 || frameIndices.empty())
+        return;
+
+    // 1) 过滤越界并去重，保留输入顺序。
+    std::vector<int> filtered;
+    filtered.reserve(frameIndices.size());
+    std::unordered_set<int> seen;
+    for (int idx : frameIndices)
+    {
+        if (idx < 0 || idx >= frameCount)
+            continue;
+        if (seen.insert(idx).second)
+            filtered.push_back(idx);
+    }
+    if (filtered.empty())
+        return;
+
+    // 2) 从旧分组中剔除“将被新分组接管”的帧，保证同一帧仅属于一个分组。
+    for (FrameGroup& group : frameGroups_)
+    {
+        group.frameIndices.erase(
+            std::remove_if(group.frameIndices.begin(),
+                           group.frameIndices.end(),
+                           [&filtered](int idx) {
+                               return std::find(filtered.begin(), filtered.end(), idx) != filtered.end();
+                           }),
+            group.frameIndices.end());
+    }
+
+    // 3) 删除已经为空的旧分组。
+    frameGroups_.erase(
+        std::remove_if(frameGroups_.begin(),
+                       frameGroups_.end(),
+                       [](const FrameGroup& group) { return group.frameIndices.empty(); }),
+        frameGroups_.end());
+
+    // 4) 添加新分组。
+    FrameGroup newGroup;
+    newGroup.name = groupName.empty() ? ("Group " + std::to_string(frameGroups_.size() + 1)) : groupName;
+    newGroup.frameIndices = std::move(filtered);
+    newGroup.colorRGBA = colorRGBA;
+    frameGroups_.push_back(std::move(newGroup));
+}
+
+void AppContext::sanitizeFrameGroups(int frameCount)
+{
+    if (frameCount <= 0)
+    {
+        frameGroups_.clear();
+        return;
+    }
+
+    for (FrameGroup& group : frameGroups_)
+    {
+        group.frameIndices.erase(
+            std::remove_if(group.frameIndices.begin(),
+                           group.frameIndices.end(),
+                           [frameCount](int idx) { return idx < 0 || idx >= frameCount; }),
+            group.frameIndices.end());
+    }
+
+    frameGroups_.erase(
+        std::remove_if(frameGroups_.begin(),
+                       frameGroups_.end(),
+                       [](const FrameGroup& group) { return group.frameIndices.empty(); }),
+        frameGroups_.end());
+}
+
+void AppContext::onFrameInserted(int insertedFrameIndex, int anchorFrameIndex, int frameCount)
+{
+    if (insertedFrameIndex < 0)
+        return;
+
+    // 1) 先定位“参照帧所属分组”（使用插入前索引语义）。
+    int targetGroupIndex = -1;
+    int anchorPosInGroup = -1;
+    for (size_t gi = 0; gi < frameGroups_.size(); ++gi)
+    {
+        std::vector<int>& indices = frameGroups_[gi].frameIndices;
+        auto it = std::find(indices.begin(), indices.end(), anchorFrameIndex);
+        if (it != indices.end())
+        {
+            targetGroupIndex = static_cast<int>(gi);
+            anchorPosInGroup = static_cast<int>(std::distance(indices.begin(), it));
+            break;
+        }
+    }
+
+    // 2) 所有受影响索引统一后移（>= insertedFrameIndex 的成员 +1）。
+    for (FrameGroup& group : frameGroups_)
+    {
+        for (int& idx : group.frameIndices)
+        {
+            if (idx >= insertedFrameIndex)
+                ++idx;
+        }
+    }
+
+    // 3) 若参照帧在某个分组中，则把新帧并入该分组，位置紧跟参照帧之后。
+    if (targetGroupIndex >= 0 && targetGroupIndex < static_cast<int>(frameGroups_.size()))
+    {
+        FrameGroup& targetGroup = frameGroups_[static_cast<size_t>(targetGroupIndex)];
+
+        const bool alreadyExists = std::find(targetGroup.frameIndices.begin(),
+                                             targetGroup.frameIndices.end(),
+                                             insertedFrameIndex) != targetGroup.frameIndices.end();
+        if (!alreadyExists)
+        {
+            const int insertPos = std::clamp(anchorPosInGroup + 1,
+                                             0,
+                                             static_cast<int>(targetGroup.frameIndices.size()));
+            targetGroup.frameIndices.insert(targetGroup.frameIndices.begin() + insertPos, insertedFrameIndex);
+        }
+    }
+
+    // 4) 统一做一次边界/空组清理。
+    sanitizeFrameGroups(frameCount);
+}
+
+void AppContext::onFrameRemoved(int removedFrameIndex, int frameCount)
+{
+    if (removedFrameIndex < 0)
+        return;
+
+    for (FrameGroup& group : frameGroups_)
+    {
+        // 删除被移除的帧。
+        group.frameIndices.erase(
+            std::remove(group.frameIndices.begin(), group.frameIndices.end(), removedFrameIndex),
+            group.frameIndices.end());
+
+        // 删除点之后的索引整体前移。
+        for (int& idx : group.frameIndices)
+        {
+            if (idx > removedFrameIndex)
+                --idx;
+        }
+    }
+
+    sanitizeFrameGroups(frameCount);
 }
 
 bool AppContext::canUndo() const
