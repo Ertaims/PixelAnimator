@@ -301,11 +301,15 @@ void ProjectWindow::renderTimelinePanel(Project* project)
 
     ImGui::Dummy(ImVec2(0.0f, headerH));
 
+    // 由于下面会遍历 frameGroups 引用，为避免遍历期间直接修改容器导致引用失效，
+    // 分组删除操作采用“延迟执行”策略：先记录索引，循环结束后再真正删除。
+    int pendingDeleteGroupIndex = -1;
+
     for (int i = 0; i < frameCount; ++i)
     {
         ImGui::PushID(i);
         // 多选高亮：选区内任意帧都高亮；主帧会因 current 同步显示在画布。
-        const std::vector<int>& selectedFrames = context->getSelectedFrameIndices();
+        const std::vector<int> selectedFrames = context->getSelectedFrameIndices();
         const bool selected = std::find(selectedFrames.begin(), selectedFrames.end(), i) != selectedFrames.end();
         const int groupIndex = findFrameGroupIndex(frameGroups, i);
         const bool grouped = groupIndex >= 0;
@@ -340,6 +344,36 @@ void ProjectWindow::renderTimelinePanel(Project* project)
             context->setCurrentFrameIndex(context->getPrimarySelectedFrameIndex());
         }
 
+        // 帧顺序拖拽：
+        // - 从某个帧单元格开始拖拽；
+        // - 在目标帧单元格释放后，把源帧移动到目标索引位置。
+        if (ImGui::BeginDragDropSource(ImGuiDragDropFlags_SourceNoDisableHover))
+        {
+            timelineState_.draggingFrameIndex = i;
+            ImGui::SetDragDropPayload("TIMELINE_FRAME_INDEX", &i, sizeof(int));
+            ImGui::Text("Move Frame %d", i + 1);
+            ImGui::EndDragDropSource();
+        }
+
+        if (ImGui::BeginDragDropTarget())
+        {
+            if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("TIMELINE_FRAME_INDEX"))
+            {
+                if (payload->DataSize == sizeof(int))
+                {
+                    const int fromIndex = *static_cast<const int*>(payload->Data);
+                    const int toIndex = i;
+                    if (fromIndex != toIndex)
+                    {
+                        project->moveFrame(fromIndex, toIndex);
+                        context->onFrameMoved(fromIndex, toIndex, frameCount);
+                        context->setProjectDirty(true);
+                    }
+                }
+            }
+            ImGui::EndDragDropTarget();
+        }
+
         // 为已分组帧绘制一个顶部细条，增强视觉区分度（即使未选中也可识别归组）。
         if (grouped)
         {
@@ -354,6 +388,25 @@ void ProjectWindow::renderTimelinePanel(Project* project)
         // 右键菜单：对“当前多选帧”创建分组。
         if (ImGui::BeginPopupContextItem("##frame_context"))
         {
+            if (grouped)
+            {
+                const AppContext::FrameGroup& hitGroup = frameGroups[static_cast<size_t>(groupIndex)];
+                if (ImGui::MenuItem("Rename Group..."))
+                {
+                    timelineState_.renameGroupIndex = groupIndex;
+                    std::snprintf(timelineState_.renameGroupName,
+                                  sizeof(timelineState_.renameGroupName),
+                                  "%s",
+                                  hitGroup.name.c_str());
+                    timelineState_.openRenameGroupPopup = true;
+                }
+                if (ImGui::MenuItem("Delete Group"))
+                {
+                    pendingDeleteGroupIndex = groupIndex;
+                }
+                ImGui::Separator();
+            }
+
             const size_t selectedCount = selectedFrames.size();
             if (selectedCount >= 2)
             {
@@ -382,11 +435,23 @@ void ProjectWindow::renderTimelinePanel(Project* project)
         ImGui::SameLine();
     }
 
+    if (pendingDeleteGroupIndex >= 0)
+    {
+        context->removeFrameGroup(pendingDeleteGroupIndex);
+        context->setProjectDirty(true);
+    }
+
     // 统一在帧区域末尾打开命名弹窗，避免与单元格循环中的 PushID 状态耦合。
     if (timelineState_.openCreateGroupNamePopup)
     {
         ImGui::OpenPopup("Create Frame Group");
         timelineState_.openCreateGroupNamePopup = false;
+    }
+
+    if (timelineState_.openRenameGroupPopup)
+    {
+        ImGui::OpenPopup("Rename Frame Group");
+        timelineState_.openRenameGroupPopup = false;
     }
 
     if (ImGui::BeginPopupModal("Create Frame Group", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
@@ -412,6 +477,30 @@ void ProjectWindow::renderTimelinePanel(Project* project)
         if (ImGui::Button("Cancel", ImVec2(120.0f, 0.0f)))
         {
             timelineState_.pendingGroupFrames.clear();
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndPopup();
+    }
+
+    if (ImGui::BeginPopupModal("Rename Frame Group", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+    {
+        ImGui::TextUnformatted("New Group Name");
+        ImGui::SetNextItemWidth(220.0f);
+        ImGui::InputText("##rename_group_name",
+                         timelineState_.renameGroupName,
+                         sizeof(timelineState_.renameGroupName));
+
+        if (ImGui::Button("Apply", ImVec2(120.0f, 0.0f)))
+        {
+            context->renameFrameGroup(timelineState_.renameGroupIndex, timelineState_.renameGroupName);
+            context->setProjectDirty(true);
+            timelineState_.renameGroupIndex = -1;
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel", ImVec2(120.0f, 0.0f)))
+        {
+            timelineState_.renameGroupIndex = -1;
             ImGui::CloseCurrentPopup();
         }
         ImGui::EndPopup();

@@ -8,6 +8,37 @@
 #include <algorithm>
 #include <unordered_set>
 
+namespace
+{
+// 计算“把 fromIndex 移动到 toIndex”后，任意旧索引 oldIndex 映射到的新索引。
+int remapIndexAfterMove(int oldIndex, int fromIndex, int toIndex)
+{
+    if (fromIndex == toIndex)
+        return oldIndex;
+
+    if (fromIndex < toIndex)
+    {
+        // 右移：
+        // - 源位置 from -> to
+        // - (from, to] 区间整体左移 1
+        if (oldIndex == fromIndex)
+            return toIndex;
+        if (oldIndex > fromIndex && oldIndex <= toIndex)
+            return oldIndex - 1;
+        return oldIndex;
+    }
+
+    // 左移：
+    // - 源位置 from -> to
+    // - [to, from) 区间整体右移 1
+    if (oldIndex == fromIndex)
+        return toIndex;
+    if (oldIndex >= toIndex && oldIndex < fromIndex)
+        return oldIndex + 1;
+    return oldIndex;
+}
+} // namespace
+
 // 后续实现 CommandStack 后在此包含，并取消下方 TODO 注释
 // #include "CommandStack.h"
 
@@ -253,6 +284,48 @@ void AppContext::onFrameRemoved(int removedFrameIndex, int frameCount)
     }
 
     sanitizeFrameGroups(frameCount);
+}
+
+void AppContext::onFrameMoved(int fromIndex, int toIndex, int frameCount)
+{
+    if (fromIndex == toIndex)
+        return;
+
+    // 1) 更新选区索引，使“选中的帧对象”在换序后仍被选中。
+    for (int& idx : selectedFrameIndices_)
+    {
+        idx = remapIndexAfterMove(idx, fromIndex, toIndex);
+    }
+    currentFrameIndex_ = remapIndexAfterMove(currentFrameIndex_, fromIndex, toIndex);
+
+    // 2) 更新每个分组内的帧索引。
+    for (FrameGroup& group : frameGroups_)
+    {
+        for (int& idx : group.frameIndices)
+            idx = remapIndexAfterMove(idx, fromIndex, toIndex);
+
+        // 按时间轴顺序排序，保证组内顺序与当前帧顺序一致。
+        std::sort(group.frameIndices.begin(), group.frameIndices.end());
+    }
+
+    // 3) 统一清理边界与空组。
+    sanitizeFrameSelection(frameCount, currentFrameIndex_);
+}
+
+void AppContext::renameFrameGroup(int groupIndex, const std::string& newName)
+{
+    if (groupIndex < 0 || groupIndex >= static_cast<int>(frameGroups_.size()))
+        return;
+    if (newName.empty())
+        return;
+    frameGroups_[static_cast<size_t>(groupIndex)].name = newName;
+}
+
+void AppContext::removeFrameGroup(int groupIndex)
+{
+    if (groupIndex < 0 || groupIndex >= static_cast<int>(frameGroups_.size()))
+        return;
+    frameGroups_.erase(frameGroups_.begin() + groupIndex);
 }
 
 bool AppContext::canUndo() const

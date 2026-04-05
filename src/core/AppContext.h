@@ -271,6 +271,25 @@ public:
      */
     void onFrameRemoved(int removedFrameIndex, int frameCount);
 
+    /**
+     * @brief 在时间轴拖拽换序后，同步更新选区与分组索引。
+     *
+     * @param fromIndex 原始索引（0-based）。
+     * @param toIndex 目标索引（0-based）。
+     * @param frameCount 调整后的总帧数（用于最终校验）。
+     */
+    void onFrameMoved(int fromIndex, int toIndex, int frameCount);
+
+    /**
+     * @brief 重命名指定分组。
+     */
+    void renameFrameGroup(int groupIndex, const std::string& newName);
+
+    /**
+     * @brief 删除指定分组（仅删除分组关系，不删除帧）。
+     */
+    void removeFrameGroup(int groupIndex);
+
     // -------------------------------------------------------------------------
     // 绘图工具与颜色
     // -------------------------------------------------------------------------

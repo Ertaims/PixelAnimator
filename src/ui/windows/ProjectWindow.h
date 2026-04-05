@@ -85,6 +85,10 @@ private:
         bool openCreateGroupNamePopup = false; ///< 是否请求打开“创建分组”命名弹窗。
         char pendingGroupName[64] = "Group 1"; ///< 分组命名输入缓存（弹窗内编辑）。
         std::vector<int> pendingGroupFrames;    ///< 待创建分组的帧索引快照（0-based）。
+        bool openRenameGroupPopup = false;      ///< 是否请求打开“重命名分组”弹窗。
+        int renameGroupIndex = -1;              ///< 待重命名分组索引。
+        char renameGroupName[64] = "";          ///< 重命名输入缓存。
+        int draggingFrameIndex = -1;            ///< 当前拖拽源帧索引（-1 表示无拖拽）。
     };
 
     

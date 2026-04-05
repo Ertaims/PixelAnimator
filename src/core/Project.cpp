@@ -135,6 +135,23 @@ void Project::removeFrame(int index)
     frames_.erase(frames_.begin() + static_cast<long long>(clamped));
 }
 
+void Project::moveFrame(int fromIndex, int toIndex)
+{
+    if (frames_.empty())
+        return;
+
+    const int maxIndex = static_cast<int>(frames_.size()) - 1;
+    const int from = std::clamp(fromIndex, 0, maxIndex);
+    const int to = std::clamp(toIndex, 0, maxIndex);
+    if (from == to)
+        return;
+
+    // 先把源帧取出，再插入到目标位置，避免不必要的深拷贝。
+    Frame moving = std::move(frames_[static_cast<size_t>(from)]);
+    frames_.erase(frames_.begin() + static_cast<long long>(from));
+    frames_.insert(frames_.begin() + static_cast<long long>(to), std::move(moving));
+}
+
 void Project::setTimelineFps(int fps)
 {
     timelineFps_ = clampTimelineFps(fps);

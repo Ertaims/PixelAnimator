@@ -71,6 +71,19 @@ public:
     // 删除指定帧（至少保留 1 帧）
     void removeFrame(int index);
 
+    /**
+     * @brief 调整帧顺序：把 fromIndex 的帧移动到 toIndex 位置。
+     *
+     * 示例（帧序列按索引展示）：
+     * - [A,B,C,D], from=1,to=3 => [A,C,D,B]
+     * - [A,B,C,D], from=3,to=1 => [A,D,B,C]
+     *
+     * 说明：
+     * - 索引会自动 clamp 到合法范围；
+     * - 当 from == to 时不做任何修改。
+     */
+    void moveFrame(int fromIndex, int toIndex);
+
     // 时间轴 FPS（用于播放速度与 JSON 持久化）
     int getTimelineFps() const
     {
