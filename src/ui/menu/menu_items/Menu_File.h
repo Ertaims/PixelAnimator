@@ -17,6 +17,8 @@ public:
               const std::function<void()>& onSaveAsJsonProjectCallback = nullptr,
               const std::function<void()>& onExportCurrentFramePngCallback = nullptr,
               const std::function<void()>& onExportSpriteSheetConfigCallback = nullptr,
+              const std::function<void()>& onImportSingleFramePngCallback = nullptr,
+              const std::function<void()>& onImportSpriteSheetPngCallback = nullptr,
               const std::function<void()>& onCloseProjectCallback = nullptr,
               const std::function<void()>& onCloseAllProjectsCallback = nullptr);
 
@@ -30,6 +32,8 @@ public:
     void setOnSaveAsJsonProjectCallback(const std::function<void()>& callback);
     void setOnExportCurrentFramePngCallback(const std::function<void()>& callback);
     void setOnExportSpriteSheetConfigCallback(const std::function<void()>& callback);
+    void setOnImportSingleFramePngCallback(const std::function<void()>& callback);
+    void setOnImportSpriteSheetPngCallback(const std::function<void()>& callback);
     void setOnCloseProjectCallback(const std::function<void()>& callback);
     void setOnCloseAllProjectsCallback(const std::function<void()>& callback);
     void setContext(AppContext* context) { context_ = context; }
@@ -45,6 +49,8 @@ private:
     std::function<void()> onSaveAsJsonProjectCallback_;     // 另存为 JSON 项目回调函数
     std::function<void()> onExportCurrentFramePngCallback_; // 导出当前帧 PNG 回调函数
     std::function<void()> onExportSpriteSheetConfigCallback_; // 打开精灵图导出配置弹窗回调函数
+    std::function<void()> onImportSingleFramePngCallback_; // 导入单帧 PNG 回调函数
+    std::function<void()> onImportSpriteSheetPngCallback_; // 导入精灵图 PNG 回调函数
     std::function<void()> onCloseProjectCallback_;          // 关闭项目回调函数
     std::function<void()> onCloseAllProjectsCallback_;      // 关闭所有项目回调函数
 };

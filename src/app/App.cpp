@@ -8,6 +8,7 @@
 #include "core/AppContext.h"
 #include "core/Project.h"
 #include "io/ImageExporter.h"
+#include "io/ImageImporter.h"
 #include "io/ProjectJsonSerializer.h"
 #include "io/ProjectSerializer.h"
 #include "imgui.h"
@@ -179,6 +180,28 @@ namespace
         SDL_DestroySurface(rgbaSurface);
         return texture;
     }
+
+    /**
+     * @brief 导入自动分组时使用的高区分度调色板。
+     *
+     * 说明：
+     * - 与时间轴分组视觉方案保持一致风格；
+     * - 按组索引循环取色，避免所有组显示成同一种颜色。
+     */
+    uint32_t importGroupColorByIndex(size_t index)
+    {
+        static const uint32_t kPalette[] = {
+            0x5EA1FFFFu, // 天蓝
+            0x6ED6A0FFu, // 薄荷绿
+            0xF2B566FFu, // 橙黄
+            0xC98CFFFFu, // 紫粉
+            0x82D8F4FFu, // 青蓝
+            0xF48AA1FFu, // 珊瑚粉
+            0xA2D56DFFu, // 黄绿
+            0xF4D36AFFu  // 暖黄
+        };
+        return kPalette[index % (sizeof(kPalette) / sizeof(kPalette[0]))];
+    }
 }
 
 App::App() = default;
@@ -310,6 +333,8 @@ void App::createMenuAndWindows()
         [this]() { requestSaveAsDialog(ProjectFileFormat::Json); },
         [this]() { requestExportDialog(ExportKind::CurrentFramePng); },
         [this]() { spriteSheetExportPopupRequested_ = true; },
+        [this]() { requestImportDialog(ImportKind::CurrentFramePng); },
+        [this]() { requestImportDialog(ImportKind::SpriteSheetPng); },
         [this]() { closeProjectByContext(activeContext_); },
         [this]() { closeAllProjects(); });
 
@@ -389,6 +414,7 @@ void App::renderFrame()
     pollDialogResults();
     renderNewProjectPopup();
     renderSpriteSheetExportPopup();
+    renderSpriteSheetImportPopup();
     renderErrorPopup();
     handleProjectSwitchShortcut();
     refreshWindowLabels();
@@ -856,6 +882,34 @@ void App::requestExportDialog(ExportKind kind)
         defaultPath.c_str());
 }
 
+void App::requestImportDialog(ImportKind kind)
+{
+    if (importDialogInFlight_)
+        return;
+    if (!activeContext_ || !activeContext_->hasProject())
+    {
+        showError("No active project to import into.");
+        return;
+    }
+
+    importDialogKind_ = kind;
+    importDialogSpriteSheetRowMajor_ = spriteSheetImportRowMajor_;
+    static const SDL_DialogFileFilter filters[] = {
+        {"PNG Image", "png"},
+        {"All Files", "*"}
+    };
+
+    importDialogInFlight_ = true;
+    SDL_ShowOpenFileDialog(
+        &App::onImportDialogClosed,
+        this,
+        window_,
+        filters,
+        2,
+        nullptr,
+        false);
+}
+
 void SDLCALL App::onOpenDialogClosed(void* userdata, const char* const* filelist, int filter)
 {
     (void)filter;
@@ -942,11 +996,40 @@ void SDLCALL App::onExportDialogClosed(void* userdata, const char* const* fileli
     app->pendingExportReady_ = true;
 }
 
+void SDLCALL App::onImportDialogClosed(void* userdata, const char* const* filelist, int filter)
+{
+    (void)filter;
+    App* app = static_cast<App*>(userdata);
+    if (!app)
+        return;
+
+    std::lock_guard<std::mutex> guard(app->dialogMutex_);
+    app->importDialogInFlight_ = false;
+
+    if (!filelist)
+    {
+        app->pendingDialogError_ = SDL_GetError();
+        if (app->pendingDialogError_.empty())
+            app->pendingDialogError_ = "Import dialog failed.";
+        app->pendingDialogErrorReady_ = true;
+        return;
+    }
+
+    if (!filelist[0])
+        return;
+
+    app->pendingImportPath_ = filelist[0];
+    app->pendingImportKind_ = app->importDialogKind_;
+    app->pendingImportSpriteSheetRowMajor_ = app->importDialogSpriteSheetRowMajor_;
+    app->pendingImportReady_ = true;
+}
+
 void App::pollDialogResults()
 {
     std::string openPath;
     std::string savePath;
     std::string exportPath;
+    std::string importPath;
     std::string dialogError;
     ProjectFileFormat saveFormat = ProjectFileFormat::Binary;
     ExportKind exportKind = ExportKind::CurrentFramePng;
@@ -956,6 +1039,8 @@ void App::pollDialogResults()
     bool exportUseCustomGroups = false;
     int exportGroupSpacing = 8;
     std::vector<SpriteSheetGroupResolved> exportCustomGroups;
+    ImportKind importKind = ImportKind::CurrentFramePng;
+    bool importSpriteSheetRowMajor = true;
     {
         std::lock_guard<std::mutex> guard(dialogMutex_);
         if (pendingOpenReady_)
@@ -991,6 +1076,14 @@ void App::pollDialogResults()
             exportCustomGroups = pendingExportCustomGroups_;
             pendingExportCustomGroups_.clear();
         }
+        if (pendingImportReady_)
+        {
+            importPath = pendingImportPath_;
+            pendingImportPath_.clear();
+            pendingImportReady_ = false;
+            importKind = pendingImportKind_;
+            importSpriteSheetRowMajor = pendingImportSpriteSheetRowMajor_;
+        }
     }
 
     if (!dialogError.empty())
@@ -1008,6 +1101,8 @@ void App::pollDialogResults()
                      exportUseCustomGroups,
                      exportCustomGroups,
                      exportGroupSpacing);
+    if (!importPath.empty())
+        importFromPath(importPath, importKind, importSpriteSheetRowMajor);
 }
 
 void App::renderErrorPopup()
@@ -1191,6 +1286,366 @@ bool App::exportToPath(const std::string& path,
         return false;
     }
     return true;
+}
+
+bool App::importFromPath(const std::string& path, ImportKind kind, bool spriteSheetRowMajor)
+{
+    if (!activeContext_ || !activeContext_->hasProject())
+    {
+        showError("No active project to import into.");
+        return false;
+    }
+
+    Project* project = activeContext_->getProject();
+    if (!project)
+    {
+        showError("No project data to import into.");
+        return false;
+    }
+
+    if (path.empty())
+    {
+        showError("Import path is empty.");
+        return false;
+    }
+
+    if (kind == ImportKind::CurrentFramePng)
+    {
+        // 单帧导入：直接写入当前主帧，尺寸必须与画布一致。
+        std::string error;
+        const int targetFrame = activeContext_->getCurrentFrameIndex();
+        if (!ImageImporter::importSingleFramePng(*project, targetFrame, path, &error))
+        {
+            showError(error.empty() ? "Failed to import current frame." : error);
+            return false;
+        }
+        activeContext_->setProjectDirty(true);
+        return true;
+    }
+
+    // 精灵图导入先进入配置弹窗，允许用户配置切片尺寸、导入策略、自动分组。
+    spriteSheetImportPendingPath_ = path;
+    spriteSheetImportRowMajor_ = spriteSheetRowMajor;
+    spriteSheetImportUseGridCountMode_ = false;
+    spriteSheetImportUseCustomSlice_ = false;
+    spriteSheetImportStrategy_ = SpriteSheetImportStrategy::AppendAfterCurrent;
+    spriteSheetImportGrouping_ = SpriteSheetImportGrouping::None;
+    spriteSheetImportPreviewWidth_ = 0;
+    spriteSheetImportPreviewHeight_ = 0;
+    spriteSheetImportPreviewColumns_ = 0;
+    spriteSheetImportPreviewRows_ = 0;
+    spriteSheetImportPreviewFrames_ = 0;
+
+    SDL_Surface* surface = IMG_Load(path.c_str());
+    if (!surface)
+    {
+        showError(std::string("Failed to load sprite sheet: ") + SDL_GetError());
+        return false;
+    }
+    spriteSheetImportPreviewWidth_ = surface->w;
+    spriteSheetImportPreviewHeight_ = surface->h;
+    SDL_DestroySurface(surface);
+
+    // 默认切片尺寸跟随当前画布尺寸，用户可在弹窗中改为自定义值。
+    spriteSheetImportSliceWidth_ = std::max(1, project->getWidth());
+    spriteSheetImportSliceHeight_ = std::max(1, project->getHeight());
+    // 默认行列数按“整图 / 画布”估算；若不能整除则回退为 1x1。
+    spriteSheetImportGridCols_ = 1;
+    spriteSheetImportGridRows_ = 1;
+    if (spriteSheetImportPreviewWidth_ % spriteSheetImportSliceWidth_ == 0)
+        spriteSheetImportGridCols_ = std::max(1, spriteSheetImportPreviewWidth_ / spriteSheetImportSliceWidth_);
+    if (spriteSheetImportPreviewHeight_ % spriteSheetImportSliceHeight_ == 0)
+        spriteSheetImportGridRows_ = std::max(1, spriteSheetImportPreviewHeight_ / spriteSheetImportSliceHeight_);
+
+    if (spriteSheetImportPreviewWidth_ % spriteSheetImportSliceWidth_ == 0
+        && spriteSheetImportPreviewHeight_ % spriteSheetImportSliceHeight_ == 0)
+    {
+        spriteSheetImportPreviewColumns_ = spriteSheetImportPreviewWidth_ / spriteSheetImportSliceWidth_;
+        spriteSheetImportPreviewRows_ = spriteSheetImportPreviewHeight_ / spriteSheetImportSliceHeight_;
+        spriteSheetImportPreviewFrames_ = spriteSheetImportPreviewColumns_ * spriteSheetImportPreviewRows_;
+    }
+
+    spriteSheetImportPopupRequested_ = true;
+    return true;
+}
+
+void App::renderSpriteSheetImportPopup()
+{
+    if (spriteSheetImportPopupRequested_)
+    {
+        ImGui::OpenPopup("Import Sprite Sheet");
+        spriteSheetImportPopupRequested_ = false;
+    }
+
+    if (!ImGui::BeginPopupModal("Import Sprite Sheet", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+        return;
+
+    ImGui::TextUnformatted("Traversal Order");
+    int order = spriteSheetImportRowMajor_ ? 0 : 1;
+    ImGui::RadioButton("Row-major (Left->Right, Top->Bottom)", &order, 0);
+    ImGui::RadioButton("Column-major (Top->Bottom, Left->Right)", &order, 1);
+    spriteSheetImportRowMajor_ = (order == 0);
+
+    ImGui::Separator();
+    ImGui::TextUnformatted("Slice Size");
+    // 切片配置提供两种方式：
+    // 1) 按“每帧尺寸”输入（Width/Height）
+    // 2) 按“行列数量”输入（Rows/Columns），自动计算每帧尺寸
+    int sliceMode = spriteSheetImportUseGridCountMode_ ? 1 : 0;
+    ImGui::RadioButton("By Frame Size", &sliceMode, 0);
+    ImGui::SameLine();
+    ImGui::RadioButton("By Rows / Columns", &sliceMode, 1);
+    spriteSheetImportUseGridCountMode_ = (sliceMode == 1);
+
+    if (!spriteSheetImportUseGridCountMode_)
+    {
+        ImGui::Checkbox("Use Custom Slice Size", &spriteSheetImportUseCustomSlice_);
+        if (spriteSheetImportUseCustomSlice_)
+        {
+            ImGui::SetNextItemWidth(120.0f);
+            ImGui::InputInt("Slice Width", &spriteSheetImportSliceWidth_);
+            ImGui::SetNextItemWidth(120.0f);
+            ImGui::InputInt("Slice Height", &spriteSheetImportSliceHeight_);
+            spriteSheetImportSliceWidth_ = std::max(1, spriteSheetImportSliceWidth_);
+            spriteSheetImportSliceHeight_ = std::max(1, spriteSheetImportSliceHeight_);
+        }
+        else if (activeContext_ && activeContext_->hasProject())
+        {
+            Project* project = activeContext_->getProject();
+            spriteSheetImportSliceWidth_ = std::max(1, project->getWidth());
+            spriteSheetImportSliceHeight_ = std::max(1, project->getHeight());
+        }
+    }
+    else
+    {
+        ImGui::SetNextItemWidth(120.0f);
+        ImGui::InputInt("Rows", &spriteSheetImportGridRows_);
+        ImGui::SetNextItemWidth(120.0f);
+        ImGui::InputInt("Columns", &spriteSheetImportGridCols_);
+        spriteSheetImportGridRows_ = std::max(1, spriteSheetImportGridRows_);
+        spriteSheetImportGridCols_ = std::max(1, spriteSheetImportGridCols_);
+    }
+
+    // 统一计算“本次将实际使用”的切片尺寸：
+    // - 按尺寸模式：直接使用 Slice Width/Height
+    // - 按行列模式：由整图尺寸 / 行列数自动推导
+    int effectiveSliceWidth = spriteSheetImportSliceWidth_;
+    int effectiveSliceHeight = spriteSheetImportSliceHeight_;
+    bool effectiveSliceValid = false;
+    if (spriteSheetImportUseGridCountMode_)
+    {
+        if (spriteSheetImportGridCols_ > 0
+            && spriteSheetImportGridRows_ > 0
+            && spriteSheetImportPreviewWidth_ > 0
+            && spriteSheetImportPreviewHeight_ > 0
+            && spriteSheetImportPreviewWidth_ % spriteSheetImportGridCols_ == 0
+            && spriteSheetImportPreviewHeight_ % spriteSheetImportGridRows_ == 0)
+        {
+            effectiveSliceWidth = spriteSheetImportPreviewWidth_ / spriteSheetImportGridCols_;
+            effectiveSliceHeight = spriteSheetImportPreviewHeight_ / spriteSheetImportGridRows_;
+            effectiveSliceValid = true;
+        }
+    }
+    else
+    {
+        if (effectiveSliceWidth > 0
+            && effectiveSliceHeight > 0
+            && spriteSheetImportPreviewWidth_ > 0
+            && spriteSheetImportPreviewHeight_ > 0
+            && spriteSheetImportPreviewWidth_ % effectiveSliceWidth == 0
+            && spriteSheetImportPreviewHeight_ % effectiveSliceHeight == 0)
+        {
+            effectiveSliceValid = true;
+        }
+    }
+
+    ImGui::Separator();
+    ImGui::TextUnformatted("Import Strategy");
+    int strategy = static_cast<int>(spriteSheetImportStrategy_);
+    ImGui::RadioButton("Append After Current", &strategy, static_cast<int>(SpriteSheetImportStrategy::AppendAfterCurrent));
+    ImGui::RadioButton("Replace All Frames", &strategy, static_cast<int>(SpriteSheetImportStrategy::ReplaceAllFrames));
+    ImGui::RadioButton("Import As New Project", &strategy, static_cast<int>(SpriteSheetImportStrategy::NewProject));
+    spriteSheetImportStrategy_ = static_cast<SpriteSheetImportStrategy>(strategy);
+
+    ImGui::Separator();
+    ImGui::TextUnformatted("Auto Group Imported Frames");
+    int grouping = static_cast<int>(spriteSheetImportGrouping_);
+    ImGui::RadioButton("None", &grouping, static_cast<int>(SpriteSheetImportGrouping::None));
+    ImGui::RadioButton("Group By Row", &grouping, static_cast<int>(SpriteSheetImportGrouping::ByRow));
+    ImGui::RadioButton("Group By Column", &grouping, static_cast<int>(SpriteSheetImportGrouping::ByColumn));
+    spriteSheetImportGrouping_ = static_cast<SpriteSheetImportGrouping>(grouping);
+
+    ImGui::Separator();
+    ImGui::Text("Sheet: %dx%d", spriteSheetImportPreviewWidth_, spriteSheetImportPreviewHeight_);
+    ImGui::Text("Slice: %dx%d", effectiveSliceWidth, effectiveSliceHeight);
+    if (effectiveSliceValid)
+    {
+        spriteSheetImportPreviewColumns_ = spriteSheetImportPreviewWidth_ / effectiveSliceWidth;
+        spriteSheetImportPreviewRows_ = spriteSheetImportPreviewHeight_ / effectiveSliceHeight;
+        spriteSheetImportPreviewFrames_ = spriteSheetImportPreviewColumns_ * spriteSheetImportPreviewRows_;
+        ImGui::Text("Detected Grid: %d x %d (frames=%d)",
+                    spriteSheetImportPreviewColumns_,
+                    spriteSheetImportPreviewRows_,
+                    spriteSheetImportPreviewFrames_);
+    }
+    else
+    {
+        ImGui::TextUnformatted("Detected Grid: invalid (sheet size not divisible by current slice config)");
+    }
+
+    ImGui::Separator();
+    if (ImGui::Button("Import", ImVec2(120.0f, 0.0f)))
+    {
+        if (!effectiveSliceValid)
+        {
+            showError("Invalid slice config. Please check slice size or rows/columns.");
+            ImGui::EndPopup();
+            return;
+        }
+
+        if (!activeContext_ || !activeContext_->hasProject())
+        {
+            showError("No active project to import into.");
+        }
+        else
+        {
+            Project* project = activeContext_->getProject();
+            std::string error;
+            ImageImporter::SpriteSheetSliceResult sliceResult;
+            if (!ImageImporter::sliceSpriteSheetPng(spriteSheetImportPendingPath_,
+                                                    effectiveSliceWidth,
+                                                    effectiveSliceHeight,
+                                                    spriteSheetImportRowMajor_,
+                                                    sliceResult,
+                                                    &error))
+            {
+                showError(error.empty() ? "Failed to import sprite sheet." : error);
+            }
+            else
+            {
+                AppContext* targetContext = activeContext_;
+                Project* targetProject = project;
+                int firstImportedIndex = 0;
+
+                // 策略 1：追加到当前帧后。
+                if (spriteSheetImportStrategy_ == SpriteSheetImportStrategy::AppendAfterCurrent)
+                {
+                    const int insertAfter = targetContext->getCurrentFrameIndex();
+                    int anchor = insertAfter;
+                    for (size_t i = 0; i < sliceResult.frames.size(); ++i)
+                    {
+                        targetProject->insertFrameAfter(anchor, 0x00000000);
+                        ++anchor;
+                        targetProject->getFrame(anchor).pixels = sliceResult.frames[i];
+                        targetContext->onFrameInserted(anchor, -1, targetProject->getFrameCount());
+                    }
+                    firstImportedIndex = insertAfter + 1;
+                }
+
+                // 策略 2：替换当前项目全部帧（并把画布尺寸切到导入切片尺寸）。
+                if (spriteSheetImportStrategy_ == SpriteSheetImportStrategy::ReplaceAllFrames)
+                {
+                    targetProject->resizeCanvas(effectiveSliceWidth, effectiveSliceHeight, 0x00000000);
+                    targetProject->setFrameCount(static_cast<int>(sliceResult.frames.size()), 0x00000000);
+                    for (size_t i = 0; i < sliceResult.frames.size(); ++i)
+                        targetProject->getFrame(static_cast<int>(i)).pixels = sliceResult.frames[i];
+                    targetContext->clearFrameGroups();
+                    firstImportedIndex = 0;
+                }
+
+                // 策略 3：导入为新项目。
+                if (spriteSheetImportStrategy_ == SpriteSheetImportStrategy::NewProject)
+                {
+                    std::unique_ptr<Project> newProject = std::make_unique<Project>(
+                        effectiveSliceWidth,
+                        effectiveSliceHeight,
+                        static_cast<int>(sliceResult.frames.size()),
+                        0x00000000);
+                    newProject->setName(projectNameFromPath(spriteSheetImportPendingPath_));
+                    for (size_t i = 0; i < sliceResult.frames.size(); ++i)
+                        newProject->getFrame(static_cast<int>(i)).pixels = sliceResult.frames[i];
+
+                    createSessionFromProject(std::move(newProject), "");
+                    targetContext = activeContext_;
+                    targetProject = targetContext ? targetContext->getProject() : nullptr;
+                    firstImportedIndex = 0;
+                }
+
+                if (!targetContext || !targetProject)
+                {
+                    showError("Failed to apply imported frames.");
+                    spriteSheetImportPendingPath_.clear();
+                    ImGui::CloseCurrentPopup();
+                    ImGui::EndPopup();
+                    return;
+                }
+
+                // 自动分组（可选）：
+                // - ByRow：同一切片行建一个分组
+                // - ByColumn：同一切片列建一个分组
+                if (spriteSheetImportGrouping_ != SpriteSheetImportGrouping::None)
+                {
+                    targetContext->clearFrameGroups();
+
+                    if (spriteSheetImportGrouping_ == SpriteSheetImportGrouping::ByRow)
+                    {
+                        for (int row = 0; row < sliceResult.rows; ++row)
+                        {
+                            std::vector<int> groupFrames;
+                            for (size_t i = 0; i < sliceResult.frames.size(); ++i)
+                            {
+                                if (sliceResult.tileRows[i] == row)
+                                    groupFrames.push_back(firstImportedIndex + static_cast<int>(i));
+                            }
+                            if (!groupFrames.empty())
+                            {
+                                // 每个组按序号分配不同颜色，保证时间轴上肉眼可区分。
+                                const uint32_t groupColor = importGroupColorByIndex(static_cast<size_t>(row));
+                                targetContext->addFrameGroup("Row " + std::to_string(row + 1),
+                                                             groupFrames,
+                                                             targetProject->getFrameCount(),
+                                                             groupColor);
+                            }
+                        }
+                    }
+                    else
+                    {
+                        for (int col = 0; col < sliceResult.columns; ++col)
+                        {
+                            std::vector<int> groupFrames;
+                            for (size_t i = 0; i < sliceResult.frames.size(); ++i)
+                            {
+                                if (sliceResult.tileCols[i] == col)
+                                    groupFrames.push_back(firstImportedIndex + static_cast<int>(i));
+                            }
+                            if (!groupFrames.empty())
+                            {
+                                // 列分组同样按列号映射颜色，避免“所有组同色”。
+                                const uint32_t groupColor = importGroupColorByIndex(static_cast<size_t>(col));
+                                targetContext->addFrameGroup("Column " + std::to_string(col + 1),
+                                                             groupFrames,
+                                                             targetProject->getFrameCount(),
+                                                             groupColor);
+                            }
+                        }
+                    }
+                }
+
+                targetContext->setSingleFrameSelection(firstImportedIndex, targetProject->getFrameCount());
+                targetContext->setProjectDirty(true);
+                spriteSheetImportPendingPath_.clear();
+                ImGui::CloseCurrentPopup();
+            }
+        }
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Cancel", ImVec2(120.0f, 0.0f)))
+    {
+        spriteSheetImportPendingPath_.clear();
+        ImGui::CloseCurrentPopup();
+    }
+
+    ImGui::EndPopup();
 }
 
 bool App::parseFrameListText(const std::string& text,

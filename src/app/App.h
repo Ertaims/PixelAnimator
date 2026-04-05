@@ -24,6 +24,7 @@ class Menu_Edit;
 class ProjectWindow;
 class Project;
 class AppContext;
+class SDL_Surface;
 
 class App
 {
@@ -38,6 +39,32 @@ public:
     {
         CurrentFramePng,
         SpriteSheetConfiguredPng
+    };
+
+    enum class ImportKind
+    {
+        CurrentFramePng,
+        SpriteSheetPng
+    };
+
+    /**
+     * @brief 精灵图导入策略。
+     */
+    enum class SpriteSheetImportStrategy
+    {
+        AppendAfterCurrent = 0, // 追加到当前帧后
+        ReplaceAllFrames,       // 替换当前项目所有帧
+        NewProject              // 导入为新项目
+    };
+
+    /**
+     * @brief 精灵图导入后自动分组策略。
+     */
+    enum class SpriteSheetImportGrouping
+    {
+        None = 0, // 不自动建组
+        ByRow,    // 每一行切片建一个组
+        ByColumn  // 每一列切片建一个组
     };
 
     /**
@@ -146,6 +173,8 @@ private:
     void requestSaveAsDialog(ProjectFileFormat format);
     // 创建导出图片弹窗
     void requestExportDialog(ExportKind kind);
+    // 创建导入图片弹窗
+    void requestImportDialog(ImportKind kind);
     // 创建新项目
     void createNewProject(int width,
                           int height,
@@ -166,6 +195,10 @@ private:
                       bool useCustomGroups,
                       const std::vector<SpriteSheetGroupResolved>& customGroups,
                       int groupSpacing);
+    bool importFromPath(const std::string& path,
+                        ImportKind kind,
+                        bool spriteSheetRowMajor);
+    void renderSpriteSheetImportPopup();
     bool parseFrameListText(const std::string& text,
                             int maxFrameCount,
                             std::vector<int>& outIndices,
@@ -182,6 +215,7 @@ private:
     // 保存项目弹窗
     static void SDLCALL onSaveDialogClosed(void* userdata, const char* const* filelist, int filter);
     static void SDLCALL onExportDialogClosed(void* userdata, const char* const* filelist, int filter);
+    static void SDLCALL onImportDialogClosed(void* userdata, const char* const* filelist, int filter);
 
     // ---------------- 活跃上下文与会话管理 ----------------
     void setActiveContext(AppContext* context);                         // 设置当前活跃窗口
@@ -231,22 +265,45 @@ private:
     unsigned int spriteSheetColumnIconTexture_ = 0;
     unsigned int spriteSheetRowColumnIconTexture_ = 0;
 
+    // ---------------- Sprite Sheet 导入弹窗状态 ----------------
+    bool spriteSheetImportPopupRequested_ = false;
+    std::string spriteSheetImportPendingPath_;
+    bool spriteSheetImportRowMajor_ = true;
+    bool spriteSheetImportUseGridCountMode_ = false;
+    bool spriteSheetImportUseCustomSlice_ = false;
+    int spriteSheetImportSliceWidth_ = 16;
+    int spriteSheetImportSliceHeight_ = 16;
+    int spriteSheetImportGridRows_ = 1;
+    int spriteSheetImportGridCols_ = 1;
+    SpriteSheetImportStrategy spriteSheetImportStrategy_ = SpriteSheetImportStrategy::AppendAfterCurrent;
+    SpriteSheetImportGrouping spriteSheetImportGrouping_ = SpriteSheetImportGrouping::None;
+    int spriteSheetImportPreviewWidth_ = 0;
+    int spriteSheetImportPreviewHeight_ = 0;
+    int spriteSheetImportPreviewColumns_ = 0;
+    int spriteSheetImportPreviewRows_ = 0;
+    int spriteSheetImportPreviewFrames_ = 0;
+
     // ---------------- Open/Save 最小可用弹窗状态 ----------------
     bool openDialogInFlight_ = false;
     bool saveDialogInFlight_ = false;
     bool exportDialogInFlight_ = false;
+    bool importDialogInFlight_ = false;
     std::mutex dialogMutex_;
     std::string pendingOpenPath_;
     std::string pendingSavePath_;
     std::string pendingDialogError_;
     std::string pendingExportPath_;
+    std::string pendingImportPath_;
     bool pendingOpenReady_ = false;
     bool pendingSaveReady_ = false;
     bool pendingExportReady_ = false;
+    bool pendingImportReady_ = false;
     ProjectFileFormat pendingSaveFormat_ = ProjectFileFormat::Binary;
     ProjectFileFormat saveDialogFormat_ = ProjectFileFormat::Binary;
     ExportKind pendingExportKind_ = ExportKind::CurrentFramePng;
     ExportKind exportDialogKind_ = ExportKind::CurrentFramePng;
+    ImportKind pendingImportKind_ = ImportKind::CurrentFramePng;
+    ImportKind importDialogKind_ = ImportKind::CurrentFramePng;
     SpriteSheetExportMode pendingExportSpriteMode_ = SpriteSheetExportMode::Row;
     SpriteSheetExportMode exportDialogSpriteMode_ = SpriteSheetExportMode::Row;
     bool pendingExportUseSelectedFrames_ = false;
@@ -259,6 +316,8 @@ private:
     int exportDialogGroupSpacing_ = 8;
     std::vector<SpriteSheetGroupResolved> pendingExportCustomGroups_;
     std::vector<SpriteSheetGroupResolved> exportDialogCustomGroups_;
+    bool pendingImportSpriteSheetRowMajor_ = true;
+    bool importDialogSpriteSheetRowMajor_ = true;
     bool pendingDialogErrorReady_ = false;
     std::string pendingErrorMessage_;
 };

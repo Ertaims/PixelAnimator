@@ -14,6 +14,8 @@ Menu_File::Menu_File(Menu* menu,
                      const std::function<void()>& onSaveAsJsonProjectCallback,
                      const std::function<void()>& onExportCurrentFramePngCallback,
                      const std::function<void()>& onExportSpriteSheetConfigCallback,
+                     const std::function<void()>& onImportSingleFramePngCallback,
+                     const std::function<void()>& onImportSpriteSheetPngCallback,
                      const std::function<void()>& onCloseProjectCallback,
                      const std::function<void()>& onCloseAllProjectsCallback)
     : MenuOptionBase(menu),
@@ -26,6 +28,8 @@ Menu_File::Menu_File(Menu* menu,
       onSaveAsJsonProjectCallback_(onSaveAsJsonProjectCallback),
       onExportCurrentFramePngCallback_(onExportCurrentFramePngCallback),
       onExportSpriteSheetConfigCallback_(onExportSpriteSheetConfigCallback),
+      onImportSingleFramePngCallback_(onImportSingleFramePngCallback),
+      onImportSpriteSheetPngCallback_(onImportSpriteSheetPngCallback),
       onCloseProjectCallback_(onCloseProjectCallback),
       onCloseAllProjectsCallback_(onCloseAllProjectsCallback) {}
 
@@ -108,6 +112,19 @@ void Menu_File::initialize() {
     Menu* importMenu = new Menu("Import");
     getMenu()->addItem("Import", importMenu);
 
+    // 与导出入口对称：提供单帧导入和精灵图导入两种入口。
+    MenuItem* importSingleFramePng = importMenu->addItem("Current Frame (PNG)...");
+    importSingleFramePng->setCallback([this]() {
+        if (onImportSingleFramePngCallback_)
+            onImportSingleFramePngCallback_();
+    });
+
+    MenuItem* importSpriteSheetPng = importMenu->addItem("Sprite Sheet (PNG)...");
+    importSpriteSheetPng->setCallback([this]() {
+        if (onImportSpriteSheetPngCallback_)
+            onImportSpriteSheetPngCallback_();
+    });
+
     getMenu()->addSeparator();
 
     MenuItem* exitItem = getMenu()->addItem("Exit", "Ctrl+Q");
@@ -146,6 +163,14 @@ void Menu_File::setOnExportCurrentFramePngCallback(const std::function<void()>& 
 
 void Menu_File::setOnExportSpriteSheetConfigCallback(const std::function<void()>& callback) {
     onExportSpriteSheetConfigCallback_ = callback;
+}
+
+void Menu_File::setOnImportSingleFramePngCallback(const std::function<void()>& callback) {
+    onImportSingleFramePngCallback_ = callback;
+}
+
+void Menu_File::setOnImportSpriteSheetPngCallback(const std::function<void()>& callback) {
+    onImportSpriteSheetPngCallback_ = callback;
 }
 
 void Menu_File::setOnCloseProjectCallback(const std::function<void()>& callback) {

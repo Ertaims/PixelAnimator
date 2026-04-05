@@ -328,6 +328,11 @@ void AppContext::removeFrameGroup(int groupIndex)
     frameGroups_.erase(frameGroups_.begin() + groupIndex);
 }
 
+void AppContext::clearFrameGroups()
+{
+    frameGroups_.clear();
+}
+
 bool AppContext::canUndo() const
 {
     // TODO: 实现 CommandStack 后改为 return commandStack_ && commandStack_->canUndo();
