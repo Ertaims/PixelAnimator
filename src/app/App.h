@@ -282,6 +282,8 @@ private:
     int spriteSheetImportPreviewColumns_ = 0;
     int spriteSheetImportPreviewRows_ = 0;
     int spriteSheetImportPreviewFrames_ = 0;
+    unsigned int spriteSheetImportPreviewTexture_ = 0;
+    std::vector<uint8_t> spriteSheetImportTileSelected_;
 
     // ---------------- Open/Save 最小可用弹窗状态 ----------------
     bool openDialogInFlight_ = false;

@@ -506,6 +506,11 @@ void App::shutdown()
         glDeleteTextures(1, &spriteSheetRowColumnIconTexture_);
         spriteSheetRowColumnIconTexture_ = 0;
     }
+    if (spriteSheetImportPreviewTexture_ != 0)
+    {
+        glDeleteTextures(1, &spriteSheetImportPreviewTexture_);
+        spriteSheetImportPreviewTexture_ = 0;
+    }
 
     // 先销毁窗口，再清空会话，防止悬空指针
     WindowFactory::getInstance().cleanup();
@@ -1346,6 +1351,16 @@ bool App::importFromPath(const std::string& path, ImportKind kind, bool spriteSh
     spriteSheetImportPreviewHeight_ = surface->h;
     SDL_DestroySurface(surface);
 
+    // 载入整张精灵图纹理，用于弹窗中的切片缩图预览。
+    // 每次重新选择导入文件时都会重建纹理，避免旧图残留。
+    if (spriteSheetImportPreviewTexture_ != 0)
+    {
+        glDeleteTextures(1, &spriteSheetImportPreviewTexture_);
+        spriteSheetImportPreviewTexture_ = 0;
+    }
+    spriteSheetImportPreviewTexture_ = loadTextureFromFile(path.c_str());
+    spriteSheetImportTileSelected_.clear();
+
     // 默认切片尺寸跟随当前画布尺寸，用户可在弹窗中改为自定义值。
     spriteSheetImportSliceWidth_ = std::max(1, project->getWidth());
     spriteSheetImportSliceHeight_ = std::max(1, project->getHeight());
@@ -1377,7 +1392,19 @@ void App::renderSpriteSheetImportPopup()
         spriteSheetImportPopupRequested_ = false;
     }
 
-    if (!ImGui::BeginPopupModal("Import Sprite Sheet", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+    // 让弹窗尺寸可随窗口空间自适应：
+    // - 出现时给一个较舒适的初始尺寸；
+    // - 同时设置最小/最大尺寸约束，避免过小挤压或过大超出可视区域。
+    const ImVec2 workSize = ImGui::GetMainViewport()->WorkSize;
+    const ImVec2 minPopupSize(620.0f, 500.0f);
+    const ImVec2 maxPopupSize(std::max(minPopupSize.x, workSize.x * 0.95f),
+                              std::max(minPopupSize.y, workSize.y * 0.95f));
+    const ImVec2 initialPopupSize(std::min(maxPopupSize.x, 860.0f),
+                                  std::min(maxPopupSize.y, 760.0f));
+    ImGui::SetNextWindowSizeConstraints(minPopupSize, maxPopupSize);
+    ImGui::SetNextWindowSize(initialPopupSize, ImGuiCond_Appearing);
+
+    if (!ImGui::BeginPopupModal("Import Sprite Sheet", nullptr, ImGuiWindowFlags_None))
         return;
 
     ImGui::TextUnformatted("Traversal Order");
@@ -1493,12 +1520,155 @@ void App::renderSpriteSheetImportPopup()
         ImGui::TextUnformatted("Detected Grid: invalid (sheet size not divisible by current slice config)");
     }
 
+    // ---------------- 切片缩图预览 + 选择性导入 ----------------
+    // 规则：
+    // 1) 默认全选；
+    // 2) 点击缩图可切换该切片是否导入；
+    // 3) 提供全选/清空/反选快捷按钮。
+    int selectedTileCount = 0;
+    if (effectiveSliceValid && spriteSheetImportPreviewFrames_ > 0)
+    {
+        if (spriteSheetImportTileSelected_.size() != static_cast<size_t>(spriteSheetImportPreviewFrames_))
+        {
+            spriteSheetImportTileSelected_.assign(static_cast<size_t>(spriteSheetImportPreviewFrames_), 1);
+        }
+
+        for (uint8_t flag : spriteSheetImportTileSelected_)
+        {
+            if (flag != 0)
+                ++selectedTileCount;
+        }
+
+        ImGui::Separator();
+        ImGui::Text("Selectable Tiles: %d / %d", selectedTileCount, spriteSheetImportPreviewFrames_);
+        if (ImGui::Button("Select All"))
+        {
+            std::fill(spriteSheetImportTileSelected_.begin(), spriteSheetImportTileSelected_.end(), static_cast<uint8_t>(1));
+            selectedTileCount = spriteSheetImportPreviewFrames_;
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Clear"))
+        {
+            std::fill(spriteSheetImportTileSelected_.begin(), spriteSheetImportTileSelected_.end(), static_cast<uint8_t>(0));
+            selectedTileCount = 0;
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Invert"))
+        {
+            for (uint8_t& flag : spriteSheetImportTileSelected_)
+                flag = flag == 0 ? 1 : 0;
+            selectedTileCount = 0;
+            for (uint8_t flag : spriteSheetImportTileSelected_)
+            {
+                if (flag != 0)
+                    ++selectedTileCount;
+            }
+        }
+
+        // 预览区高度根据当前弹窗可用空间动态分配，避免窗口拉伸时布局僵硬。
+        const float footerReserve = ImGui::GetFrameHeightWithSpacing() + 20.0f; // 预留 Import/Cancel 区域
+        const float previewHeight = std::clamp(ImGui::GetContentRegionAvail().y - footerReserve, 160.0f, 420.0f);
+        ImGui::BeginChild("##SpriteSheetTilePreview",
+                          ImVec2(0.0f, previewHeight),
+                          true,
+                          ImGuiWindowFlags_HorizontalScrollbar);
+        const float tilePreviewSize = 52.0f;
+        const float cardWidth = 74.0f; // 卡片宽度（包含缩图与编号），用于统一对齐
+        const float spacingX = ImGui::GetStyle().ItemSpacing.x;
+        const float availWidth = ImGui::GetContentRegionAvail().x;
+        int tilesPerRow = static_cast<int>((availWidth + spacingX) / (cardWidth + spacingX));
+        tilesPerRow = std::max(1, tilesPerRow);
+
+        // 预览布局策略：
+        // - 按行列模式：严格按用户输入列数显示；
+        // - 其它模式：按可用宽度自适应列数。
+        if (spriteSheetImportUseGridCountMode_ && effectiveSliceValid)
+            tilesPerRow = std::max(1, spriteSheetImportGridCols_);
+
+        tilesPerRow = std::min(tilesPerRow, spriteSheetImportPreviewFrames_);
+
+        if (ImGui::BeginTable("##SpriteSheetTileTable",
+                              tilesPerRow,
+                              ImGuiTableFlags_NoSavedSettings | ImGuiTableFlags_SizingFixedFit))
+        {
+            for (int tileIndex = 0; tileIndex < spriteSheetImportPreviewFrames_; ++tileIndex)
+            {
+                if (tileIndex % tilesPerRow == 0) ImGui::TableNextRow();
+                ImGui::TableSetColumnIndex(tileIndex % tilesPerRow);
+
+                // tileIndex 为“预览顺序索引”，映射到源图中的行列用于 UV 裁剪。
+                const int sourceRow = tileIndex / spriteSheetImportPreviewColumns_;
+                const int sourceCol = tileIndex % spriteSheetImportPreviewColumns_;
+
+                ImGui::PushID(tileIndex);
+                const bool selected = spriteSheetImportTileSelected_[static_cast<size_t>(tileIndex)] != 0;
+                if (selected) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.20f, 0.45f, 0.75f, 0.90f));
+
+                bool clicked = false;
+                const float imageOffsetX = std::max(0.0f, (cardWidth - tilePreviewSize) * 0.5f);
+                const float baseX = ImGui::GetCursorPosX();
+                ImGui::SetCursorPosX(baseX + imageOffsetX);
+
+                if (spriteSheetImportPreviewTexture_ != 0)
+                {
+                    const ImVec2 uv0(
+                        static_cast<float>(sourceCol * effectiveSliceWidth) / static_cast<float>(spriteSheetImportPreviewWidth_),
+                        static_cast<float>(sourceRow * effectiveSliceHeight) / static_cast<float>(spriteSheetImportPreviewHeight_));
+                    const ImVec2 uv1(
+                        static_cast<float>((sourceCol + 1) * effectiveSliceWidth) / static_cast<float>(spriteSheetImportPreviewWidth_),
+                        static_cast<float>((sourceRow + 1) * effectiveSliceHeight) / static_cast<float>(spriteSheetImportPreviewHeight_));
+                    clicked = ImGui::ImageButton("##tile",
+                                                 reinterpret_cast<ImTextureID>(static_cast<uintptr_t>(spriteSheetImportPreviewTexture_)),
+                                                 ImVec2(tilePreviewSize, tilePreviewSize),
+                                                 uv0,
+                                                 uv1);
+                }
+                else
+                {
+                    clicked = ImGui::Button("Tile", ImVec2(tilePreviewSize, tilePreviewSize));
+                }
+
+                if (selected)
+                    ImGui::PopStyleColor();
+
+                if (clicked)
+                {
+                    uint8_t& flag = spriteSheetImportTileSelected_[static_cast<size_t>(tileIndex)];
+                    flag = flag == 0 ? 1 : 0;
+                }
+
+                char label[16] = {};
+                std::snprintf(label, sizeof(label), "#%d", tileIndex + 1);
+                const float labelWidth = ImGui::CalcTextSize(label).x;
+                ImGui::SetCursorPosX(baseX + std::max(0.0f, (cardWidth - labelWidth) * 0.5f));
+                ImGui::TextUnformatted(label);
+                ImGui::PopID();
+            }
+            ImGui::EndTable();
+        }
+        ImGui::EndChild();
+
+        // 缩图点击后重新统计一次，保证下方 Import 校验读到最新值。
+        selectedTileCount = 0;
+        for (uint8_t flag : spriteSheetImportTileSelected_)
+        {
+            if (flag != 0)
+                ++selectedTileCount;
+        }
+    }
+
     ImGui::Separator();
     if (ImGui::Button("Import", ImVec2(120.0f, 0.0f)))
     {
         if (!effectiveSliceValid)
         {
             showError("Invalid slice config. Please check slice size or rows/columns.");
+            ImGui::EndPopup();
+            return;
+        }
+        if (spriteSheetImportPreviewFrames_ > 0 && selectedTileCount <= 0)
+        {
+            showError("No tiles selected to import.");
             ImGui::EndPopup();
             return;
         }
@@ -1523,6 +1693,42 @@ void App::renderSpriteSheetImportPopup()
             }
             else
             {
+                // 先根据“切片选择状态”过滤导入帧。
+                // filteredIndexMap 记录“过滤后帧”对应的原始切片索引，后续分组需要用到。
+                std::vector<std::vector<uint32_t>> filteredFrames;
+                std::vector<int> filteredTileRows;
+                std::vector<int> filteredTileCols;
+                filteredFrames.reserve(sliceResult.frames.size());
+                filteredTileRows.reserve(sliceResult.frames.size());
+                filteredTileCols.reserve(sliceResult.frames.size());
+
+                for (size_t i = 0; i < sliceResult.frames.size(); ++i)
+                {
+                    // 选择状态以“物理网格位置（row,col）”为准，而非切片遍历顺序。
+                    // 这样在 column-major 模式下，预览勾选与实际导入也能一一对应。
+                    const int physicalIndex = sliceResult.tileRows[i] * spriteSheetImportPreviewColumns_
+                        + sliceResult.tileCols[i];
+                    const bool selected = physicalIndex >= 0
+                        && physicalIndex < static_cast<int>(spriteSheetImportTileSelected_.size())
+                        ? spriteSheetImportTileSelected_[static_cast<size_t>(physicalIndex)] != 0
+                        : true;
+                    if (!selected)
+                        continue;
+
+                    filteredFrames.push_back(sliceResult.frames[i]);
+                    filteredTileRows.push_back(sliceResult.tileRows[i]);
+                    filteredTileCols.push_back(sliceResult.tileCols[i]);
+                }
+
+                if (filteredFrames.empty())
+                {
+                    showError("No tiles selected to import.");
+                    spriteSheetImportPendingPath_.clear();
+                    ImGui::CloseCurrentPopup();
+                    ImGui::EndPopup();
+                    return;
+                }
+
                 AppContext* targetContext = activeContext_;
                 Project* targetProject = project;
                 int firstImportedIndex = 0;
@@ -1532,11 +1738,11 @@ void App::renderSpriteSheetImportPopup()
                 {
                     const int insertAfter = targetContext->getCurrentFrameIndex();
                     int anchor = insertAfter;
-                    for (size_t i = 0; i < sliceResult.frames.size(); ++i)
+                    for (size_t i = 0; i < filteredFrames.size(); ++i)
                     {
                         targetProject->insertFrameAfter(anchor, 0x00000000);
                         ++anchor;
-                        targetProject->getFrame(anchor).pixels = sliceResult.frames[i];
+                        targetProject->getFrame(anchor).pixels = filteredFrames[i];
                         targetContext->onFrameInserted(anchor, -1, targetProject->getFrameCount());
                     }
                     firstImportedIndex = insertAfter + 1;
@@ -1546,9 +1752,9 @@ void App::renderSpriteSheetImportPopup()
                 if (spriteSheetImportStrategy_ == SpriteSheetImportStrategy::ReplaceAllFrames)
                 {
                     targetProject->resizeCanvas(effectiveSliceWidth, effectiveSliceHeight, 0x00000000);
-                    targetProject->setFrameCount(static_cast<int>(sliceResult.frames.size()), 0x00000000);
-                    for (size_t i = 0; i < sliceResult.frames.size(); ++i)
-                        targetProject->getFrame(static_cast<int>(i)).pixels = sliceResult.frames[i];
+                    targetProject->setFrameCount(static_cast<int>(filteredFrames.size()), 0x00000000);
+                    for (size_t i = 0; i < filteredFrames.size(); ++i)
+                        targetProject->getFrame(static_cast<int>(i)).pixels = filteredFrames[i];
                     targetContext->clearFrameGroups();
                     firstImportedIndex = 0;
                 }
@@ -1559,11 +1765,11 @@ void App::renderSpriteSheetImportPopup()
                     std::unique_ptr<Project> newProject = std::make_unique<Project>(
                         effectiveSliceWidth,
                         effectiveSliceHeight,
-                        static_cast<int>(sliceResult.frames.size()),
+                        static_cast<int>(filteredFrames.size()),
                         0x00000000);
                     newProject->setName(projectNameFromPath(spriteSheetImportPendingPath_));
-                    for (size_t i = 0; i < sliceResult.frames.size(); ++i)
-                        newProject->getFrame(static_cast<int>(i)).pixels = sliceResult.frames[i];
+                    for (size_t i = 0; i < filteredFrames.size(); ++i)
+                        newProject->getFrame(static_cast<int>(i)).pixels = filteredFrames[i];
 
                     createSessionFromProject(std::move(newProject), "");
                     targetContext = activeContext_;
@@ -1592,9 +1798,9 @@ void App::renderSpriteSheetImportPopup()
                         for (int row = 0; row < sliceResult.rows; ++row)
                         {
                             std::vector<int> groupFrames;
-                            for (size_t i = 0; i < sliceResult.frames.size(); ++i)
+                            for (size_t i = 0; i < filteredFrames.size(); ++i)
                             {
-                                if (sliceResult.tileRows[i] == row)
+                                if (filteredTileRows[i] == row)
                                     groupFrames.push_back(firstImportedIndex + static_cast<int>(i));
                             }
                             if (!groupFrames.empty())
@@ -1613,9 +1819,9 @@ void App::renderSpriteSheetImportPopup()
                         for (int col = 0; col < sliceResult.columns; ++col)
                         {
                             std::vector<int> groupFrames;
-                            for (size_t i = 0; i < sliceResult.frames.size(); ++i)
+                            for (size_t i = 0; i < filteredFrames.size(); ++i)
                             {
-                                if (sliceResult.tileCols[i] == col)
+                                if (filteredTileCols[i] == col)
                                     groupFrames.push_back(firstImportedIndex + static_cast<int>(i));
                             }
                             if (!groupFrames.empty())
