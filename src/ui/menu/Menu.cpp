@@ -39,6 +39,15 @@ void Menu::addSeparator() {
     menuItems.push_back(new MenuSeparator());
 }
 
+void Menu::clearItems()
+{
+    for (MenuBase* item : menuItems)
+    {
+        delete item;
+    }
+    menuItems.clear();
+}
+
 // 渲染菜单
 void Menu::render() {
     if (!isEnabled()) {

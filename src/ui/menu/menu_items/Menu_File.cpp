@@ -4,6 +4,8 @@
 #include "ui/menu/Menu.h"
 #include "ui/menu/MenuItem.h"
 
+#include <filesystem>
+
 Menu_File::Menu_File(Menu* menu,
                      AppContext* context,
                      const std::function<void()>& onExitCallback,
@@ -16,6 +18,7 @@ Menu_File::Menu_File(Menu* menu,
                      const std::function<void()>& onExportSpriteSheetConfigCallback,
                      const std::function<void()>& onImportSingleFramePngCallback,
                      const std::function<void()>& onImportSpriteSheetPngCallback,
+                     const std::function<void(const std::string&)>& onOpenRecentProjectByPathCallback,
                      const std::function<void()>& onCloseProjectCallback,
                      const std::function<void()>& onCloseAllProjectsCallback)
     : MenuOptionBase(menu),
@@ -30,6 +33,7 @@ Menu_File::Menu_File(Menu* menu,
       onExportSpriteSheetConfigCallback_(onExportSpriteSheetConfigCallback),
       onImportSingleFramePngCallback_(onImportSingleFramePngCallback),
       onImportSpriteSheetPngCallback_(onImportSpriteSheetPngCallback),
+      onOpenRecentProjectByPathCallback_(onOpenRecentProjectByPathCallback),
       onCloseProjectCallback_(onCloseProjectCallback),
       onCloseAllProjectsCallback_(onCloseAllProjectsCallback) {}
 
@@ -47,8 +51,9 @@ void Menu_File::initialize() {
             onOpenProjectCallback_();
     });
 
-    Menu* openRecentMenu = new Menu("Open Recent");
-    getMenu()->addItem("Open Recent", openRecentMenu);
+    openRecentMenu_ = new Menu("Open Recent");
+    getMenu()->addItem("Open Recent", openRecentMenu_);
+    rebuildOpenRecentMenu();
 
     getMenu()->addSeparator();
 
@@ -173,10 +178,59 @@ void Menu_File::setOnImportSpriteSheetPngCallback(const std::function<void()>& c
     onImportSpriteSheetPngCallback_ = callback;
 }
 
+void Menu_File::setOnOpenRecentProjectByPathCallback(const std::function<void(const std::string&)>& callback)
+{
+    onOpenRecentProjectByPathCallback_ = callback;
+    rebuildOpenRecentMenu();
+}
+
 void Menu_File::setOnCloseProjectCallback(const std::function<void()>& callback) {
     onCloseProjectCallback_ = callback;
 }
 
 void Menu_File::setOnCloseAllProjectsCallback(const std::function<void()>& callback) {
     onCloseAllProjectsCallback_ = callback;
+}
+
+void Menu_File::setRecentProjectPaths(const std::vector<std::string>& paths)
+{
+    recentProjectPaths_ = paths;
+    rebuildOpenRecentMenu();
+}
+
+void Menu_File::rebuildOpenRecentMenu()
+{
+    if (!openRecentMenu_)
+        return;
+
+    openRecentMenu_->clearItems();
+    if (recentProjectPaths_.empty())
+    {
+        // 空列表时给一个禁用占位项，避免子菜单看起来“点开无内容”。
+        openRecentMenu_->addItem("(Empty)", "", nullptr, false);
+        return;
+    }
+
+    for (size_t i = 0; i < recentProjectPaths_.size(); ++i)
+    {
+        const std::string& path = recentProjectPaths_[i];
+        std::string filename = path;
+        try
+        {
+            filename = std::filesystem::path(path).filename().string();
+            if (filename.empty())
+                filename = path;
+        }
+        catch (...)
+        {
+        }
+
+        // 菜单显示“序号 + 文件名”，并把完整路径放在快捷键列中，兼顾可读性和信息量。
+        const std::string label = std::to_string(i + 1) + ". " + filename;
+        MenuItem* item = openRecentMenu_->addItem(label, path);
+        item->setCallback([this, path]() {
+            if (onOpenRecentProjectByPathCallback_)
+                onOpenRecentProjectByPathCallback_(path);
+        });
+    }
 }

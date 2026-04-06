@@ -25,6 +25,9 @@ public:
     
     // 添加分隔线
     void addSeparator();
+
+    // 清空当前菜单下所有子项（用于动态重建菜单内容）
+    void clearItems();
     
     // 渲染菜单
     void render() override;

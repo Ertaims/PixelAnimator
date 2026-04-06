@@ -49,8 +49,8 @@ void ProjectWindow::renderCanvasPanel(Project* project)
     frameIndex = std::clamp(frameIndex, 0, std::max(0, project->getFrameCount() - 1));
     context->setCurrentFrameIndex(frameIndex);
     const int frameCount = project->getFrameCount();
-    ImGui::Text("Canvas  %dx%d   Zoom %dx   Frame %d/%d", width, height, zoom, frameIndex + 1, frameCount);
-    ImGui::Separator();
+    // ImGui::Text("Canvas  %dx%d   Zoom %dx   Frame %d/%d", width, height, zoom, frameIndex + 1, frameCount);
+    // ImGui::Separator();
 
     Project::Frame& frame = project->getFrame(frameIndex);
     ensureCanvasTexture(width, height);
@@ -71,14 +71,22 @@ void ProjectWindow::renderCanvasPanel(Project* project)
         hitboxSize,
         ImGuiButtonFlags_MouseButtonLeft | ImGuiButtonFlags_MouseButtonMiddle | ImGuiButtonFlags_MouseButtonRight);
 
+    // 记录“鼠标是否在 Canvas 面板交互区域内”：
+    // 后续编辑输入必须同时满足：
+    // 1) 在画布图像矩形内；
+    // 2) 在 Canvas 面板命中区域内。
+    // 这样可以避免画布被平移到其他面板上时出现“越界编辑”。
+    const bool canvasHitboxHovered = ImGui::IsItemHovered();
+
     if (ImGui::IsItemHovered())
     {
         const float wheel = ImGui::GetIO().MouseWheel;
         if (wheel != 0.0f)
         {
-            const int zoomLevels[] = {1, 2, 4, 8, 16, 32};
+            const int zoomLevels[] = {1, 2, 4, 8, 16, 32, 64, 128, 256};
+            int length = sizeof(zoomLevels) / sizeof(zoomLevels[0]);
             int zoomIndex = 0;
-            for (int i = 0; i < 6; ++i)
+            for (int i = 0; i < length; ++i)
             {
                 if (zoomLevels[i] == zoom)
                 {
@@ -86,7 +94,7 @@ void ProjectWindow::renderCanvasPanel(Project* project)
                     break;
                 }
             }
-            zoomIndex = std::clamp(zoomIndex + (wheel > 0.0f ? 1 : -1), 0, 5);
+            zoomIndex = std::clamp(zoomIndex + (wheel > 0.0f ? 1 : -1), 0, length - 1);
             zoom = zoomLevels[zoomIndex];
             context->setCanvasZoom(zoom);
         }
@@ -156,7 +164,7 @@ void ProjectWindow::renderCanvasPanel(Project* project)
         mousePos.y < (imagePos.y + imageH);
 
     // 只在“无弹窗”时才处理画布编辑输入，避免弹窗期间误绘制。
-    if (!anyPopupOpen && hovered && ImGui::IsMouseDown(ImGuiMouseButton_Left))
+    if (!anyPopupOpen && canvasHitboxHovered && hovered && ImGui::IsMouseDown(ImGuiMouseButton_Left))
     {
         const float localX = mousePos.x - imagePos.x;
         const float localY = mousePos.y - imagePos.y;
@@ -184,7 +192,7 @@ void ProjectWindow::renderCanvasPanel(Project* project)
         }
     }
 
-    if (!anyPopupOpen && hovered)
+    if (!anyPopupOpen && canvasHitboxHovered && hovered)
     {
         const float localX = mousePos.x - imagePos.x;
         const float localY = mousePos.y - imagePos.y;

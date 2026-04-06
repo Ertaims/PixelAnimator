@@ -210,6 +210,11 @@ private:
     void createSessionFromProject(std::unique_ptr<Project> project, const std::string& projectPath);
     // 显示错误
     void showError(const std::string& message);
+    void addRecentProjectPath(const std::string& path);
+    void refreshRecentProjectsMenu();
+    std::string getRecentProjectsStoragePath() const;
+    void loadRecentProjectPaths();
+    void saveRecentProjectPaths() const;
     // 窗口事件处理
     static void SDLCALL onOpenDialogClosed(void* userdata, const char* const* filelist, int filter);
     // 保存项目弹窗
@@ -224,6 +229,7 @@ private:
     void closeAllProjects();                                            // 关闭所有项目
     void refreshWindowLabels();                                         // 根据 dirty 状态更新窗口标题 *
     void handleProjectSwitchShortcut();                                 // Ctrl+Tab / Ctrl+Shift+Tab
+    void handleFileMenuShortcuts();                                     // File 菜单全局快捷键
 
     // ---------------- 平台与渲染状态 ----------------
     SDL_Window* window_ = nullptr;
@@ -238,6 +244,7 @@ private:
     Menu_File* fileMenu_ = nullptr;
     Menu_Edit* editMenu_ = nullptr;
     std::vector<ProjectSession> projectSessions_;
+    std::vector<std::string> recentProjectPaths_;
     AppContext* activeContext_ = nullptr;
 
     // ---------------- Dock 布局与编号 ----------------

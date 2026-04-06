@@ -47,6 +47,7 @@ public:
                                       const std::function<void()>& onExportSpriteSheetConfigCallback,
                                       const std::function<void()>& onImportSingleFramePngCallback,
                                       const std::function<void()>& onImportSpriteSheetPngCallback,
+                                      const std::function<void(const std::string&)>& onOpenRecentProjectByPathCallback,
                                       const std::function<void()>& onCloseProjectCallback,
                                       const std::function<void()>& onCloseAllProjectsCallback) = 0;
 
@@ -77,6 +78,7 @@ public:
                               const std::function<void()>& onExportSpriteSheetConfigCallback,
                               const std::function<void()>& onImportSingleFramePngCallback,
                               const std::function<void()>& onImportSpriteSheetPngCallback,
+                              const std::function<void(const std::string&)>& onOpenRecentProjectByPathCallback,
                               const std::function<void()>& onCloseProjectCallback,
                               const std::function<void()>& onCloseAllProjectsCallback) override {
         Menu* fileMenu = manager->addMenu("File");
@@ -93,6 +95,7 @@ public:
             onExportSpriteSheetConfigCallback,
             onImportSingleFramePngCallback,
             onImportSpriteSheetPngCallback,
+            onOpenRecentProjectByPathCallback,
             onCloseProjectCallback,
             onCloseAllProjectsCallback);
         menuFile->initialize();

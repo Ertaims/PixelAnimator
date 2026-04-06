@@ -39,10 +39,10 @@ void ProjectWindow::renderRightPanel(Project* project)
         break;
     }
 
-    const int zoomLevels[] = {1, 2, 4, 8, 16, 32};
-    const char* zoomLabels[] = {"1x", "2x", "4x", "8x", "16x", "32x"};
+    const int zoomLevels[] = {1, 2, 4, 8, 16, 32, 64, 128, 256};
+    const char* zoomLabels[] = {"1x", "2x", "4x", "8x", "16x", "32x", "64x", "128x", "256x"};
     int zoomIndex = 0;
-    for (int i = 0; i < 6; ++i)
+    for (int i = 0; i < 9; ++i)
     {
         if (zoomLevels[i] == context->getCanvasZoom())
         {
@@ -50,7 +50,7 @@ void ProjectWindow::renderRightPanel(Project* project)
             break;
         }
     }
-    if (ImGui::Combo("Canvas Zoom", &zoomIndex, zoomLabels, 6))
+    if (ImGui::Combo("Canvas Zoom", &zoomIndex, zoomLabels, 9))
     {
         context->setCanvasZoom(zoomLevels[zoomIndex]);
     }

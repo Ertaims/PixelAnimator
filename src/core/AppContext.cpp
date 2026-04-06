@@ -56,7 +56,7 @@ void AppContext::setBrushSize(int size)
 
 void AppContext::setCanvasZoom(int zoom)
 {
-    static const int allowed[] = {1, 2, 4, 8, 16, 32};
+    static const int allowed[] = {1, 2, 4, 8, 16, 32, 64, 128, 256};
     for (int z : allowed) {
         if (z == zoom) {
             canvasZoom_ = z;

@@ -32,6 +32,7 @@
 #include <cmath>
 #include <cstdio>
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <sstream>
 #include <string_view>
@@ -224,7 +225,11 @@ bool App::init()
     if (!initImGui())
         return false;
 
-    // 4) 创建菜单与默认项目
+    // 4) 启动时先加载 Recent（持久化数据），再创建菜单与默认项目，
+    //    这样 File->Open Recent 首帧就能看到历史列表。
+    loadRecentProjectPaths();
+
+    // 5) 创建菜单与默认项目
     createMenuAndWindows();
 
     std::cout << "OpenGL Version: " << glGetString(GL_VERSION) << std::endl;
@@ -335,8 +340,10 @@ void App::createMenuAndWindows()
         [this]() { spriteSheetExportPopupRequested_ = true; },
         [this]() { requestImportDialog(ImportKind::CurrentFramePng); },
         [this]() { requestImportDialog(ImportKind::SpriteSheetPng); },
+        [this](const std::string& path) { openProjectFromPath(path); },
         [this]() { closeProjectByContext(activeContext_); },
         [this]() { closeAllProjects(); });
+    refreshRecentProjectsMenu();
 
     editMenu_ = menuFactory.createEditMenu(menuManager_, nullptr);
     menuFactory.createViewMenu(menuManager_);
@@ -416,6 +423,7 @@ void App::renderFrame()
     renderSpriteSheetExportPopup();
     renderSpriteSheetImportPopup();
     renderErrorPopup();
+    handleFileMenuShortcuts();
     handleProjectSwitchShortcut();
     refreshWindowLabels();
 
@@ -490,6 +498,9 @@ void App::renderFrame()
 
 void App::shutdown()
 {
+    // 退出前持久化 Recent 列表，确保本次会话更新不会丢失。
+    saveRecentProjectPaths();
+
     // 先释放导出模式图标纹理，避免 GL 资源泄漏。
     if (spriteSheetRowIconTexture_ != 0)
     {
@@ -1135,6 +1146,66 @@ void App::showError(const std::string& message)
     pendingErrorMessage_ = message;
 }
 
+void App::handleFileMenuShortcuts()
+{
+    ImGuiIO& io = ImGui::GetIO();
+
+    // 正在编辑文本时不处理全局文件快捷键，避免与输入冲突。
+    if (io.WantTextInput)
+        return;
+    if (!io.KeyCtrl)
+        return;
+
+    // 优先处理带 Shift 的组合，避免与 Ctrl+S / Ctrl+W 冲突。
+    if (io.KeyShift && ImGui::IsKeyPressed(ImGuiKey_S, false))
+    {
+        // Ctrl+Shift+S：Save As。
+        // 若当前项目已有路径，则沿用当前格式（Binary/Json）；否则默认 Binary。
+        ProjectFileFormat format = ProjectFileFormat::Binary;
+        if (activeContext_ && !activeContext_->getProjectFilePath().empty())
+            format = detectFormatFromPath(activeContext_->getProjectFilePath());
+        requestSaveAsDialog(format);
+        return;
+    }
+    if (io.KeyShift && ImGui::IsKeyPressed(ImGuiKey_W, false))
+    {
+        // Ctrl+Shift+W：Close All
+        closeAllProjects();
+        return;
+    }
+
+    if (ImGui::IsKeyPressed(ImGuiKey_N, false))
+    {
+        // Ctrl+N：New Project
+        newProjectPopupRequested_ = true;
+        return;
+    }
+    if (ImGui::IsKeyPressed(ImGuiKey_O, false))
+    {
+        // Ctrl+O：Open Project
+        requestOpenProjectDialog();
+        return;
+    }
+    if (ImGui::IsKeyPressed(ImGuiKey_S, false))
+    {
+        // Ctrl+S：Save
+        saveActiveProject();
+        return;
+    }
+    if (ImGui::IsKeyPressed(ImGuiKey_W, false))
+    {
+        // Ctrl+W：Close
+        closeProjectByContext(activeContext_);
+        return;
+    }
+    if (ImGui::IsKeyPressed(ImGuiKey_Q, false))
+    {
+        // Ctrl+Q：Exit
+        done_ = true;
+        return;
+    }
+}
+
 bool App::saveProjectAs(AppContext* context, const std::string& path, ProjectFileFormat preferredFormat)
 {
     if (!context || !context->hasProject())
@@ -1172,6 +1243,7 @@ bool App::saveProjectAs(AppContext* context, const std::string& path, ProjectFil
 
     context->setProjectFilePath(finalPath);
     context->setProjectDirty(false);
+    addRecentProjectPath(finalPath);
     return true;
 }
 
@@ -2260,6 +2332,7 @@ bool App::openProjectFromPath(const std::string& path)
         loadedProject->setName(projectNameFromPath(path));
 
     createSessionFromProject(std::move(loadedProject), path);
+    addRecentProjectPath(path);
     return true;
 }
 
@@ -2295,6 +2368,102 @@ void App::createSessionFromProject(std::unique_ptr<Project> project, const std::
     projectSessions_.push_back(std::move(session));
     setActiveContext(rawContext);
     dockLayoutInitialized_ = false;
+}
+
+void App::addRecentProjectPath(const std::string& path)
+{
+    if (path.empty())
+        return;
+
+    // 仅记录可再次打开的项目文件，避免把 PNG 导入/导出路径混入 Open Recent。
+    if (!isSupportedProjectPath(path))
+        return;
+
+    const std::string lowerPath = toLowerCopy(path);
+    recentProjectPaths_.erase(
+        std::remove_if(recentProjectPaths_.begin(),
+                       recentProjectPaths_.end(),
+                       [&lowerPath](const std::string& item) {
+                           return toLowerCopy(item) == lowerPath;
+                       }),
+        recentProjectPaths_.end());
+
+    recentProjectPaths_.insert(recentProjectPaths_.begin(), path);
+    static constexpr size_t kRecentLimit = 12;
+    if (recentProjectPaths_.size() > kRecentLimit)
+        recentProjectPaths_.resize(kRecentLimit);
+
+    refreshRecentProjectsMenu();
+    // 每次 Recent 变更后立即落盘，避免异常退出导致数据丢失。
+    saveRecentProjectPaths();
+}
+
+void App::refreshRecentProjectsMenu()
+{
+    if (fileMenu_)
+        fileMenu_->setRecentProjectPaths(recentProjectPaths_);
+}
+
+std::string App::getRecentProjectsStoragePath() const
+{
+    // MVP 方案：把 Recent 文件放在当前工作目录下，便于调试和跨平台实现。
+    // 后续若需要可迁移到用户配置目录（如 AppData / ~/.config）。
+    try
+    {
+        return (std::filesystem::current_path() / "recent_projects.txt").string();
+    }
+    catch (...)
+    {
+        // 获取失败时回退到相对路径，避免功能直接失效。
+        return "recent_projects.txt";
+    }
+}
+
+void App::loadRecentProjectPaths()
+{
+    recentProjectPaths_.clear();
+    const std::string storagePath = getRecentProjectsStoragePath();
+    std::ifstream input(storagePath);
+    if (!input.is_open())
+        return; // 首次运行或文件不存在，视为无历史记录。
+
+    std::string line;
+    static constexpr size_t kRecentLimit = 12;
+    while (std::getline(input, line))
+    {
+        if (line.empty())
+            continue;
+        if (!isSupportedProjectPath(line))
+            continue;
+
+        // 读取阶段做去重（大小写不敏感），避免历史文件中出现重复路径。
+        const std::string lowerLine = toLowerCopy(line);
+        const bool existed = std::any_of(
+            recentProjectPaths_.begin(),
+            recentProjectPaths_.end(),
+            [&lowerLine](const std::string& item) { return toLowerCopy(item) == lowerLine; });
+        if (existed)
+            continue;
+
+        recentProjectPaths_.push_back(line);
+        if (recentProjectPaths_.size() >= kRecentLimit)
+            break;
+    }
+}
+
+void App::saveRecentProjectPaths() const
+{
+    const std::string storagePath = getRecentProjectsStoragePath();
+    std::ofstream output(storagePath, std::ios::trunc);
+    if (!output.is_open())
+        return;
+
+    for (const std::string& path : recentProjectPaths_)
+    {
+        if (path.empty())
+            continue;
+        output << path << '\n';
+    }
 }
 
 void App::createNewProject(int width, int height, int frameCount, uint32_t fillColor, bool checkerboardBackground)
