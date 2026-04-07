@@ -27,6 +27,7 @@ enum class ToolType : int
     Eraser,        // 橡皮擦
     Eyedropper,    // 吸管
     Fill,          // 油漆桶（区域填充）
+    RectSelection, // 矩形框选
     Line,          // 直线
     Rect,          // 矩形
     RectFilled,    // 填充矩形
@@ -49,6 +50,31 @@ enum class ToolType : int
 class AppContext
 {
 public:
+    /**
+     * @brief 矩形选区布尔运算模式。
+     *
+     * - Replace：清空旧选区后写入新矩形（替换）
+     * - Add：把新矩形并入当前选区（并集）
+     * - Remove：从当前选区中扣除新矩形区域（差集）
+     */
+    enum class PixelSelectionOp : int
+    {
+        Replace = 0,
+        Add,
+        Remove
+    };
+
+    /**
+     * @brief 像素矩形（画布坐标系，左上角 + 宽高）。
+     */
+    struct PixelRect
+    {
+        int x = 0;
+        int y = 0;
+        int width = 0;
+        int height = 0;
+    };
+
     /**
      * @brief 时间轴帧分组结构。
      *
@@ -379,6 +405,91 @@ public:
     }
 
     // -------------------------------------------------------------------------
+    // 像素选区（矩形框选工具）
+    // -------------------------------------------------------------------------
+
+    /**
+     * @brief 当画布尺寸变化时，确保选区掩码尺寸同步；尺寸不一致时会清空旧选区。
+     */
+    void ensurePixelSelectionCanvasSize(int canvasWidth, int canvasHeight);
+
+    /**
+     * @brief 是否存在任何像素被选中。
+     */
+    bool hasPixelSelection() const;
+
+    /**
+     * @brief 清空整张画布的像素选区。
+     */
+    void clearPixelSelection();
+
+    /**
+     * @brief 查询某个像素是否属于当前选区。
+     *
+     * 说明：
+     * - 若当前“没有任何选区”，本函数返回 false；
+     * - 画图工具应使用 canEditPixel(...)，它会在“无选区”时放行全部像素。
+     */
+    bool isPixelSelected(int x, int y, int canvasWidth, int canvasHeight) const;
+
+    /**
+     * @brief 判断某个像素是否允许被编辑。
+     *
+     * 规则：
+     * - 无选区：全部可编辑；
+     * - 有选区：仅选区内可编辑。
+     */
+    bool canEditPixel(int x, int y, int canvasWidth, int canvasHeight) const;
+
+    /**
+     * @brief 使用拖拽矩形更新选区（支持 Replace/Add/Remove）。
+     *
+     * @param x0 拖拽起点像素 x
+     * @param y0 拖拽起点像素 y
+     * @param x1 拖拽终点像素 x
+     * @param y1 拖拽终点像素 y
+     * @param canvasWidth 画布宽
+     * @param canvasHeight 画布高
+     * @param op 选区布尔操作
+     * @return true 选区内容发生变化
+     */
+    bool applyRectPixelSelection(int x0,
+                                 int y0,
+                                 int x1,
+                                 int y1,
+                                 int canvasWidth,
+                                 int canvasHeight,
+                                 PixelSelectionOp op);
+
+    /**
+     * @brief 获取当前选区外接矩形。
+     *
+     * @param outRect 输出矩形；无选区时保持不变
+     * @return true 成功获取（存在选区），false 表示当前无选区
+     */
+    bool getPixelSelectionBounds(PixelRect& outRect) const;
+
+    /**
+     * @brief 整体平移当前选区。
+     *
+     * 超出画布边界的像素会被裁掉。
+     * @return true 选区内容发生变化
+     */
+    bool movePixelSelection(int dx, int dy);
+
+    /**
+     * @brief 以外接矩形几何变换方式缩放选区。
+     *
+     * @param fromRect 变换前外接矩形（通常为拖拽开始时）
+     * @param toRect 变换后外接矩形（通常由手柄拖拽实时计算）
+     * @return true 选区内容发生变化
+     */
+    bool transformPixelSelectionByRect(const PixelRect& fromRect,
+                                       const PixelRect& toRect,
+                                       bool flipX = false,
+                                       bool flipY = false);
+
+    // -------------------------------------------------------------------------
     // 撤销/重做
     // -------------------------------------------------------------------------
 
@@ -478,6 +589,12 @@ private:
     int canvasZoom_ = 4;       // 默认 4 倍
     float canvasPanX_ = 0.0f;
     float canvasPanY_ = 0.0f;
+
+    // 像素选区掩码（1 表示选中，0 表示未选中）
+    int pixelSelectionCanvasWidth_ = 0;
+    int pixelSelectionCanvasHeight_ = 0;
+    std::vector<uint8_t> pixelSelectionMask_;
+    bool pixelSelectionHasAny_ = false;
 
     // 撤销/重做（不拥有所有权，由外部创建与释放）
     CommandStack* commandStack_ = nullptr;

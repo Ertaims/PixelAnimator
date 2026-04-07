@@ -42,6 +42,7 @@ void ensureToolbarIconTextures(GLuint& brushIcon,
                                GLuint& eraserIcon,
                                GLuint& eyedropperIcon,
                                GLuint& fillIcon,
+                               GLuint& rectSelectIcon,
                                bool& loaded)
 {
     if (loaded)
@@ -51,6 +52,7 @@ void ensureToolbarIconTextures(GLuint& brushIcon,
     const char* eraserCandidates[] = {"src/assets/erase.png", "../src/assets/erase.png", "../../src/assets/erase.png"};
     const char* eyedropperCandidates[] = {"src/assets/eyedropper.png", "../src/assets/eyedropper.png", "../../src/assets/eyedropper.png"};
     const char* fillCandidates[] = {"src/assets/fill.png", "../src/assets/fill.png", "../../src/assets/fill.png"};
+    const char* rectSelectCandidates[] = {"src/assets/RectangularSelection.png", "../src/assets/RectangularSelection.png", "../../src/assets/RectangularSelection.png"};
 
     for (const char* p : brushCandidates)
     {
@@ -76,6 +78,12 @@ void ensureToolbarIconTextures(GLuint& brushIcon,
         if (fillIcon != 0)
             break;
     }
+    for (const char* p : rectSelectCandidates)
+    {
+        rectSelectIcon = loadTextureFromFile(p);
+        if (rectSelectIcon != 0)
+            break;
+    }
 
     loaded = true;
 }
@@ -88,6 +96,7 @@ void ProjectWindow::renderToolbarPanel()
         toolbarState_.eraserIconTexture,
         toolbarState_.eyedropperIconTexture,
         toolbarState_.fillIconTexture,
+        toolbarState_.rectSelectIconTexture,
         toolbarState_.iconsLoaded);
 
     ImGui::TextUnformatted("Tools");
@@ -104,7 +113,8 @@ void ProjectWindow::renderToolbarPanel()
         {ToolType::Brush, "Brush", toolbarState_.brushIconTexture},
         {ToolType::Eraser, "Eraser", toolbarState_.eraserIconTexture},
         {ToolType::Eyedropper, "Eyedropper", toolbarState_.eyedropperIconTexture},
-        {ToolType::Fill, "Fill", toolbarState_.fillIconTexture}
+        {ToolType::Fill, "Fill", toolbarState_.fillIconTexture},
+        {ToolType::RectSelection, "Rect Selection", toolbarState_.rectSelectIconTexture}
     };
 
     const ImVec2 iconSize(26.0f, 26.0f);

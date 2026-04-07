@@ -46,6 +46,11 @@ ProjectWindow::~ProjectWindow()
         glDeleteTextures(1, &toolbarState_.fillIconTexture);
         toolbarState_.fillIconTexture = 0;
     }
+    if (toolbarState_.rectSelectIconTexture != 0)
+    {
+        glDeleteTextures(1, &toolbarState_.rectSelectIconTexture);
+        toolbarState_.rectSelectIconTexture = 0;
+    }
 }
 
 /**

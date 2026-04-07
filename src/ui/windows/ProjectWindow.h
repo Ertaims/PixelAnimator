@@ -2,6 +2,7 @@
 #define PROJECTWINDOW_H
 
 #include "Window.h"
+#include "tools/RectSelectionTool.h"
 #include <cstdint>
 #include <functional>
 #include <string>
@@ -100,6 +101,7 @@ private:
         unsigned int eraserIconTexture = 0;     // 橡皮擦图标纹理 ID
         unsigned int eyedropperIconTexture = 0; // 取色器图标纹理 ID
         unsigned int fillIconTexture = 0;       // 填充工具图标纹理 ID
+        unsigned int rectSelectIconTexture = 0; // 矩形框选图标纹理 ID
     };
 
     /**
@@ -135,6 +137,7 @@ private:
     PaletteState paletteState_;                     // 调色板状态
     TimelineState timelineState_;                   // 时间轴状态
     ToolbarState toolbarState_;                     // 工具栏状态
+    RectSelectionTool rectSelectionTool_;           // 矩形框选工具实例（每个项目窗口独立）
     int pendingCanvasWidth_ = 0;                    // 待处理的画布宽度
     int pendingCanvasHeight_ = 0;                   // 待处理的画布高度
 };

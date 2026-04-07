@@ -10,7 +10,6 @@
 #include "tools/Tool.h"
 
 #include <algorithm>
-#include <vector>
 
 namespace
 {
@@ -35,7 +34,22 @@ namespace
             return nullptr;
         }
     }
-} 
+
+    // 将鼠标屏幕坐标映射到画布像素坐标，并夹到合法范围。
+    void getClampedPixelFromMouse(const ImVec2& mousePos,
+                                  const ImVec2& imagePos,
+                                  int zoom,
+                                  int canvasWidth,
+                                  int canvasHeight,
+                                  int& outX,
+                                  int& outY)
+    {
+        const float localX = mousePos.x - imagePos.x;
+        const float localY = mousePos.y - imagePos.y;
+        outX = std::clamp(static_cast<int>(localX / static_cast<float>(zoom)), 0, canvasWidth - 1);
+        outY = std::clamp(static_cast<int>(localY / static_cast<float>(zoom)), 0, canvasHeight - 1);
+    }
+} // namespace
 
 // 画布面板
 void ProjectWindow::renderCanvasPanel(Project* project)
@@ -43,14 +57,16 @@ void ProjectWindow::renderCanvasPanel(Project* project)
     const int width = project->getWidth();
     const int height = project->getHeight();
     int zoom = context->getCanvasZoom();
+
+    // 同步选区掩码尺寸，确保画布尺寸变化后选区状态一致。
+    context->ensurePixelSelectionCanvasSize(width, height);
+
     // 多选状态下，画布始终显示“主选中帧”（选区第一帧）。
     context->sanitizeFrameSelection(project->getFrameCount(), context->getCurrentFrameIndex());
     int frameIndex = context->getPrimarySelectedFrameIndex();
     frameIndex = std::clamp(frameIndex, 0, std::max(0, project->getFrameCount() - 1));
     context->setCurrentFrameIndex(frameIndex);
     const int frameCount = project->getFrameCount();
-    // ImGui::Text("Canvas  %dx%d   Zoom %dx   Frame %d/%d", width, height, zoom, frameIndex + 1, frameCount);
-    // ImGui::Separator();
 
     Project::Frame& frame = project->getFrame(frameIndex);
     ensureCanvasTexture(width, height);
@@ -71,22 +87,15 @@ void ProjectWindow::renderCanvasPanel(Project* project)
         hitboxSize,
         ImGuiButtonFlags_MouseButtonLeft | ImGuiButtonFlags_MouseButtonMiddle | ImGuiButtonFlags_MouseButtonRight);
 
-    // 记录“鼠标是否在 Canvas 面板交互区域内”：
-    // 后续编辑输入必须同时满足：
-    // 1) 在画布图像矩形内；
-    // 2) 在 Canvas 面板命中区域内。
-    // 这样可以避免画布被平移到其他面板上时出现“越界编辑”。
     const bool canvasHitboxHovered = ImGui::IsItemHovered();
-
-    if (ImGui::IsItemHovered())
+    if (canvasHitboxHovered)
     {
         const float wheel = ImGui::GetIO().MouseWheel;
         if (wheel != 0.0f)
         {
             const int zoomLevels[] = {1, 2, 4, 8, 16, 32, 64, 128, 256};
-            int length = sizeof(zoomLevels) / sizeof(zoomLevels[0]);
             int zoomIndex = 0;
-            for (int i = 0; i < length; ++i)
+            for (int i = 0; i < static_cast<int>(sizeof(zoomLevels) / sizeof(zoomLevels[0])); ++i)
             {
                 if (zoomLevels[i] == zoom)
                 {
@@ -94,9 +103,9 @@ void ProjectWindow::renderCanvasPanel(Project* project)
                     break;
                 }
             }
-            zoomIndex = std::clamp(zoomIndex + (wheel > 0.0f ? 1 : -1), 0, length - 1);
+            zoomIndex = std::clamp(zoomIndex + (wheel > 0.0f ? 1 : -1), 0, 8);
+            context->setCanvasZoom(zoomLevels[zoomIndex]);
             zoom = zoomLevels[zoomIndex];
-            context->setCanvasZoom(zoom);
         }
     }
 
@@ -108,7 +117,7 @@ void ProjectWindow::renderCanvasPanel(Project* project)
 
     ImDrawList* drawList = ImGui::GetWindowDrawList();
     const ImVec2 imageMin = imagePos;
-    const ImVec2 imageMax = ImVec2(imagePos.x + imageW, imagePos.y + imageH);
+    const ImVec2 imageMax(imagePos.x + imageW, imagePos.y + imageH);
 
     if (context->isCheckerboardBackgroundEnabled())
     {
@@ -145,12 +154,12 @@ void ProjectWindow::renderCanvasPanel(Project* project)
         const ImU32 gridColor = IM_COL32(80, 80, 80, 120);
         for (int x = 1; x < width; ++x)
         {
-            const float gx = imagePos.x + x * zoom;
+            const float gx = imagePos.x + static_cast<float>(x * zoom);
             drawList->AddLine(ImVec2(gx, imagePos.y), ImVec2(gx, imagePos.y + imageH), gridColor);
         }
         for (int y = 1; y < height; ++y)
         {
-            const float gy = imagePos.y + y * zoom;
+            const float gy = imagePos.y + static_cast<float>(y * zoom);
             drawList->AddLine(ImVec2(imagePos.x, gy), ImVec2(imagePos.x + imageW, gy), gridColor);
         }
     }
@@ -163,14 +172,47 @@ void ProjectWindow::renderCanvasPanel(Project* project)
         mousePos.x < (imagePos.x + imageW) &&
         mousePos.y < (imagePos.y + imageH);
 
-    // 只在“无弹窗”时才处理画布编辑输入，避免弹窗期间误绘制。
-    if (!anyPopupOpen && canvasHitboxHovered && hovered && ImGui::IsMouseDown(ImGuiMouseButton_Left))
-    {
-        const float localX = mousePos.x - imagePos.x;
-        const float localY = mousePos.y - imagePos.y;
-        const int pixelX = std::clamp(static_cast<int>(localX / zoom), 0, width - 1);
-        const int pixelY = std::clamp(static_cast<int>(localY / zoom), 0, height - 1);
+    int mousePixelX = 0;
+    int mousePixelY = 0;
+    getClampedPixelFromMouse(mousePos, imagePos, zoom, width, height, mousePixelX, mousePixelY);
 
+    // 将矩形框选工具作为独立类处理输入与叠加渲染。
+    if (context->getTool() == ToolType::RectSelection)
+    {
+        bool selectionPixelsChanged = false;
+        rectSelectionTool_.handleInteraction(
+            *context,
+            frame,
+            mousePos,
+            canvasHitboxHovered,
+            hovered,
+            anyPopupOpen,
+            imagePos,
+            zoom,
+            width,
+            height,
+            selectionPixelsChanged);
+
+        // 框选工具对像素产生变换（平移/缩放）后，同样需要标记项目已修改。
+        if (selectionPixelsChanged)
+        {
+            if (context->hasMultiFrameSelection()) context->setSingleFrameSelection(frameIndex, frameCount);
+            context->setProjectDirty(true);
+        }
+    }
+    else
+    {
+        // 切换到其它工具时，清理框选交互临时态，避免残留拖拽预览。
+        rectSelectionTool_.resetInteractionState();
+    }
+
+    // 常规像素编辑工具仅在非 RectSelection 下处理。
+    if (!anyPopupOpen
+        && canvasHitboxHovered
+        && hovered
+        && ImGui::IsMouseDown(ImGuiMouseButton_Left)
+        && context->getTool() != ToolType::RectSelection)
+    {
         const Tool* tool = resolveTool(context->getTool());
         if (tool)
         {
@@ -178,8 +220,8 @@ void ProjectWindow::renderCanvasPanel(Project* project)
                 frame,
                 width,
                 height,
-                pixelX,
-                pixelY,
+                mousePixelX,
+                mousePixelY,
                 *context,
                 ImGui::IsMouseClicked(ImGuiMouseButton_Left));
             if (changed)
@@ -192,14 +234,14 @@ void ProjectWindow::renderCanvasPanel(Project* project)
         }
     }
 
+    // 选区叠加层（包含蚂蚁线）由框选工具类负责绘制。
+    rectSelectionTool_.renderOverlay(*context, drawList, imagePos, zoom, anyPopupOpen);
+
+    // 鼠标高亮框（弹窗期间隐藏）。
     if (!anyPopupOpen && canvasHitboxHovered && hovered)
     {
-        const float localX = mousePos.x - imagePos.x;
-        const float localY = mousePos.y - imagePos.y;
-        const int pixelX = std::clamp(static_cast<int>(localX / zoom), 0, width - 1);
-        const int pixelY = std::clamp(static_cast<int>(localY / zoom), 0, height - 1);
-        const ImVec2 hlMin(imagePos.x + pixelX * zoom, imagePos.y + pixelY * zoom);
-        const ImVec2 hlMax(hlMin.x + zoom, hlMin.y + zoom);
+        const ImVec2 hlMin(imagePos.x + static_cast<float>(mousePixelX * zoom), imagePos.y + static_cast<float>(mousePixelY * zoom));
+        const ImVec2 hlMax(hlMin.x + static_cast<float>(zoom), hlMin.y + static_cast<float>(zoom));
         drawList->AddRect(hlMin, hlMax, IM_COL32(255, 255, 0, 200));
     }
 }

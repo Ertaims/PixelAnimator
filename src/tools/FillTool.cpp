@@ -17,6 +17,9 @@ bool FillTool::apply(Project::Frame& frame,
 
     if (x < 0 || y < 0 || x >= canvasWidth || y >= canvasHeight)
         return false;
+    // 若点击起点不在可编辑区域（选区外），直接不执行填充。
+    if (!context.canEditPixel(x, y, canvasWidth, canvasHeight))
+        return false;
 
     const size_t startIndex =
         static_cast<size_t>(y) * static_cast<size_t>(canvasWidth) + static_cast<size_t>(x);
@@ -43,6 +46,9 @@ bool FillTool::apply(Project::Frame& frame,
             const int nx = cx + dx[i];
             const int ny = cy + dy[i];
             if (nx < 0 || ny < 0 || nx >= canvasWidth || ny >= canvasHeight)
+                continue;
+            // 选区联动：FloodFill 传播时同样受选区约束，不能越过选区边界。
+            if (!context.canEditPixel(nx, ny, canvasWidth, canvasHeight))
                 continue;
 
             const size_t index =

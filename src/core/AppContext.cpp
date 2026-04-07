@@ -6,6 +6,7 @@
 #include "AppContext.h"
 
 #include <algorithm>
+#include <cmath>
 #include <unordered_set>
 
 namespace
@@ -37,6 +38,31 @@ int remapIndexAfterMove(int oldIndex, int fromIndex, int toIndex)
         return oldIndex + 1;
     return oldIndex;
 }
+
+// 把一个矩形按画布边界做裁剪；若裁剪后为空则返回 false。
+bool clampRectToCanvas(AppContext::PixelRect& rect, int canvasWidth, int canvasHeight)
+{
+    if (canvasWidth <= 0 || canvasHeight <= 0)
+        return false;
+
+    const int x0 = std::clamp(rect.x, 0, canvasWidth - 1);
+    const int y0 = std::clamp(rect.y, 0, canvasHeight - 1);
+    const int x1 = std::clamp(rect.x + rect.width - 1, 0, canvasWidth - 1);
+    const int y1 = std::clamp(rect.y + rect.height - 1, 0, canvasHeight - 1);
+    if (x1 < x0 || y1 < y0)
+        return false;
+
+    rect.x = x0;
+    rect.y = y0;
+    rect.width = x1 - x0 + 1;
+    rect.height = y1 - y0 + 1;
+    return true;
+}
+
+bool containsSelectedPixel(const std::vector<uint8_t>& mask)
+{
+    return std::find(mask.begin(), mask.end(), static_cast<uint8_t>(1)) != mask.end();
+}
 } // namespace
 
 // 后续实现 CommandStack 后在此包含，并取消下方 TODO 注释
@@ -64,6 +90,246 @@ void AppContext::setCanvasZoom(int zoom)
         }
     }
     // 非法值忽略，或 clamp 到最近
+}
+
+void AppContext::ensurePixelSelectionCanvasSize(int canvasWidth, int canvasHeight)
+{
+    if (canvasWidth <= 0 || canvasHeight <= 0)
+    {
+        pixelSelectionCanvasWidth_ = 0;
+        pixelSelectionCanvasHeight_ = 0;
+        pixelSelectionMask_.clear();
+        pixelSelectionHasAny_ = false;
+        return;
+    }
+
+    if (pixelSelectionCanvasWidth_ == canvasWidth
+        && pixelSelectionCanvasHeight_ == canvasHeight
+        && pixelSelectionMask_.size() == static_cast<size_t>(canvasWidth) * static_cast<size_t>(canvasHeight))
+    {
+        return;
+    }
+
+    pixelSelectionCanvasWidth_ = canvasWidth;
+    pixelSelectionCanvasHeight_ = canvasHeight;
+    pixelSelectionMask_.assign(static_cast<size_t>(canvasWidth) * static_cast<size_t>(canvasHeight), static_cast<uint8_t>(0));
+    pixelSelectionHasAny_ = false;
+}
+
+bool AppContext::hasPixelSelection() const
+{
+    return pixelSelectionHasAny_;
+}
+
+void AppContext::clearPixelSelection()
+{
+    std::fill(pixelSelectionMask_.begin(), pixelSelectionMask_.end(), static_cast<uint8_t>(0));
+    pixelSelectionHasAny_ = false;
+}
+
+bool AppContext::isPixelSelected(int x, int y, int canvasWidth, int canvasHeight) const
+{
+    if (x < 0 || y < 0 || x >= canvasWidth || y >= canvasHeight)
+        return false;
+    if (canvasWidth <= 0 || canvasHeight <= 0)
+        return false;
+    if (pixelSelectionCanvasWidth_ != canvasWidth || pixelSelectionCanvasHeight_ != canvasHeight)
+        return false;
+    if (pixelSelectionMask_.empty())
+        return false;
+
+    const size_t index = static_cast<size_t>(y) * static_cast<size_t>(canvasWidth) + static_cast<size_t>(x);
+    if (index >= pixelSelectionMask_.size())
+        return false;
+    return pixelSelectionMask_[index] != 0;
+}
+
+bool AppContext::canEditPixel(int x, int y, int canvasWidth, int canvasHeight) const
+{
+    if (!hasPixelSelection())
+        return true;
+    return isPixelSelected(x, y, canvasWidth, canvasHeight);
+}
+
+bool AppContext::applyRectPixelSelection(int x0,
+                                         int y0,
+                                         int x1,
+                                         int y1,
+                                         int canvasWidth,
+                                         int canvasHeight,
+                                         PixelSelectionOp op)
+{
+    ensurePixelSelectionCanvasSize(canvasWidth, canvasHeight);
+    if (pixelSelectionMask_.empty())
+        return false;
+
+    PixelRect rect;
+    rect.x = std::min(x0, x1);
+    rect.y = std::min(y0, y1);
+    rect.width = std::abs(x1 - x0) + 1;
+    rect.height = std::abs(y1 - y0) + 1;
+    if (!clampRectToCanvas(rect, canvasWidth, canvasHeight))
+        return false;
+
+    const std::vector<uint8_t> beforeMask = pixelSelectionMask_;
+    if (op == PixelSelectionOp::Replace)
+        std::fill(pixelSelectionMask_.begin(), pixelSelectionMask_.end(), static_cast<uint8_t>(0));
+
+    for (int py = rect.y; py < rect.y + rect.height; ++py)
+    {
+        const size_t rowOffset = static_cast<size_t>(py) * static_cast<size_t>(canvasWidth);
+        for (int px = rect.x; px < rect.x + rect.width; ++px)
+        {
+            const size_t index = rowOffset + static_cast<size_t>(px);
+            if (op == PixelSelectionOp::Remove)
+                pixelSelectionMask_[index] = 0;
+            else
+                pixelSelectionMask_[index] = 1;
+        }
+    }
+
+    pixelSelectionHasAny_ = containsSelectedPixel(pixelSelectionMask_);
+    return pixelSelectionMask_ != beforeMask;
+}
+
+bool AppContext::getPixelSelectionBounds(PixelRect& outRect) const
+{
+    if (pixelSelectionCanvasWidth_ <= 0 || pixelSelectionCanvasHeight_ <= 0 || pixelSelectionMask_.empty())
+        return false;
+
+    int minX = pixelSelectionCanvasWidth_;
+    int minY = pixelSelectionCanvasHeight_;
+    int maxX = -1;
+    int maxY = -1;
+    bool found = false;
+
+    for (int y = 0; y < pixelSelectionCanvasHeight_; ++y)
+    {
+        const size_t rowOffset = static_cast<size_t>(y) * static_cast<size_t>(pixelSelectionCanvasWidth_);
+        for (int x = 0; x < pixelSelectionCanvasWidth_; ++x)
+        {
+            const size_t index = rowOffset + static_cast<size_t>(x);
+            if (pixelSelectionMask_[index] == 0)
+                continue;
+            found = true;
+            minX = std::min(minX, x);
+            minY = std::min(minY, y);
+            maxX = std::max(maxX, x);
+            maxY = std::max(maxY, y);
+        }
+    }
+
+    if (!found)
+        return false;
+
+    outRect.x = minX;
+    outRect.y = minY;
+    outRect.width = maxX - minX + 1;
+    outRect.height = maxY - minY + 1;
+    return true;
+}
+
+bool AppContext::movePixelSelection(int dx, int dy)
+{
+    if (pixelSelectionCanvasWidth_ <= 0 || pixelSelectionCanvasHeight_ <= 0 || pixelSelectionMask_.empty())
+        return false;
+    if (dx == 0 && dy == 0)
+        return false;
+
+    const std::vector<uint8_t> beforeMask = pixelSelectionMask_;
+    std::vector<uint8_t> movedMask(static_cast<size_t>(pixelSelectionCanvasWidth_) * static_cast<size_t>(pixelSelectionCanvasHeight_),
+                                   static_cast<uint8_t>(0));
+
+    for (int y = 0; y < pixelSelectionCanvasHeight_; ++y)
+    {
+        const size_t rowOffset = static_cast<size_t>(y) * static_cast<size_t>(pixelSelectionCanvasWidth_);
+        for (int x = 0; x < pixelSelectionCanvasWidth_; ++x)
+        {
+            const size_t index = rowOffset + static_cast<size_t>(x);
+            if (beforeMask[index] == 0)
+                continue;
+
+            const int nx = x + dx;
+            const int ny = y + dy;
+            if (nx < 0 || ny < 0 || nx >= pixelSelectionCanvasWidth_ || ny >= pixelSelectionCanvasHeight_)
+                continue;
+
+            const size_t newIndex = static_cast<size_t>(ny) * static_cast<size_t>(pixelSelectionCanvasWidth_) + static_cast<size_t>(nx);
+            movedMask[newIndex] = 1;
+        }
+    }
+
+    pixelSelectionMask_.swap(movedMask);
+    pixelSelectionHasAny_ = containsSelectedPixel(pixelSelectionMask_);
+    return pixelSelectionMask_ != beforeMask;
+}
+
+bool AppContext::transformPixelSelectionByRect(const PixelRect& fromRect,
+                                               const PixelRect& toRect,
+                                               bool flipX,
+                                               bool flipY)
+{
+    if (pixelSelectionCanvasWidth_ <= 0 || pixelSelectionCanvasHeight_ <= 0 || pixelSelectionMask_.empty())
+        return false;
+
+    PixelRect src = fromRect;
+    PixelRect dst = toRect;
+    if (!clampRectToCanvas(src, pixelSelectionCanvasWidth_, pixelSelectionCanvasHeight_))
+        return false;
+    if (!clampRectToCanvas(dst, pixelSelectionCanvasWidth_, pixelSelectionCanvasHeight_))
+        return false;
+    if (src.width <= 0 || src.height <= 0 || dst.width <= 0 || dst.height <= 0)
+        return false;
+
+    const std::vector<uint8_t> beforeMask = pixelSelectionMask_;
+    std::vector<uint8_t> transformedMask(
+        static_cast<size_t>(pixelSelectionCanvasWidth_) * static_cast<size_t>(pixelSelectionCanvasHeight_),
+        static_cast<uint8_t>(0));
+
+    /**
+     * 关键修复：
+     * - 旧实现：正向映射（遍历源像素 -> 投影到目标），放大时会出现“落点稀疏”，产生空洞。
+     * - 新实现：反向采样（遍历目标像素 -> 回查源像素），目标区域每个像素都会被判定一次，
+     *   因此不会出现“选区边框内有不可编辑空洞”的问题。
+     *
+     * 数学上使用 0..1 归一化坐标映射，并用最近邻取整（lround）保证像素对齐。
+     */
+    for (int dy = dst.y; dy < dst.y + dst.height; ++dy)
+    {
+        for (int dx = dst.x; dx < dst.x + dst.width; ++dx)
+        {
+            const float u = (dst.width <= 1)
+                ? 0.0f
+                : static_cast<float>(dx - dst.x) / static_cast<float>(dst.width - 1);
+            const float v = (dst.height <= 1)
+                ? 0.0f
+                : static_cast<float>(dy - dst.y) / static_cast<float>(dst.height - 1);
+
+            /**
+             * 翻转支持：
+             * - flipX=true 时，u 沿 X 轴反向采样；
+             * - flipY=true 时，v 沿 Y 轴反向采样。
+             */
+            const float sampleU = flipX ? (1.0f - u) : u;
+            const float sampleV = flipY ? (1.0f - v) : v;
+
+            const int sx = src.x + static_cast<int>(std::lround(sampleU * static_cast<float>(src.width - 1)));
+            const int sy = src.y + static_cast<int>(std::lround(sampleV * static_cast<float>(src.height - 1)));
+            if (sx < 0 || sy < 0 || sx >= pixelSelectionCanvasWidth_ || sy >= pixelSelectionCanvasHeight_)
+                continue;
+
+            const size_t srcIndex = static_cast<size_t>(sy) * static_cast<size_t>(pixelSelectionCanvasWidth_) + static_cast<size_t>(sx);
+            if (beforeMask[srcIndex] == 0)
+                continue;
+
+            const size_t dstIndex = static_cast<size_t>(dy) * static_cast<size_t>(pixelSelectionCanvasWidth_) + static_cast<size_t>(dx);
+            transformedMask[dstIndex] = 1;
+        }
+    }
+
+    pixelSelectionMask_.swap(transformedMask);
+    pixelSelectionHasAny_ = containsSelectedPixel(pixelSelectionMask_);
+    return pixelSelectionMask_ != beforeMask;
 }
 
 void AppContext::setSingleFrameSelection(int frameIndex, int frameCount)

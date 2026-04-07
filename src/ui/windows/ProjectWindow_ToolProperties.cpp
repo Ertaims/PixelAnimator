@@ -34,6 +34,19 @@ void ProjectWindow::renderRightPanel(Project* project)
         ImGui::TextUnformatted("Current: Fill");
         ImGui::TextWrapped("Click a pixel on canvas to flood-fill connected area.");
         break;
+    case ToolType::RectSelection:
+        ImGui::TextUnformatted("Current: Rect Selection");
+        ImGui::BulletText("Left Drag: Replace selection");
+        ImGui::BulletText("Ctrl + Left Drag: Add to selection");
+        ImGui::BulletText("Right Drag: Remove from selection");
+        ImGui::BulletText("Drag inside selection: Move");
+        ImGui::BulletText("Drag 8 handles: Resize (Ctrl = keep ratio)");
+        if (context->hasPixelSelection())
+        {
+            if (ImGui::Button("Clear Selection"))
+                context->clearPixelSelection();
+        }
+        break;
     default:
         ImGui::TextUnformatted("Current: Unsupported in toolbar");
         break;

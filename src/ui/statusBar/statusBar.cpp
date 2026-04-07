@@ -8,11 +8,12 @@
 
 namespace
 {
-const std::array<const char*, 7> kToolNames = {
+const std::array<const char*, 8> kToolNames = {
     "Brush",
     "Eraser",
     "Eyedropper",
     "Fill",
+    "Rect Selection",
     "Line",
     "Rect",
     "RectFilled"
