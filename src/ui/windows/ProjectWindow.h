@@ -1,7 +1,10 @@
-#ifndef PROJECTWINDOW_H
+﻿#ifndef PROJECTWINDOW_H
 #define PROJECTWINDOW_H
 
 #include "Window.h"
+#include "tools/LineTool.h"
+#include "tools/RectFilledTool.h"
+#include "tools/RectangleTool.h"
 #include "tools/RectSelectionTool.h"
 #include <cstdint>
 #include <functional>
@@ -58,50 +61,77 @@ private:
     // 画布纹理状态结构体，用于存储画布纹理的相关信息。
     struct CanvasTextureState
     {
-        unsigned int texture = 0; ///< OpenGL 纹理 ID。
-        int width = 0;            ///< 纹理宽度。
-        int height = 0;           ///< 纹理高度。
+        unsigned int texture = 0; // OpenGL 纹理 ID
+        int width = 0;            // 纹理宽度
+        int height = 0;           // 纹理高度
     };
 
     // 调色板状态结构体，用于存储用户自定义调色板及选中颜色的信息。
     struct PaletteState
     {
-        std::vector<uint32_t> userPalette; ///< 用户自定义调色板颜色列表。
-        int selectedIndex = 0;             ///< 当前选中的颜色索引。
-        bool selectedIsUser = false;       ///< 标记当前选中的颜色是否来自用户调色板。
+        std::vector<uint32_t> userPalette; // 用户自定义调色板颜色列表
+        int selectedIndex = 0;             // 当前选中的颜色索引
+        bool selectedIsUser = false;       // 标记当前选中的颜色是否来自用户调色板
     };
 
     // 时间轴状态结构体，用于管理动画播放相关状态。
     struct TimelineState
     {
-        float height = 200.0f;              ///< 时间轴面板的高度。
-        bool isPlaying = false;             ///< 播放状态标志。
-        bool loopEnabled = true;            ///< 是否启用循环播放。
-        float fps = 8.0f;                   ///< 动画帧率。
-        uint64_t lastTick = 0;              ///< 上一次更新的时间戳。
-        double accumulator = 0.0;           ///< 时间累加器，用于帧同步。
-        unsigned int playIconTexture = 0;   ///< 播放图标纹理 ID。
-        unsigned int pauseIconTexture = 0;  ///< 暂停图标纹理 ID。
-        bool iconsLoaded = false;           ///< 图标是否已加载。
-        bool openCreateGroupNamePopup = false; ///< 是否请求打开“创建分组”命名弹窗。
-        char pendingGroupName[64] = "Group 1"; ///< 分组命名输入缓存（弹窗内编辑）。
-        std::vector<int> pendingGroupFrames;    ///< 待创建分组的帧索引快照（0-based）。
-        bool openRenameGroupPopup = false;      ///< 是否请求打开“重命名分组”弹窗。
-        int renameGroupIndex = -1;              ///< 待重命名分组索引。
-        char renameGroupName[64] = "";          ///< 重命名输入缓存。
-        int draggingFrameIndex = -1;            ///< 当前拖拽源帧索引（-1 表示无拖拽）。
+        float height = 200.0f;                 // 时间轴面板高度
+        bool isPlaying = false;                // 播放状态标志
+        bool loopEnabled = true;               // 是否启用循环播放
+        float fps = 8.0f;                      // 动画帧率
+        uint64_t lastTick = 0;                 // 上一次更新时间戳
+        double accumulator = 0.0;              // 时间累加器，用于帧同步
+        unsigned int playIconTexture = 0;      // 播放图标纹理 ID
+        unsigned int pauseIconTexture = 0;     // 暂停图标纹理 ID
+        bool iconsLoaded = false;              // 图标是否已加载
+        bool openCreateGroupNamePopup = false; // 是否请求打开“创建分组”命名弹窗
+        char pendingGroupName[64] = "Group 1"; // 分组命名输入缓存（弹窗内编辑）
+        std::vector<int> pendingGroupFrames;   // 待创建分组的帧索引快照（0-based）
+        bool openRenameGroupPopup = false;     // 是否请求打开“重命名分组”弹窗
+        int renameGroupIndex = -1;             // 待重命名分组索引
+        char renameGroupName[64] = "";         // 重命名输入缓存
+        int draggingFrameIndex = -1;           // 当前拖拽源帧索引（-1 表示无拖拽）
     };
 
     
     // 工具栏状态结构体，用于管理工具栏图标的状态
     struct ToolbarState
     {
-        bool iconsLoaded = false;               // 图标是否已加载
-        unsigned int brushIconTexture = 0;      // 画笔图标纹理 ID
-        unsigned int eraserIconTexture = 0;     // 橡皮擦图标纹理 ID
-        unsigned int eyedropperIconTexture = 0; // 取色器图标纹理 ID
-        unsigned int fillIconTexture = 0;       // 填充工具图标纹理 ID
-        unsigned int rectSelectIconTexture = 0; // 矩形框选图标纹理 ID
+        bool iconsLoaded = false;                                   // 图标是否已加载
+        unsigned int brushIconTexture = 0;                          // 画笔图标纹理 ID
+        unsigned int eraserIconTexture = 0;                         // 橡皮擦图标纹理 ID
+        unsigned int eyedropperIconTexture = 0;                     // 取色器图标纹理 ID
+        unsigned int fillIconTexture = 0;                           // 填充工具图标纹理 ID
+        unsigned int rectSelectIconTexture = 0;                     // 矩形框选图标纹理 ID
+        unsigned int lineIconTexture = 0;                           // 直线工具图标纹理 ID
+        unsigned int rectIconTexture = 0;                           // 矩形绘制工具图标纹理 ID
+        unsigned int rectFilledIconTexture = 0;                     // 填充矩形工具图标纹理 ID
+        bool rectModePopupVisible = false;                          // 矩形模式面板是否可见（长按触发，非阻塞）
+        ToolType lastRectMode = ToolType::Rect;                     // 记录上一次矩形模式（Rect / RectFilled）
+        bool rectModeLongPressActive = false;                       // 当前是否处于 Rectangle 按钮长按会话
+        double rectModeLongPressStart = 0.0;                        // 长按开始时间戳（ImGui::GetTime）
+        float rectModeLongPressThreshold = 0.22f;                   // 触发模式面板的长按阈值（秒）
+        float rectModePanelPosX = 0.0f;                             // 模式面板屏幕 X（锚定在按钮右侧）
+        float rectModePanelPosY = 0.0f;                             // 模式面板屏幕 Y
+        bool rectModePanelHasHover = false;                         // 当前帧是否悬停在某个模式图标上
+        ToolType rectModePanelHoverMode = ToolType::Rect;           // 当前悬停候选模式
+    };
+
+    /**
+     * @brief 连续笔划状态（用于解决快速拖拽时断线问题）。
+     *
+     * 说明：
+     * - 当 Brush/Eraser 按住左键拖拽时，记录上一帧的像素点；
+     * - 下一帧在“上一点 -> 当前点”之间做插值补点，保证笔迹连续。
+     */
+    struct StrokeContinuityState
+    {
+        bool active = false;                        // 当前是否处于连续笔划拖拽中
+        int lastX = 0;                              // 上一次采样到的像素 X
+        int lastY = 0;                              // 上一次采样到的像素 Y
+        ToolType tool = ToolType::Brush;            // 启动笔划时的工具类型（Brush/Eraser）
     };
 
     /**
@@ -137,6 +167,10 @@ private:
     PaletteState paletteState_;                     // 调色板状态
     TimelineState timelineState_;                   // 时间轴状态
     ToolbarState toolbarState_;                     // 工具栏状态
+    StrokeContinuityState strokeState_;             // 连续笔划状态（每个项目窗口独立）
+    LineTool lineTool_;                             // 直线工具实例（每个项目窗口独立）
+    RectangleTool rectangleTool_;                   // 矩形工具实例（每个项目窗口独立）
+    RectFilledTool rectFilledTool_;                 // 填充矩形工具实例（每个项目窗口独立）
     RectSelectionTool rectSelectionTool_;           // 矩形框选工具实例（每个项目窗口独立）
     int pendingCanvasWidth_ = 0;                    // 待处理的画布宽度
     int pendingCanvasHeight_ = 0;                   // 待处理的画布高度

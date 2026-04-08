@@ -1,4 +1,4 @@
-#include "Menu_View.h"
+﻿#include "Menu_View.h"
 
 // 构造函数
 Menu_View::Menu_View(Menu* menu)

@@ -1,4 +1,4 @@
-#include "WindowFactory.h"
+﻿#include "WindowFactory.h"
 
 ProjectWindow* WindowFactory::createProjectWindow(AppContext* context,
                                                   const std::string& windowLabel,

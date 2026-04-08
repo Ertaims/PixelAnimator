@@ -1,4 +1,4 @@
-#include "ProjectWindow.h"
+﻿#include "ProjectWindow.h"
 
 #include "core/AppContext.h"
 #include "core/Project.h"
@@ -50,6 +50,21 @@ ProjectWindow::~ProjectWindow()
     {
         glDeleteTextures(1, &toolbarState_.rectSelectIconTexture);
         toolbarState_.rectSelectIconTexture = 0;
+    }
+    if (toolbarState_.lineIconTexture != 0)
+    {
+        glDeleteTextures(1, &toolbarState_.lineIconTexture);
+        toolbarState_.lineIconTexture = 0;
+    }
+    if (toolbarState_.rectIconTexture != 0)
+    {
+        glDeleteTextures(1, &toolbarState_.rectIconTexture);
+        toolbarState_.rectIconTexture = 0;
+    }
+    if (toolbarState_.rectFilledIconTexture != 0)
+    {
+        glDeleteTextures(1, &toolbarState_.rectFilledIconTexture);
+        toolbarState_.rectFilledIconTexture = 0;
     }
 }
 
@@ -139,8 +154,7 @@ void ProjectWindow::uploadCanvasPixels(const std::vector<uint32_t>& pixels) cons
 void ProjectWindow::render()
 {
     // 如果窗口不可见，则直接返回
-    if (!visible)
-        return;
+    if (!visible) return;
 
     // 获取窗口标签，如果未设置则使用默认名称
     const char* label = windowLabel_.empty() ? name : windowLabel_.c_str();

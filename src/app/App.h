@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @file App.h
  * @brief 应用主类：负责初始化、主循环、窗口/菜单管理以及多项目会话管理
  *
@@ -187,6 +187,7 @@ private:
     bool saveActiveProject();
     // 另存当前项目
     bool saveActiveProjectAs(const std::string& path, ProjectFileFormat preferredFormat);
+    // 导出当前项目
     bool exportToPath(const std::string& path,
                       ExportKind kind,
                       SpriteSheetExportMode spriteMode,
@@ -195,14 +196,18 @@ private:
                       bool useCustomGroups,
                       const std::vector<SpriteSheetGroupResolved>& customGroups,
                       int groupSpacing);
+    // 从路径导入项目
     bool importFromPath(const std::string& path,
                         ImportKind kind,
                         bool spriteSheetRowMajor);
+    // 渲染精灵图导入弹窗
     void renderSpriteSheetImportPopup();
+    // 解析帧列表文本
     bool parseFrameListText(const std::string& text,
                             int maxFrameCount,
                             std::vector<int>& outIndices,
                             std::string& outError) const;
+    // 构建解析结果
     bool buildResolvedSpriteGroups(std::vector<SpriteSheetGroupResolved>& outGroups, std::string& outError) const;
     // 打开项目
     bool openProjectFromPath(const std::string& path);

@@ -1,4 +1,4 @@
-#include "Project.h"
+﻿#include "Project.h"
 
 #include <algorithm>
 #include <stdexcept>
@@ -32,16 +32,14 @@ Project::Project(int width, int height, int frameCount, uint32_t fillColor)
 Project::Frame& Project::getFrame(int index)
 {
     // 边界检查，防止越界访问
-    if (index < 0 || index >= static_cast<int>(frames_.size()))
-        throw std::out_of_range("Project::getFrame index out of range");
+    if (index < 0 || index >= static_cast<int>(frames_.size())) throw std::out_of_range("Project::getFrame index out of range");
     return frames_[static_cast<size_t>(index)];
 }
 
 const Project::Frame& Project::getFrame(int index) const
 {
     // 边界检查，防止越界访问
-    if (index < 0 || index >= static_cast<int>(frames_.size()))
-        throw std::out_of_range("Project::getFrame index out of range");
+    if (index < 0 || index >= static_cast<int>(frames_.size())) throw std::out_of_range("Project::getFrame index out of range");
     return frames_[static_cast<size_t>(index)];
 }
 
@@ -51,8 +49,7 @@ void Project::resizeCanvas(int width, int height, uint32_t fillColor)
     const int newHeight = clampPositive(height);
 
     // 尺寸不变则直接返回
-    if (newWidth == width_ && newHeight == height_)
-        return;
+    if (newWidth == width_ && newHeight == height_) return;
 
     for (Frame& frame : frames_)
     {
@@ -87,8 +84,7 @@ void Project::setFrameCount(int count, uint32_t fillColor)
 {
     const int newCount = std::max(1, count);
     // 帧数不变则直接返回
-    if (newCount == static_cast<int>(frames_.size()))
-        return;
+    if (newCount == static_cast<int>(frames_.size())) return;
 
     if (newCount < static_cast<int>(frames_.size()))
     {
@@ -128,8 +124,7 @@ void Project::insertFrameAfter(int index, uint32_t fillColor)
 
 void Project::removeFrame(int index)
 {
-    if (frames_.size() <= 1)
-        return;
+    if (frames_.size() <= 1) return;
 
     const int clamped = std::clamp(index, 0, static_cast<int>(frames_.size()) - 1);
     frames_.erase(frames_.begin() + static_cast<long long>(clamped));
@@ -137,14 +132,12 @@ void Project::removeFrame(int index)
 
 void Project::moveFrame(int fromIndex, int toIndex)
 {
-    if (frames_.empty())
-        return;
+    if (frames_.empty()) return;
 
     const int maxIndex = static_cast<int>(frames_.size()) - 1;
     const int from = std::clamp(fromIndex, 0, maxIndex);
     const int to = std::clamp(toIndex, 0, maxIndex);
-    if (from == to)
-        return;
+    if (from == to) return;
 
     // 先把源帧取出，再插入到目标位置，避免不必要的深拷贝。
     Frame moving = std::move(frames_[static_cast<size_t>(from)]);

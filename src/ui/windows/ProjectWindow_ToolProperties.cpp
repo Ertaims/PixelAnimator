@@ -1,4 +1,4 @@
-#include "ProjectWindow.h"
+﻿#include "ProjectWindow.h"
 
 #include "core/AppContext.h"
 #include "core/Project.h"
@@ -14,16 +14,14 @@ void ProjectWindow::renderRightPanel(Project* project)
     {
         ImGui::TextUnformatted("Current: Brush");
         int brushSize = context->getBrushSize();
-        if (ImGui::SliderInt("Brush Size", &brushSize, 1, 32))
-            context->setBrushSize(brushSize);
+        if (ImGui::SliderInt("Brush Size", &brushSize, 1, 32)) context->setBrushSize(brushSize);
         break;
     }
     case ToolType::Eraser:
     {
         ImGui::TextUnformatted("Current: Eraser");
         int brushSize = context->getBrushSize();
-        if (ImGui::SliderInt("Eraser Size", &brushSize, 1, 32))
-            context->setBrushSize(brushSize);
+        if (ImGui::SliderInt("Eraser Size", &brushSize, 1, 32)) context->setBrushSize(brushSize);
         break;
     }
     case ToolType::Eyedropper:
@@ -43,10 +41,31 @@ void ProjectWindow::renderRightPanel(Project* project)
         ImGui::BulletText("Drag 8 handles: Resize (Ctrl = keep ratio)");
         if (context->hasPixelSelection())
         {
-            if (ImGui::Button("Clear Selection"))
-                context->clearPixelSelection();
+            if (ImGui::Button("Clear Selection")) context->clearPixelSelection();
         }
         break;
+    case ToolType::Line:
+    {
+        ImGui::TextUnformatted("Current: Line");
+        ImGui::TextWrapped("Left drag on canvas to preview and draw a line.");
+        int brushSize = context->getBrushSize();
+        if (ImGui::SliderInt("Line Width", &brushSize, 1, 32)) context->setBrushSize(brushSize);
+        break;
+    }
+    case ToolType::Rect:
+    {
+        ImGui::TextUnformatted("Current: Rectangle");
+        ImGui::TextWrapped("Left drag on canvas to preview and draw rectangle outline.");
+        int brushSize = context->getBrushSize();
+        if (ImGui::SliderInt("Outline Width", &brushSize, 1, 32)) context->setBrushSize(brushSize);
+        break;
+    }
+    case ToolType::RectFilled:
+    {
+        ImGui::TextUnformatted("Current: Rect Filled");
+        ImGui::TextWrapped("Left drag on canvas to preview and draw filled rectangle.");
+        break;
+    }
     default:
         ImGui::TextUnformatted("Current: Unsupported in toolbar");
         break;
@@ -69,12 +88,10 @@ void ProjectWindow::renderRightPanel(Project* project)
     }
 
     bool showGrid = context->isGridVisible();
-    if (ImGui::Checkbox("Show Grid", &showGrid))
-        context->setGridVisible(showGrid);
+    if (ImGui::Checkbox("Show Grid", &showGrid)) context->setGridVisible(showGrid);
 
     bool onionSkin = context->isOnionSkinEnabled();
-    if (ImGui::Checkbox("Onion Skin", &onionSkin))
-        context->setOnionSkinEnabled(onionSkin);
+    if (ImGui::Checkbox("Onion Skin", &onionSkin)) context->setOnionSkinEnabled(onionSkin);
 
     ImGui::Separator();
     ImGui::TextUnformatted("Project");

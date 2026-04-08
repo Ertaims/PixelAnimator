@@ -1,4 +1,4 @@
-#include "tools/EyedropperTool.h"
+﻿#include "tools/EyedropperTool.h"
 
 bool EyedropperTool::apply(Project::Frame& frame,
                            int canvasWidth,

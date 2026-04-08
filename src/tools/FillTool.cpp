@@ -1,4 +1,4 @@
-#include "tools/FillTool.h"
+﻿#include "tools/FillTool.h"
 
 #include <deque>
 #include <utility>
@@ -12,22 +12,18 @@ bool FillTool::apply(Project::Frame& frame,
                      bool isMouseClicked) const
 {
     // Fill 仅在“按下瞬间”触发一次，避免按住鼠标持续重复填充。
-    if (!isMouseClicked)
-        return false;
+    if (!isMouseClicked) return false;
 
-    if (x < 0 || y < 0 || x >= canvasWidth || y >= canvasHeight)
-        return false;
+    if (x < 0 || y < 0 || x >= canvasWidth || y >= canvasHeight) return false;
     // 若点击起点不在可编辑区域（选区外），直接不执行填充。
-    if (!context.canEditPixel(x, y, canvasWidth, canvasHeight))
-        return false;
+    if (!context.canEditPixel(x, y, canvasWidth, canvasHeight)) return false;
 
     const size_t startIndex =
         static_cast<size_t>(y) * static_cast<size_t>(canvasWidth) + static_cast<size_t>(x);
 
     const uint32_t oldColor = frame.pixels[startIndex];
     const uint32_t newColor = context.getColorRGBA();
-    if (oldColor == newColor)
-        return false;
+    if (oldColor == newColor) return false;
 
     std::deque<std::pair<int, int>> queue;
     queue.emplace_back(x, y);
@@ -45,16 +41,13 @@ bool FillTool::apply(Project::Frame& frame,
         {
             const int nx = cx + dx[i];
             const int ny = cy + dy[i];
-            if (nx < 0 || ny < 0 || nx >= canvasWidth || ny >= canvasHeight)
-                continue;
+            if (nx < 0 || ny < 0 || nx >= canvasWidth || ny >= canvasHeight) continue;
             // 选区联动：FloodFill 传播时同样受选区约束，不能越过选区边界。
-            if (!context.canEditPixel(nx, ny, canvasWidth, canvasHeight))
-                continue;
+            if (!context.canEditPixel(nx, ny, canvasWidth, canvasHeight)) continue;
 
             const size_t index =
                 static_cast<size_t>(ny) * static_cast<size_t>(canvasWidth) + static_cast<size_t>(nx);
-            if (frame.pixels[index] != oldColor)
-                continue;
+            if (frame.pixels[index] != oldColor) continue;
 
             frame.pixels[index] = newColor;
             queue.emplace_back(nx, ny);

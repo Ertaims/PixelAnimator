@@ -1,4 +1,4 @@
-#include "ProjectWindow.h"
+﻿#include "ProjectWindow.h"
 
 #include "core/AppContext.h"
 #include "core/Project.h"
@@ -9,25 +9,25 @@
 
 namespace
 {
-// RGBA8888 -> ImGui float4
-ImVec4 rgbaToFloat4(uint32_t rgba)
-{
-    const float r = static_cast<float>((rgba >> 0) & 0xFF) / 255.0f;
-    const float g = static_cast<float>((rgba >> 8) & 0xFF) / 255.0f;
-    const float b = static_cast<float>((rgba >> 16) & 0xFF) / 255.0f;
-    const float a = static_cast<float>((rgba >> 24) & 0xFF) / 255.0f;
-    return ImVec4(r, g, b, a);
-}
+    // RGBA8888 -> ImGui float4
+    ImVec4 rgbaToFloat4(uint32_t rgba)
+    {
+        const float r = static_cast<float>((rgba >> 0) & 0xFF) / 255.0f;
+        const float g = static_cast<float>((rgba >> 8) & 0xFF) / 255.0f;
+        const float b = static_cast<float>((rgba >> 16) & 0xFF) / 255.0f;
+        const float a = static_cast<float>((rgba >> 24) & 0xFF) / 255.0f;
+        return ImVec4(r, g, b, a);
+    }
 
-// ImGui float4 -> RGBA8888
-uint32_t float4ToRgba(const ImVec4& color)
-{
-    const uint32_t r = static_cast<uint32_t>(color.x * 255.0f + 0.5f) & 0xFF;
-    const uint32_t g = static_cast<uint32_t>(color.y * 255.0f + 0.5f) & 0xFF;
-    const uint32_t b = static_cast<uint32_t>(color.z * 255.0f + 0.5f) & 0xFF;
-    const uint32_t a = static_cast<uint32_t>(color.w * 255.0f + 0.5f) & 0xFF;
-    return (r << 0) | (g << 8) | (b << 16) | (a << 24);
-}
+    // ImGui float4 -> RGBA8888
+    uint32_t float4ToRgba(const ImVec4& color)
+    {
+        const uint32_t r = static_cast<uint32_t>(color.x * 255.0f + 0.5f) & 0xFF;
+        const uint32_t g = static_cast<uint32_t>(color.y * 255.0f + 0.5f) & 0xFF;
+        const uint32_t b = static_cast<uint32_t>(color.z * 255.0f + 0.5f) & 0xFF;
+        const uint32_t a = static_cast<uint32_t>(color.w * 255.0f + 0.5f) & 0xFF;
+        return (r << 0) | (g << 8) | (b << 16) | (a << 24);
+    }
 } // namespace
 
 void ProjectWindow::renderLeftPanel(Project* project)
@@ -49,8 +49,7 @@ void ProjectWindow::renderLeftPanel(Project* project)
 
     if (!selectedIsUser)
     {
-        if (selectedIndex < 0 || selectedIndex >= defaultCount)
-            selectedIndex = 0;
+        if (selectedIndex < 0 || selectedIndex >= defaultCount) selectedIndex = 0;
     }
     else
     {
@@ -74,8 +73,7 @@ void ProjectWindow::renderLeftPanel(Project* project)
     if (ImGui::ColorPicker4("##ProjectColorPicker", &color.x, ImGuiColorEditFlags_AlphaBar))
     {
         const uint32_t newColor = float4ToRgba(color);
-        if (selectedIsUser && !userPalette.empty())
-            userPalette[static_cast<size_t>(selectedIndex)] = newColor;
+        if (selectedIsUser && !userPalette.empty()) userPalette[static_cast<size_t>(selectedIndex)] = newColor;
         context->setColorRGBA(newColor);
         context->setProjectDirty(true);
     }
@@ -104,8 +102,7 @@ void ProjectWindow::renderLeftPanel(Project* project)
                 2.0f);
         }
         ImGui::PopID();
-        if ((i + 1) % 4 != 0)
-            ImGui::SameLine();
+        if ((i + 1) % 4 != 0) ImGui::SameLine();
     }
 
     ImGui::Separator();
@@ -138,8 +135,7 @@ void ProjectWindow::renderLeftPanel(Project* project)
                     2.0f);
             }
             ImGui::PopID();
-            if ((i + 1) % 4 != 0)
-                ImGui::SameLine();
+            if ((i + 1) % 4 != 0) ImGui::SameLine();
         }
     }
 

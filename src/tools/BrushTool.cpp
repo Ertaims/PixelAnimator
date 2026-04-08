@@ -1,4 +1,4 @@
-#include "tools/BrushTool.h"
+﻿#include "tools/BrushTool.h"
 
 #include <algorithm>
 #include <cstdint>
@@ -28,8 +28,7 @@ bool BrushTool::apply(Project::Frame& frame,
         {
             // 若当前存在选区，则只允许修改选区内像素；
             // 若不存在选区，canEditPixel(...) 会自动放行全部像素。
-            if (!context.canEditPixel(px, py, canvasWidth, canvasHeight))
-                continue;
+            if (!context.canEditPixel(px, py, canvasWidth, canvasHeight)) continue;
 
             uint32_t& pixel = frame.pixels[row + static_cast<size_t>(px)];
             if (pixel != color)

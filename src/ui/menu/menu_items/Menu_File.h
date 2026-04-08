@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "MenuOptionBase.h"
 #include <functional>

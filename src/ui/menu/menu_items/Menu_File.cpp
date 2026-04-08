@@ -1,4 +1,4 @@
-#include "Menu_File.h"
+﻿#include "Menu_File.h"
 
 #include "core/AppContext.h"
 #include "ui/menu/Menu.h"
@@ -47,8 +47,7 @@ void Menu_File::initialize() {
 
     MenuItem* openItem = getMenu()->addItem("Open...", "Ctrl+O");
     openItem->setCallback([this]() {
-        if (onOpenProjectCallback_)
-            onOpenProjectCallback_();
+        if (onOpenProjectCallback_) onOpenProjectCallback_();
     });
 
     openRecentMenu_ = new Menu("Open Recent");
@@ -59,8 +58,7 @@ void Menu_File::initialize() {
 
     MenuItem* saveItem = getMenu()->addItem("Save", "Ctrl+S");
     saveItem->setCallback([this]() {
-        if (onSaveProjectCallback_)
-            onSaveProjectCallback_();
+        if (onSaveProjectCallback_) onSaveProjectCallback_();
     });
 
     Menu* saveAsMenu = new Menu("Save As...");
@@ -68,14 +66,12 @@ void Menu_File::initialize() {
 
     MenuItem* saveAsBinaryItem = saveAsMenu->addItem("Binary (*.pxanim)");
     saveAsBinaryItem->setCallback([this]() {
-        if (onSaveAsBinaryProjectCallback_)
-            onSaveAsBinaryProjectCallback_();
+        if (onSaveAsBinaryProjectCallback_) onSaveAsBinaryProjectCallback_();
     });
 
     MenuItem* saveAsJsonItem = saveAsMenu->addItem("JSON (*.pxanim.json)");
     saveAsJsonItem->setCallback([this]() {
-        if (onSaveAsJsonProjectCallback_)
-            onSaveAsJsonProjectCallback_();
+        if (onSaveAsJsonProjectCallback_) onSaveAsJsonProjectCallback_();
     });
 
     getMenu()->addSeparator();
@@ -102,16 +98,14 @@ void Menu_File::initialize() {
     // 单帧导出保持独立入口，方便快速导出当前帧。
     MenuItem* exportCurrentFramePng = exportMenu->addItem("Current Frame (PNG)...");
     exportCurrentFramePng->setCallback([this]() {
-        if (onExportCurrentFramePngCallback_)
-            onExportCurrentFramePngCallback_();
+        if (onExportCurrentFramePngCallback_) onExportCurrentFramePngCallback_();
     });
 
     // 精灵图导出合并为“单入口”：
     // 点击后由 App 弹出配置对话框，用户在弹窗里选择行/列/行列模式及其它参数。
     MenuItem* exportSpriteSheetPng = exportMenu->addItem("Sprite Sheet (PNG)...");
     exportSpriteSheetPng->setCallback([this]() {
-        if (onExportSpriteSheetConfigCallback_)
-            onExportSpriteSheetConfigCallback_();
+        if (onExportSpriteSheetConfigCallback_) onExportSpriteSheetConfigCallback_();
     });
 
     Menu* importMenu = new Menu("Import");
@@ -120,14 +114,12 @@ void Menu_File::initialize() {
     // 与导出入口对称：提供单帧导入和精灵图导入两种入口。
     MenuItem* importSingleFramePng = importMenu->addItem("Current Frame (PNG)...");
     importSingleFramePng->setCallback([this]() {
-        if (onImportSingleFramePngCallback_)
-            onImportSingleFramePngCallback_();
+        if (onImportSingleFramePngCallback_) onImportSingleFramePngCallback_();
     });
 
     MenuItem* importSpriteSheetPng = importMenu->addItem("Sprite Sheet (PNG)...");
     importSpriteSheetPng->setCallback([this]() {
-        if (onImportSpriteSheetPngCallback_)
-            onImportSpriteSheetPngCallback_();
+        if (onImportSpriteSheetPngCallback_) onImportSpriteSheetPngCallback_();
     });
 
     getMenu()->addSeparator();
@@ -200,8 +192,7 @@ void Menu_File::setRecentProjectPaths(const std::vector<std::string>& paths)
 
 void Menu_File::rebuildOpenRecentMenu()
 {
-    if (!openRecentMenu_)
-        return;
+    if (!openRecentMenu_) return;
 
     openRecentMenu_->clearItems();
     if (recentProjectPaths_.empty())
@@ -218,8 +209,7 @@ void Menu_File::rebuildOpenRecentMenu()
         try
         {
             filename = std::filesystem::path(path).filename().string();
-            if (filename.empty())
-                filename = path;
+            if (filename.empty()) filename = path;
         }
         catch (...)
         {
@@ -229,8 +219,7 @@ void Menu_File::rebuildOpenRecentMenu()
         const std::string label = std::to_string(i + 1) + ". " + filename;
         MenuItem* item = openRecentMenu_->addItem(label, path);
         item->setCallback([this, path]() {
-            if (onOpenRecentProjectByPathCallback_)
-                onOpenRecentProjectByPathCallback_(path);
+            if (onOpenRecentProjectByPathCallback_) onOpenRecentProjectByPathCallback_(path);
         });
     }
 }

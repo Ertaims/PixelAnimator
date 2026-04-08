@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @file AppContext.h
  * @brief 应用程序/编辑器全局上下文
  *
@@ -199,8 +199,7 @@ public:
      */
     int getPrimarySelectedFrameIndex() const
     {
-        if (!selectedFrameIndices_.empty())
-            return selectedFrameIndices_.front();
+        if (!selectedFrameIndices_.empty()) return selectedFrameIndices_.front();
         return currentFrameIndex_;
     }
 

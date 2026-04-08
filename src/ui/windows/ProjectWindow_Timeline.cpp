@@ -1,4 +1,4 @@
-#include "ProjectWindow.h"
+﻿#include "ProjectWindow.h"
 
 #include "core/AppContext.h"
 #include "core/Project.h"
@@ -14,94 +14,88 @@
 
 namespace
 {
-GLuint loadTextureFromFile(const char* path)
-{
-    SDL_Surface* surface = IMG_Load(path);
-    if (!surface)
-        return 0;
-
-    SDL_Surface* rgbaSurface = surface;
-    if (surface->format != SDL_PIXELFORMAT_RGBA32)
+    GLuint loadTextureFromFile(const char* path)
     {
-        rgbaSurface = SDL_ConvertSurface(surface, SDL_PIXELFORMAT_RGBA32);
-        SDL_DestroySurface(surface);
-        if (!rgbaSurface)
-            return 0;
+        SDL_Surface* surface = IMG_Load(path);
+        if (!surface) return 0;
+
+        SDL_Surface* rgbaSurface = surface;
+        if (surface->format != SDL_PIXELFORMAT_RGBA32)
+        {
+            rgbaSurface = SDL_ConvertSurface(surface, SDL_PIXELFORMAT_RGBA32);
+            SDL_DestroySurface(surface);
+            if (!rgbaSurface) return 0;
+        }
+
+        GLuint texture = 0;
+        glGenTextures(1, &texture);
+        glBindTexture(GL_TEXTURE_2D, texture);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, rgbaSurface->w, rgbaSurface->h, 0, GL_RGBA, GL_UNSIGNED_BYTE, rgbaSurface->pixels);
+
+        SDL_DestroySurface(rgbaSurface);
+        return texture;
     }
 
-    GLuint texture = 0;
-    glGenTextures(1, &texture);
-    glBindTexture(GL_TEXTURE_2D, texture);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, rgbaSurface->w, rgbaSurface->h, 0, GL_RGBA, GL_UNSIGNED_BYTE, rgbaSurface->pixels);
-
-    SDL_DestroySurface(rgbaSurface);
-    return texture;
-}
-
-void ensureTimelineIconTextures(GLuint& playIcon, GLuint& pauseIcon, bool& loaded)
-{
-    if (loaded)
-        return;
-
-    const char* playCandidates[] = {"src/assets/start.png", "../src/assets/start.png", "../../src/assets/start.png"};
-    const char* pauseCandidates[] = {"src/assets/pause.png", "../src/assets/pause.png", "../../src/assets/pause.png"};
-
-    for (const char* p : playCandidates)
+    void ensureTimelineIconTextures(GLuint& playIcon, GLuint& pauseIcon, bool& loaded)
     {
-        playIcon = loadTextureFromFile(p);
-        if (playIcon != 0)
-            break;
-    }
-    for (const char* p : pauseCandidates)
-    {
-        pauseIcon = loadTextureFromFile(p);
-        if (pauseIcon != 0)
-            break;
+        if (loaded) return;
+
+        const char* playCandidates[] = {"src/assets/start.png", "../src/assets/start.png", "../../src/assets/start.png"};
+        const char* pauseCandidates[] = {"src/assets/pause.png", "../src/assets/pause.png", "../../src/assets/pause.png"};
+
+        for (const char* p : playCandidates)
+        {
+            playIcon = loadTextureFromFile(p);
+            if (playIcon != 0) break;
+        }
+        for (const char* p : pauseCandidates)
+        {
+            pauseIcon = loadTextureFromFile(p);
+            if (pauseIcon != 0) break;
+        }
+
+        loaded = true;
     }
 
-    loaded = true;
-}
-
-ImVec4 rgbaToImVec4(uint32_t rgba)
-{
-    const float r = static_cast<float>((rgba >> 0) & 0xFF) / 255.0f;
-    const float g = static_cast<float>((rgba >> 8) & 0xFF) / 255.0f;
-    const float b = static_cast<float>((rgba >> 16) & 0xFF) / 255.0f;
-    const float a = static_cast<float>((rgba >> 24) & 0xFF) / 255.0f;
-    return ImVec4(r, g, b, a);
-}
-
-uint32_t pickGroupColorByIndex(size_t index)
-{
-    // 预置一组区分度较高的颜色，方便时间轴直观区分不同分组。
-    static const uint32_t kPalette[] = {
-        0x5EA1FFFFu, // 天蓝
-        0x6ED6A0FFu, // 薄荷绿
-        0xF2B566FFu, // 橙黄
-        0xC98CFFFFu, // 紫粉
-        0x82D8F4FFu, // 青蓝
-        0xF48AA1FFu, // 珊瑚粉
-        0xA2D56DFFu, // 黄绿
-        0xF4D36AFFu  // 暖黄
-    };
-    return kPalette[index % (sizeof(kPalette) / sizeof(kPalette[0]))];
-}
-
-int findFrameGroupIndex(const std::vector<AppContext::FrameGroup>& groups, int frameIndex)
-{
-    for (size_t gi = 0; gi < groups.size(); ++gi)
+    ImVec4 rgbaToImVec4(uint32_t rgba)
     {
-        const std::vector<int>& frames = groups[gi].frameIndices;
-        if (std::find(frames.begin(), frames.end(), frameIndex) != frames.end())
-            return static_cast<int>(gi);
+        const float r = static_cast<float>((rgba >> 0) & 0xFF) / 255.0f;
+        const float g = static_cast<float>((rgba >> 8) & 0xFF) / 255.0f;
+        const float b = static_cast<float>((rgba >> 16) & 0xFF) / 255.0f;
+        const float a = static_cast<float>((rgba >> 24) & 0xFF) / 255.0f;
+        return ImVec4(r, g, b, a);
     }
-    return -1;
-}
+
+    uint32_t pickGroupColorByIndex(size_t index)
+    {
+        // 预置一组区分度较高的颜色，方便时间轴直观区分不同分组。
+        static const uint32_t kPalette[] = {
+            0x5EA1FFFFu, // 天蓝
+            0x6ED6A0FFu, // 薄荷绿
+            0xF2B566FFu, // 橙黄
+            0xC98CFFFFu, // 紫粉
+            0x82D8F4FFu, // 青蓝
+            0xF48AA1FFu, // 珊瑚粉
+            0xA2D56DFFu, // 黄绿
+            0xF4D36AFFu  // 暖黄
+        };
+        return kPalette[index % (sizeof(kPalette) / sizeof(kPalette[0]))];
+    }
+
+    int findFrameGroupIndex(const std::vector<AppContext::FrameGroup>& groups, int frameIndex)
+    {
+        for (size_t gi = 0; gi < groups.size(); ++gi)
+        {
+            const std::vector<int>& frames = groups[gi].frameIndices;
+            if (std::find(frames.begin(), frames.end(), frameIndex) != frames.end()) return static_cast<int>(gi);
+        }
+        return -1;
+    }
 } // namespace
 
 void ProjectWindow::renderTimelinePanel(Project* project)
@@ -109,14 +103,12 @@ void ProjectWindow::renderTimelinePanel(Project* project)
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(4.0f, 4.0f));
     ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(4.0f, 2.0f));
 
-    if (timelineState_.lastTick == 0)
-        timelineState_.lastTick = SDL_GetTicks();
+    if (timelineState_.lastTick == 0) timelineState_.lastTick = SDL_GetTicks();
     const uint64_t nowTick = SDL_GetTicks();
     const double dt = static_cast<double>(nowTick - timelineState_.lastTick) / 1000.0;
     timelineState_.lastTick = nowTick;
     timelineState_.fps = static_cast<float>(project->getTimelineFps());
-    if (timelineState_.isPlaying && timelineState_.fps > 0.0f)
-        timelineState_.accumulator += dt;
+    if (timelineState_.isPlaying && timelineState_.fps > 0.0f) timelineState_.accumulator += dt;
 
     // 进入时间轴渲染前先做一次选区校正：
     // - 删除越界选中项
@@ -125,35 +117,30 @@ void ProjectWindow::renderTimelinePanel(Project* project)
 
     {
         const ImVec2 btnSize(22.0f, 18.0f);
-        if (ImGui::Button("<<", btnSize))
-            context->setSingleFrameSelection(0, project->getFrameCount());
+        if (ImGui::Button("<<", btnSize)) context->setSingleFrameSelection(0, project->getFrameCount());
         ImGui::SameLine();
         if (ImGui::Button("<", btnSize))
         {
             const int frameCount = project->getFrameCount();
             const int current = context->getCurrentFrameIndex();
-            if (frameCount > 0)
-                context->setSingleFrameSelection(std::max(0, current - 1), frameCount);
+            if (frameCount > 0) context->setSingleFrameSelection(std::max(0, current - 1), frameCount);
         }
         ImGui::SameLine();
         if (ImGui::Button(">", btnSize))
         {
             const int frameCount = project->getFrameCount();
             const int current = context->getCurrentFrameIndex();
-            if (frameCount > 0)
-                context->setSingleFrameSelection(std::min(frameCount - 1, current + 1), frameCount);
+            if (frameCount > 0) context->setSingleFrameSelection(std::min(frameCount - 1, current + 1), frameCount);
         }
         ImGui::SameLine();
         if (ImGui::Button(">>", btnSize))
         {
             const int frameCount = project->getFrameCount();
-            if (frameCount > 0)
-                context->setSingleFrameSelection(frameCount - 1, frameCount);
+            if (frameCount > 0) context->setSingleFrameSelection(frameCount - 1, frameCount);
         }
         ImGui::SameLine();
         const char* loopLabel = timelineState_.loopEnabled ? "Loop" : "Once";
-        if (ImGui::Button(loopLabel, ImVec2(44.0f, 18.0f)))
-            timelineState_.loopEnabled = !timelineState_.loopEnabled;
+        if (ImGui::Button(loopLabel, ImVec2(44.0f, 18.0f))) timelineState_.loopEnabled = !timelineState_.loopEnabled;
         ImGui::SameLine();
         if (ImGui::Button("+", btnSize))
         {
@@ -234,8 +221,7 @@ void ProjectWindow::renderTimelinePanel(Project* project)
             clickedToggle = ImGui::Button("Play");
         }
     }
-    if (clickedToggle)
-        timelineState_.isPlaying = !timelineState_.isPlaying;
+    if (clickedToggle) timelineState_.isPlaying = !timelineState_.isPlaying;
 
     ImGui::Separator();
 
@@ -335,8 +321,7 @@ void ProjectWindow::renderTimelinePanel(Project* project)
         if (ImGui::Button("##frame_cell", ImVec2(cellW, cellH)))
         {
             // Ctrl+点击：切换多选；普通点击：单选。
-            if (ImGui::GetIO().KeyCtrl)
-                context->toggleFrameSelection(i, frameCount);
+            if (ImGui::GetIO().KeyCtrl) context->toggleFrameSelection(i, frameCount);
             else
                 context->setSingleFrameSelection(i, frameCount);
 

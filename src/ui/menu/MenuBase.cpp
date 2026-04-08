@@ -1,4 +1,4 @@
-#include "MenuBase.h"
+﻿#include "MenuBase.h"
 
 // 构造函数
 MenuBase::MenuBase(const std::string& name, const std::string& shortcut, bool enabled)

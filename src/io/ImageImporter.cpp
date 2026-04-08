@@ -1,4 +1,4 @@
-#include "io/ImageImporter.h"
+﻿#include "io/ImageImporter.h"
 
 #include "core/Project.h"
 
@@ -16,8 +16,7 @@ namespace
     // 统一写错误信息，减少重复 if(errorMessage)。
     void assignError(std::string* errorMessage, const std::string& message)
     {
-        if (errorMessage)
-            *errorMessage = message;
+        if (errorMessage) *errorMessage = message;
     }
 
     /**
@@ -36,8 +35,7 @@ namespace
             return nullptr;
         }
 
-        if (source->format == SDL_PIXELFORMAT_RGBA32)
-            return source;
+        if (source->format == SDL_PIXELFORMAT_RGBA32) return source;
 
         SDL_Surface* rgba = SDL_ConvertSurface(source, SDL_PIXELFORMAT_RGBA32);
         SDL_DestroySurface(source);
@@ -114,8 +112,7 @@ bool ImageImporter::importSingleFramePng(Project& project,
     }
 
     SDL_Surface* surface = loadRgbaSurface(path, errorMessage);
-    if (!surface)
-        return false;
+    if (!surface) return false;
 
     // MVP 规则：单帧导入要求尺寸严格一致，避免隐式缩放造成像素失真。
     if (surface->w != projectWidth || surface->h != projectHeight)
@@ -131,8 +128,7 @@ bool ImageImporter::importSingleFramePng(Project& project,
     std::vector<uint32_t> pixels;
     const bool extracted = extractPixelsFromRect(surface, 0, 0, surface->w, surface->h, pixels, errorMessage);
     SDL_DestroySurface(surface);
-    if (!extracted)
-        return false;
+    if (!extracted) return false;
 
     project.getFrame(frameIndex).pixels = std::move(pixels);
     return true;
@@ -145,8 +141,7 @@ bool ImageImporter::importSpriteSheetPng(Project& project,
                                          int* outImportedFrameCount,
                                          std::string* errorMessage)
 {
-    if (outImportedFrameCount)
-        *outImportedFrameCount = 0;
+    if (outImportedFrameCount) *outImportedFrameCount = 0;
 
     if (path.empty())
     {
@@ -184,8 +179,7 @@ bool ImageImporter::importSpriteSheetPng(Project& project,
         project.getFrame(anchorIndex).pixels = framePixels;
     }
 
-    if (outImportedFrameCount)
-        *outImportedFrameCount = totalFrames;
+    if (outImportedFrameCount) *outImportedFrameCount = totalFrames;
     return true;
 }
 
@@ -209,8 +203,7 @@ bool ImageImporter::sliceSpriteSheetPng(const std::string& path,
     }
 
     SDL_Surface* surface = loadRgbaSurface(path, errorMessage);
-    if (!surface)
-        return false;
+    if (!surface) return false;
 
     outResult.sheetWidth = surface->w;
     outResult.sheetHeight = surface->h;
@@ -276,7 +269,6 @@ bool ImageImporter::sliceSpriteSheetPng(const std::string& path,
     }
 
     SDL_DestroySurface(surface);
-    if (!ok)
-        return false;
+    if (!ok) return false;
     return true;
 }

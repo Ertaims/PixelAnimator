@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @file App.cpp
  * @brief App 主流程实现：初始化、主循环渲染、资源释放、多项目会话切换
  */
@@ -70,8 +70,7 @@ namespace
                 }
             }
             const std::string stem = p.stem().string();
-            if (!stem.empty())
-                return stem;
+            if (!stem.empty()) return stem;
         }
         catch (...)
         {
@@ -89,16 +88,14 @@ namespace
 
     bool endsWithInsensitive(const std::string& text, std::string_view suffix)
     {
-        if (text.size() < suffix.size())
-            return false;
+        if (text.size() < suffix.size()) return false;
         const std::string lower = toLowerCopy(text);
         return lower.compare(lower.size() - suffix.size(), suffix.size(), suffix.data()) == 0;
     }
 
     App::ProjectFileFormat detectFormatFromPath(const std::string& path)
     {
-        if (endsWithInsensitive(path, ".pxanim.json") || endsWithInsensitive(path, ".json"))
-            return App::ProjectFileFormat::Json;
+        if (endsWithInsensitive(path, ".pxanim.json") || endsWithInsensitive(path, ".json")) return App::ProjectFileFormat::Json;
         return App::ProjectFileFormat::Binary;
     }
 
@@ -111,34 +108,26 @@ namespace
 
     std::string normalizeSavePath(const std::string& path, App::ProjectFileFormat preferredFormat)
     {
-        if (path.empty())
-            return path;
+        if (path.empty()) return path;
 
         if (preferredFormat == App::ProjectFileFormat::Json)
         {
-            if (endsWithInsensitive(path, ".pxanim.json") || endsWithInsensitive(path, ".json"))
-                return path;
-            if (endsWithInsensitive(path, ".pxanim"))
-                return path + ".json";
+            if (endsWithInsensitive(path, ".pxanim.json") || endsWithInsensitive(path, ".json")) return path;
+            if (endsWithInsensitive(path, ".pxanim")) return path + ".json";
             return path + ".pxanim.json";
         }
 
         // Binary:
-        if (endsWithInsensitive(path, ".pxanim"))
-            return path;
-        if (endsWithInsensitive(path, ".pxanim.json"))
-            return path.substr(0, path.size() - 5); // 去掉末尾 ".json" -> ".pxanim"
-        if (endsWithInsensitive(path, ".json"))
-            return path.substr(0, path.size() - 5) + ".pxanim";
+        if (endsWithInsensitive(path, ".pxanim")) return path;
+        if (endsWithInsensitive(path, ".pxanim.json")) return path.substr(0, path.size() - 5); // 去掉末尾 ".json" -> ".pxanim"
+        if (endsWithInsensitive(path, ".json")) return path.substr(0, path.size() - 5) + ".pxanim";
         return path + ".pxanim";
     }
 
     std::string normalizePngPath(const std::string& path)
     {
-        if (path.empty())
-            return path;
-        if (endsWithInsensitive(path, ".png"))
-            return path;
+        if (path.empty()) return path;
+        if (endsWithInsensitive(path, ".png")) return path;
         return path + ".png";
     }
 
@@ -148,16 +137,14 @@ namespace
     unsigned int loadTextureFromFile(const char* path)
     {
         SDL_Surface* surface = IMG_Load(path);
-        if (!surface)
-            return 0;
+        if (!surface) return 0;
 
         SDL_Surface* rgbaSurface = surface;
         if (surface->format != SDL_PIXELFORMAT_RGBA32)
         {
             rgbaSurface = SDL_ConvertSurface(surface, SDL_PIXELFORMAT_RGBA32);
             SDL_DestroySurface(surface);
-            if (!rgbaSurface)
-                return 0;
+            if (!rgbaSurface) return 0;
         }
 
         unsigned int texture = 0;
@@ -210,26 +197,24 @@ App::~App() = default;
 
 bool App::init()
 {
-    // 1) 初始化 SDL
+    // 初始化 SDL
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD))
     {
         std::fprintf(stderr, "Error: SDL_Init(): %s\n", SDL_GetError());
         return false;
     }
 
-    // 2) 创建主窗口与 OpenGL 上下文
-    if (!createWindowAndContext())
-        return false;
+    // 创建主窗口与 OpenGL 上下文
+    if (!createWindowAndContext()) return false;
 
-    // 3) 初始化 ImGui
-    if (!initImGui())
-        return false;
+    // 初始化 ImGui
+    if (!initImGui()) return false;
 
-    // 4) 启动时先加载 Recent（持久化数据），再创建菜单与默认项目，
+    // 启动时先加载 Recent（持久化数据），再创建菜单与默认项目，
     //    这样 File->Open Recent 首帧就能看到历史列表。
     loadRecentProjectPaths();
 
-    // 5) 创建菜单与默认项目
+    // 创建菜单与默认项目
     createMenuAndWindows();
 
     std::cout << "OpenGL Version: " << glGetString(GL_VERSION) << std::endl;
@@ -377,23 +362,20 @@ void App::processEvents()
     while (SDL_PollEvent(&event))
     {
         ImGui_ImplSDL3_ProcessEvent(&event);
-        if (event.type == SDL_EVENT_QUIT)
-            done_ = true;
+        if (event.type == SDL_EVENT_QUIT) done_ = true;
 
         if (event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED
             && event.window.windowID == SDL_GetWindowID(window_))
             done_ = true;
         
-        if(event.type == SDL_EVENT_DROP_FILE)
+        if (event.type == SDL_EVENT_DROP_FILE)
         {
             // 只处理主窗口上的拖拽
-            if(event.drop.windowID != SDL_GetWindowID(window_))
-                continue;
+            if (event.drop.windowID != SDL_GetWindowID(window_)) continue;
 
             // SDL 事件里的 data 生命周期只保证事件处理期间有效，这里先拷贝到 std::string。
             const std::string droppedPath = event.drop.data ? event.drop.data : "";
-            if (droppedPath.empty())
-                continue;
+            if (droppedPath.empty()) continue;
 
             if (!isSupportedProjectPath(droppedPath))
             {
@@ -414,8 +396,7 @@ void App::renderFrame()
 
     ImGuiIO& io = ImGui::GetIO();
 
-    if (menuManager_)
-        menuManager_->render();
+    if (menuManager_) menuManager_->render();
 
     // 每帧更新：New Project 弹窗、快捷切换、窗口标题脏标记
     pollDialogResults();
@@ -451,17 +432,13 @@ void App::renderFrame()
             dockspace_flags &= ~ImGuiDockNodeFlags_PassthruCentralNode;
         }
 
-        if (dockspace_flags & ImGuiDockNodeFlags_PassthruCentralNode)
-            window_flags |= ImGuiWindowFlags_NoBackground;
+        if (dockspace_flags & ImGuiDockNodeFlags_PassthruCentralNode) window_flags |= ImGuiWindowFlags_NoBackground;
 
-        if (!opt_padding)
-            ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+        if (!opt_padding) ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
         ImGui::Begin("DockSpace Demo", nullptr, window_flags);
-        if (!opt_padding)
-            ImGui::PopStyleVar();
+        if (!opt_padding) ImGui::PopStyleVar();
 
-        if (opt_fullscreen)
-            ImGui::PopStyleVar(2);
+        if (opt_fullscreen) ImGui::PopStyleVar(2);
 
         if (io.ConfigFlags & ImGuiConfigFlags_DockingEnable)
         {
@@ -475,8 +452,7 @@ void App::renderFrame()
     // 渲染所有注册窗口（包括多个 ProjectWindow）
     for (Window* window : WindowFactory::getInstance().getWindows())
     {
-        if (window)
-            window->render();
+        if (window) window->render();
     }
 
     ImGui::Render();
@@ -556,8 +532,7 @@ void App::shutdown()
 void App::setupDefaultDockLayout()
 {
     // 仅在需要时重建布局（新建/关闭会话后会置 false）
-    if (dockLayoutInitialized_)
-        return;
+    if (dockLayoutInitialized_) return;
 
     ImGuiID dockspaceId = ImGui::GetID("MyDockSpace");
     ImGui::DockBuilderRemoveNode(dockspaceId);
@@ -566,8 +541,7 @@ void App::setupDefaultDockLayout()
 
     for (const ProjectSession& session : projectSessions_)
     {
-        if (session.window)
-            ImGui::DockBuilderDockWindow(session.windowLabel.c_str(), dockspaceId);
+        if (session.window) ImGui::DockBuilderDockWindow(session.windowLabel.c_str(), dockspaceId);
     }
 
     ImGui::DockBuilderFinish(dockspaceId);
@@ -578,21 +552,17 @@ void App::setActiveContext(AppContext* context)
 {
     // 统一切换“当前活动上下文”，菜单命令也同步切换目标
     activeContext_ = context;
-    if (fileMenu_)
-        fileMenu_->setContext(activeContext_);
-    if (editMenu_)
-        editMenu_->setContext(activeContext_);
+    if (fileMenu_) fileMenu_->setContext(activeContext_);
+    if (editMenu_) editMenu_->setContext(activeContext_);
 }
 
 int App::findSessionIndexByContext(const AppContext* context) const
 {
-    if (!context)
-        return -1;
+    if (!context) return -1;
 
     for (int i = 0; i < static_cast<int>(projectSessions_.size()); ++i)
     {
-        if (projectSessions_[static_cast<size_t>(i)].context.get() == context)
-            return i;
+        if (projectSessions_[static_cast<size_t>(i)].context.get() == context) return i;
     }
     return -1;
 }
@@ -600,13 +570,11 @@ int App::findSessionIndexByContext(const AppContext* context) const
 void App::closeProjectByContext(AppContext* context)
 {
     const int index = findSessionIndexByContext(context);
-    if (index < 0)
-        return;
+    if (index < 0) return;
 
     ProjectSession& session = projectSessions_[static_cast<size_t>(index)];
     Window* windowToDestroy = session.window;
-    if (windowToDestroy)
-        WindowFactory::getInstance().destroyWindow(windowToDestroy);
+    if (windowToDestroy) WindowFactory::getInstance().destroyWindow(windowToDestroy);
 
     projectSessions_.erase(projectSessions_.begin() + index);
     dockLayoutInitialized_ = false;
@@ -629,8 +597,7 @@ void App::closeAllProjects()
 {
     for (ProjectSession& session : projectSessions_)
     {
-        if (session.window)
-            WindowFactory::getInstance().destroyWindow(session.window);
+        if (session.window) WindowFactory::getInstance().destroyWindow(session.window);
     }
 
     projectSessions_.clear();
@@ -643,39 +610,31 @@ void App::refreshWindowLabels()
     // 窗口标题展示项目名 + 脏标记：Name*
     for (ProjectSession& session : projectSessions_)
     {
-        if (session.project && !session.project->getName().empty())
-            session.windowBaseTitle = session.project->getName();
+        if (session.project && !session.project->getName().empty()) session.windowBaseTitle = session.project->getName();
 
         const bool dirty = session.context && session.context->isProjectDirty();
         std::string label = session.windowBaseTitle;
-        if (dirty)
-            label += "*";
+        if (dirty) label += "*";
         label += "###ProjectWindow_" + std::to_string(session.projectId);
 
-        if (session.windowLabel == label)
-            continue;
+        if (session.windowLabel == label) continue;
 
         session.windowLabel = label;
-        if (session.window)
-            session.window->setWindowLabel(session.windowLabel);
+        if (session.window) session.window->setWindowLabel(session.windowLabel);
     }
 }
 
 void App::handleProjectSwitchShortcut()
 {
     // 少于两个会话时不需要切换
-    if (projectSessions_.size() < 2)
-        return;
+    if (projectSessions_.size() < 2) return;
 
     ImGuiIO& io = ImGui::GetIO();
-    if (!io.KeyCtrl)
-        return;
-    if (!ImGui::IsKeyPressed(ImGuiKey_Tab, false))
-        return;
+    if (!io.KeyCtrl) return;
+    if (!ImGui::IsKeyPressed(ImGuiKey_Tab, false)) return;
 
     int currentIndex = findSessionIndexByContext(activeContext_);
-    if (currentIndex < 0)
-        currentIndex = 0;
+    if (currentIndex < 0) currentIndex = 0;
 
     const int n = static_cast<int>(projectSessions_.size());
     const bool backward = io.KeyShift; // Ctrl+Shift+Tab 反向
@@ -697,8 +656,7 @@ void App::renderNewProjectPopup()
         newProjectPopupRequested_ = false;
     }
 
-    if (!ImGui::BeginPopupModal("New Project", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
-        return;
+    if (!ImGui::BeginPopupModal("New Project", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) return;
 
     ImGui::TextUnformatted("Create a new project");
     ImGui::Separator();
@@ -717,12 +675,9 @@ void App::renderNewProjectPopup()
     ImGui::Combo("Canvas Background", &newProjectCanvasBgMode_, canvasBgItems, 2);
 
     // 输入兜底，避免非法参数
-    if (newProjectWidth_ < 1)
-        newProjectWidth_ = 1;
-    if (newProjectHeight_ < 1)
-        newProjectHeight_ = 1;
-    if (newProjectFrameCount_ < 1)
-        newProjectFrameCount_ = 1;
+    if (newProjectWidth_ < 1) newProjectWidth_ = 1;
+    if (newProjectHeight_ < 1) newProjectHeight_ = 1;
+    if (newProjectFrameCount_ < 1) newProjectFrameCount_ = 1;
 
     ImGui::Separator();
     if (ImGui::Button("Create", ImVec2(120.0f, 0.0f)))
@@ -747,8 +702,7 @@ void App::renderNewProjectPopup()
 
 void App::requestOpenProjectDialog()
 {
-    if (openDialogInFlight_)
-        return;
+    if (openDialogInFlight_) return;
 
     static const SDL_DialogFileFilter filters[] = {
         {"PixelAnimator Project", "pxanim"},
@@ -769,8 +723,7 @@ void App::requestOpenProjectDialog()
 
 void App::requestSaveAsDialog(ProjectFileFormat format)
 {
-    if (saveDialogInFlight_)
-        return;
+    if (saveDialogInFlight_) return;
 
     saveDialogFormat_ = format;
 
@@ -803,18 +756,15 @@ void App::requestSaveAsDialog(ProjectFileFormat format)
         if (candidatePath.empty())
         {
             const Project* project = activeContext_->getProject();
-            if (project && !project->getName().empty())
-                candidatePath = format == ProjectFileFormat::Json
-                    ? (project->getName() + ".pxanim.json")
-                    : (project->getName() + ".pxanim");
+            if (project && !project->getName().empty()) candidatePath = format == ProjectFileFormat::Json
+                ? (project->getName() + ".pxanim.json") : (project->getName() + ".pxanim");
         }
         else
         {
             // Save As 按当前用户选择的格式预填路径，避免 JSON 模式仍默认二进制扩展名。
             candidatePath = normalizeSavePath(candidatePath, format);
         }
-        if (!candidatePath.empty())
-            defaultLocation = candidatePath.c_str();
+        if (!candidatePath.empty()) defaultLocation = candidatePath.c_str();
     }
 
     saveDialogInFlight_ = true;
@@ -829,8 +779,7 @@ void App::requestSaveAsDialog(ProjectFileFormat format)
 
 void App::requestExportDialog(ExportKind kind)
 {
-    if (exportDialogInFlight_)
-        return;
+    if (exportDialogInFlight_) return;
     if (!activeContext_ || !activeContext_->hasProject())
     {
         showError("No active project to export.");
@@ -862,8 +811,7 @@ void App::requestExportDialog(ExportKind kind)
 
     std::string baseName = "export";
     const Project* project = activeContext_->getProject();
-    if (project && !project->getName().empty())
-        baseName = project->getName();
+    if (project && !project->getName().empty()) baseName = project->getName();
 
     std::string defaultPath;
     if (kind == ExportKind::CurrentFramePng)
@@ -875,8 +823,7 @@ void App::requestExportDialog(ExportKind kind)
     {
         // 根据配置模式拼接默认导出文件名，方便用户区分不同布局。
         const char* modeText = "row";
-        if (spriteSheetExportUseCustomGroups_)
-            modeText = "grouped";
+        if (spriteSheetExportUseCustomGroups_) modeText = "grouped";
         else if (spriteSheetExportMode_ == SpriteSheetExportMode::Column)
             modeText = "column";
         else if (spriteSheetExportMode_ == SpriteSheetExportMode::RowColumn)
@@ -900,8 +847,7 @@ void App::requestExportDialog(ExportKind kind)
 
 void App::requestImportDialog(ImportKind kind)
 {
-    if (importDialogInFlight_)
-        return;
+    if (importDialogInFlight_) return;
     if (!activeContext_ || !activeContext_->hasProject())
     {
         showError("No active project to import into.");
@@ -930,8 +876,7 @@ void SDLCALL App::onOpenDialogClosed(void* userdata, const char* const* filelist
 {
     (void)filter;
     App* app = static_cast<App*>(userdata);
-    if (!app)
-        return;
+    if (!app) return;
 
     std::lock_guard<std::mutex> guard(app->dialogMutex_);
     app->openDialogInFlight_ = false;
@@ -939,14 +884,12 @@ void SDLCALL App::onOpenDialogClosed(void* userdata, const char* const* filelist
     if (!filelist)
     {
         app->pendingDialogError_ = SDL_GetError();
-        if (app->pendingDialogError_.empty())
-            app->pendingDialogError_ = "Open dialog failed.";
+        if (app->pendingDialogError_.empty()) app->pendingDialogError_ = "Open dialog failed.";
         app->pendingDialogErrorReady_ = true;
         return;
     }
 
-    if (!filelist[0])
-        return; // 用户取消
+    if (!filelist[0]) return; // 用户取消
 
     app->pendingOpenPath_ = filelist[0];
     app->pendingOpenReady_ = true;
@@ -956,8 +899,7 @@ void SDLCALL App::onSaveDialogClosed(void* userdata, const char* const* filelist
 {
     (void)filter;
     App* app = static_cast<App*>(userdata);
-    if (!app)
-        return;
+    if (!app) return;
 
     std::lock_guard<std::mutex> guard(app->dialogMutex_);
     app->saveDialogInFlight_ = false;
@@ -965,14 +907,12 @@ void SDLCALL App::onSaveDialogClosed(void* userdata, const char* const* filelist
     if (!filelist)
     {
         app->pendingDialogError_ = SDL_GetError();
-        if (app->pendingDialogError_.empty())
-            app->pendingDialogError_ = "Save dialog failed.";
+        if (app->pendingDialogError_.empty()) app->pendingDialogError_ = "Save dialog failed.";
         app->pendingDialogErrorReady_ = true;
         return;
     }
 
-    if (!filelist[0])
-        return; // 用户取消
+    if (!filelist[0]) return; // 用户取消
 
     app->pendingSavePath_ = filelist[0];
     app->pendingSaveReady_ = true;
@@ -983,8 +923,7 @@ void SDLCALL App::onExportDialogClosed(void* userdata, const char* const* fileli
 {
     (void)filter;
     App* app = static_cast<App*>(userdata);
-    if (!app)
-        return;
+    if (!app) return;
 
     std::lock_guard<std::mutex> guard(app->dialogMutex_);
     app->exportDialogInFlight_ = false;
@@ -992,14 +931,12 @@ void SDLCALL App::onExportDialogClosed(void* userdata, const char* const* fileli
     if (!filelist)
     {
         app->pendingDialogError_ = SDL_GetError();
-        if (app->pendingDialogError_.empty())
-            app->pendingDialogError_ = "Export dialog failed.";
+        if (app->pendingDialogError_.empty()) app->pendingDialogError_ = "Export dialog failed.";
         app->pendingDialogErrorReady_ = true;
         return;
     }
 
-    if (!filelist[0])
-        return;
+    if (!filelist[0]) return;
 
     app->pendingExportPath_ = filelist[0];
     app->pendingExportKind_ = app->exportDialogKind_;
@@ -1016,8 +953,7 @@ void SDLCALL App::onImportDialogClosed(void* userdata, const char* const* fileli
 {
     (void)filter;
     App* app = static_cast<App*>(userdata);
-    if (!app)
-        return;
+    if (!app) return;
 
     std::lock_guard<std::mutex> guard(app->dialogMutex_);
     app->importDialogInFlight_ = false;
@@ -1025,14 +961,12 @@ void SDLCALL App::onImportDialogClosed(void* userdata, const char* const* fileli
     if (!filelist)
     {
         app->pendingDialogError_ = SDL_GetError();
-        if (app->pendingDialogError_.empty())
-            app->pendingDialogError_ = "Import dialog failed.";
+        if (app->pendingDialogError_.empty()) app->pendingDialogError_ = "Import dialog failed.";
         app->pendingDialogErrorReady_ = true;
         return;
     }
 
-    if (!filelist[0])
-        return;
+    if (!filelist[0]) return;
 
     app->pendingImportPath_ = filelist[0];
     app->pendingImportKind_ = app->importDialogKind_;
@@ -1102,23 +1036,18 @@ void App::pollDialogResults()
         }
     }
 
-    if (!dialogError.empty())
-        showError(dialogError);
-    if (!openPath.empty())
-        openProjectFromPath(openPath);
-    if (!savePath.empty())
-        saveActiveProjectAs(savePath, saveFormat);
-    if (!exportPath.empty())
-        exportToPath(exportPath,
-                     exportKind,
-                     exportSpriteMode,
-                     exportUseSelectedFrames,
-                     exportColumnsPerRow,
-                     exportUseCustomGroups,
-                     exportCustomGroups,
-                     exportGroupSpacing);
-    if (!importPath.empty())
-        importFromPath(importPath, importKind, importSpriteSheetRowMajor);
+    if (!dialogError.empty()) showError(dialogError);
+    if (!openPath.empty()) openProjectFromPath(openPath);
+    if (!savePath.empty()) saveActiveProjectAs(savePath, saveFormat);
+    if (!exportPath.empty()) exportToPath(exportPath,
+                                          exportKind,
+                                          exportSpriteMode,
+                                          exportUseSelectedFrames,
+                                          exportColumnsPerRow,
+                                          exportUseCustomGroups,
+                                          exportCustomGroups,
+                                          exportGroupSpacing);
+    if (!importPath.empty()) importFromPath(importPath, importKind, importSpriteSheetRowMajor);
 }
 
 void App::renderErrorPopup()
@@ -1128,8 +1057,7 @@ void App::renderErrorPopup()
         ImGui::OpenPopup("Error");
     }
 
-    if (!ImGui::BeginPopupModal("Error", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
-        return;
+    if (!ImGui::BeginPopupModal("Error", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) return;
 
     ImGui::TextWrapped("%s", pendingErrorMessage_.c_str());
     ImGui::Separator();
@@ -1151,10 +1079,8 @@ void App::handleFileMenuShortcuts()
     ImGuiIO& io = ImGui::GetIO();
 
     // 正在编辑文本时不处理全局文件快捷键，避免与输入冲突。
-    if (io.WantTextInput)
-        return;
-    if (!io.KeyCtrl)
-        return;
+    if (io.WantTextInput) return;
+    if (!io.KeyCtrl) return;
 
     // 优先处理带 Shift 的组合，避免与 Ctrl+S / Ctrl+W 冲突。
     if (io.KeyShift && ImGui::IsKeyPressed(ImGuiKey_S, false))
@@ -1162,8 +1088,7 @@ void App::handleFileMenuShortcuts()
         // Ctrl+Shift+S：Save As。
         // 若当前项目已有路径，则沿用当前格式（Binary/Json）；否则默认 Binary。
         ProjectFileFormat format = ProjectFileFormat::Binary;
-        if (activeContext_ && !activeContext_->getProjectFilePath().empty())
-            format = detectFormatFromPath(activeContext_->getProjectFilePath());
+        if (activeContext_ && !activeContext_->getProjectFilePath().empty()) format = detectFormatFromPath(activeContext_->getProjectFilePath());
         requestSaveAsDialog(format);
         return;
     }
@@ -1336,8 +1261,7 @@ bool App::exportToPath(const std::string& path,
 
     // 传统模式：行 / 列 / 行列网格。
     ImageExporter::SpriteSheetLayout layout = ImageExporter::SpriteSheetLayout::Row;
-    if (spriteMode == SpriteSheetExportMode::Column)
-        layout = ImageExporter::SpriteSheetLayout::Column;
+    if (spriteMode == SpriteSheetExportMode::Column) layout = ImageExporter::SpriteSheetLayout::Column;
     else if (spriteMode == SpriteSheetExportMode::RowColumn)
         layout = ImageExporter::SpriteSheetLayout::RowColumn;
 
@@ -1439,10 +1363,8 @@ bool App::importFromPath(const std::string& path, ImportKind kind, bool spriteSh
     // 默认行列数按“整图 / 画布”估算；若不能整除则回退为 1x1。
     spriteSheetImportGridCols_ = 1;
     spriteSheetImportGridRows_ = 1;
-    if (spriteSheetImportPreviewWidth_ % spriteSheetImportSliceWidth_ == 0)
-        spriteSheetImportGridCols_ = std::max(1, spriteSheetImportPreviewWidth_ / spriteSheetImportSliceWidth_);
-    if (spriteSheetImportPreviewHeight_ % spriteSheetImportSliceHeight_ == 0)
-        spriteSheetImportGridRows_ = std::max(1, spriteSheetImportPreviewHeight_ / spriteSheetImportSliceHeight_);
+    if (spriteSheetImportPreviewWidth_ % spriteSheetImportSliceWidth_ == 0) spriteSheetImportGridCols_ = std::max(1, spriteSheetImportPreviewWidth_ / spriteSheetImportSliceWidth_);
+    if (spriteSheetImportPreviewHeight_ % spriteSheetImportSliceHeight_ == 0) spriteSheetImportGridRows_ = std::max(1, spriteSheetImportPreviewHeight_ / spriteSheetImportSliceHeight_);
 
     if (spriteSheetImportPreviewWidth_ % spriteSheetImportSliceWidth_ == 0
         && spriteSheetImportPreviewHeight_ % spriteSheetImportSliceHeight_ == 0)
@@ -1476,8 +1398,7 @@ void App::renderSpriteSheetImportPopup()
     ImGui::SetNextWindowSizeConstraints(minPopupSize, maxPopupSize);
     ImGui::SetNextWindowSize(initialPopupSize, ImGuiCond_Appearing);
 
-    if (!ImGui::BeginPopupModal("Import Sprite Sheet", nullptr, ImGuiWindowFlags_None))
-        return;
+    if (!ImGui::BeginPopupModal("Import Sprite Sheet", nullptr, ImGuiWindowFlags_None)) return;
 
     ImGui::TextUnformatted("Traversal Order");
     int order = spriteSheetImportRowMajor_ ? 0 : 1;
@@ -1488,8 +1409,8 @@ void App::renderSpriteSheetImportPopup()
     ImGui::Separator();
     ImGui::TextUnformatted("Slice Size");
     // 切片配置提供两种方式：
-    // 1) 按“每帧尺寸”输入（Width/Height）
-    // 2) 按“行列数量”输入（Rows/Columns），自动计算每帧尺寸
+    // 按“每帧尺寸”输入（Width/Height）
+    // 按“行列数量”输入（Rows/Columns），自动计算每帧尺寸
     int sliceMode = spriteSheetImportUseGridCountMode_ ? 1 : 0;
     ImGui::RadioButton("By Frame Size", &sliceMode, 0);
     ImGui::SameLine();
@@ -1594,9 +1515,9 @@ void App::renderSpriteSheetImportPopup()
 
     // ---------------- 切片缩图预览 + 选择性导入 ----------------
     // 规则：
-    // 1) 默认全选；
-    // 2) 点击缩图可切换该切片是否导入；
-    // 3) 提供全选/清空/反选快捷按钮。
+    // 默认全选；
+    // 点击缩图可切换该切片是否导入；
+    // 提供全选/清空/反选快捷按钮。
     int selectedTileCount = 0;
     if (effectiveSliceValid && spriteSheetImportPreviewFrames_ > 0)
     {
@@ -1607,8 +1528,7 @@ void App::renderSpriteSheetImportPopup()
 
         for (uint8_t flag : spriteSheetImportTileSelected_)
         {
-            if (flag != 0)
-                ++selectedTileCount;
+            if (flag != 0) ++selectedTileCount;
         }
 
         ImGui::Separator();
@@ -1632,8 +1552,7 @@ void App::renderSpriteSheetImportPopup()
             selectedTileCount = 0;
             for (uint8_t flag : spriteSheetImportTileSelected_)
             {
-                if (flag != 0)
-                    ++selectedTileCount;
+                if (flag != 0) ++selectedTileCount;
             }
         }
 
@@ -1654,8 +1573,7 @@ void App::renderSpriteSheetImportPopup()
         // 预览布局策略：
         // - 按行列模式：严格按用户输入列数显示；
         // - 其它模式：按可用宽度自适应列数。
-        if (spriteSheetImportUseGridCountMode_ && effectiveSliceValid)
-            tilesPerRow = std::max(1, spriteSheetImportGridCols_);
+        if (spriteSheetImportUseGridCountMode_ && effectiveSliceValid) tilesPerRow = std::max(1, spriteSheetImportGridCols_);
 
         tilesPerRow = std::min(tilesPerRow, spriteSheetImportPreviewFrames_);
 
@@ -1700,8 +1618,7 @@ void App::renderSpriteSheetImportPopup()
                     clicked = ImGui::Button("Tile", ImVec2(tilePreviewSize, tilePreviewSize));
                 }
 
-                if (selected)
-                    ImGui::PopStyleColor();
+                if (selected) ImGui::PopStyleColor();
 
                 if (clicked)
                 {
@@ -1724,8 +1641,7 @@ void App::renderSpriteSheetImportPopup()
         selectedTileCount = 0;
         for (uint8_t flag : spriteSheetImportTileSelected_)
         {
-            if (flag != 0)
-                ++selectedTileCount;
+            if (flag != 0) ++selectedTileCount;
         }
     }
 
@@ -1784,8 +1700,7 @@ void App::renderSpriteSheetImportPopup()
                         && physicalIndex < static_cast<int>(spriteSheetImportTileSelected_.size())
                         ? spriteSheetImportTileSelected_[static_cast<size_t>(physicalIndex)] != 0
                         : true;
-                    if (!selected)
-                        continue;
+                    if (!selected) continue;
 
                     filteredFrames.push_back(sliceResult.frames[i]);
                     filteredTileRows.push_back(sliceResult.tileRows[i]);
@@ -1872,8 +1787,7 @@ void App::renderSpriteSheetImportPopup()
                             std::vector<int> groupFrames;
                             for (size_t i = 0; i < filteredFrames.size(); ++i)
                             {
-                                if (filteredTileRows[i] == row)
-                                    groupFrames.push_back(firstImportedIndex + static_cast<int>(i));
+                                if (filteredTileRows[i] == row) groupFrames.push_back(firstImportedIndex + static_cast<int>(i));
                             }
                             if (!groupFrames.empty())
                             {
@@ -1893,8 +1807,7 @@ void App::renderSpriteSheetImportPopup()
                             std::vector<int> groupFrames;
                             for (size_t i = 0; i < filteredFrames.size(); ++i)
                             {
-                                if (filteredTileCols[i] == col)
-                                    groupFrames.push_back(firstImportedIndex + static_cast<int>(i));
+                                if (filteredTileCols[i] == col) groupFrames.push_back(firstImportedIndex + static_cast<int>(i));
                             }
                             if (!groupFrames.empty())
                             {
@@ -1941,15 +1854,14 @@ bool App::parseFrameListText(const std::string& text,
     }
 
     // 支持输入格式：
-    // 1) 单值：1, 5, 12
-    // 2) 区间：3-7（闭区间）
-    // 3) 混合：1,2,5-8,10
+    // 单值：1, 5, 12
+    // 区间：3-7（闭区间）
+    // 混合：1,2,5-8,10
     // 分隔符支持逗号/空格/分号，统一先归一化为逗号再解析。
     std::string normalized = text;
     for (char& ch : normalized)
     {
-        if (ch == ' ' || ch == ';' || ch == '\t' || ch == '\n' || ch == '\r')
-            ch = ',';
+        if (ch == ' ' || ch == ';' || ch == '\t' || ch == '\n' || ch == '\r') ch = ',';
     }
 
     std::vector<bool> used(static_cast<size_t>(maxFrameCount), false);
@@ -1957,8 +1869,7 @@ bool App::parseFrameListText(const std::string& text,
     std::string token;
     while (std::getline(ss, token, ','))
     {
-        if (token.empty())
-            continue;
+        if (token.empty()) continue;
 
         const size_t dashPos = token.find('-');
         if (dashPos == std::string::npos)
@@ -2010,8 +1921,7 @@ bool App::parseFrameListText(const std::string& text,
             return false;
         }
 
-        if (startValue > endValue)
-            std::swap(startValue, endValue);
+        if (startValue > endValue) std::swap(startValue, endValue);
 
         for (int value = startValue; value <= endValue; ++value)
         {
@@ -2069,8 +1979,7 @@ bool App::buildResolvedSpriteGroups(std::vector<SpriteSheetGroupResolved>& outGr
     for (size_t i = 0; i < groups.size(); ++i)
     {
         const AppContext::FrameGroup& group = groups[i];
-        if (group.frameIndices.empty())
-            continue;
+        if (group.frameIndices.empty()) continue;
 
         SpriteSheetGroupResolved resolved;
         resolved.name = group.name.empty() ? ("Group " + std::to_string(i + 1)) : group.name;
@@ -2097,8 +2006,7 @@ void App::renderSpriteSheetExportPopup()
         spriteSheetExportPopupRequested_ = false;
     }
 
-    if (!ImGui::BeginPopupModal("Export Sprite Sheet", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
-        return;
+    if (!ImGui::BeginPopupModal("Export Sprite Sheet", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) return;
 
     // 首次打开时加载模式图标（row/column/row&column）。
     if (!spriteSheetExportIconsLoaded_)
@@ -2110,20 +2018,17 @@ void App::renderSpriteSheetExportPopup()
         for (const char* p : rowCandidates)
         {
             spriteSheetRowIconTexture_ = loadTextureFromFile(p);
-            if (spriteSheetRowIconTexture_ != 0)
-                break;
+            if (spriteSheetRowIconTexture_ != 0) break;
         }
         for (const char* p : colCandidates)
         {
             spriteSheetColumnIconTexture_ = loadTextureFromFile(p);
-            if (spriteSheetColumnIconTexture_ != 0)
-                break;
+            if (spriteSheetColumnIconTexture_ != 0) break;
         }
         for (const char* p : rowColCandidates)
         {
             spriteSheetRowColumnIconTexture_ = loadTextureFromFile(p);
-            if (spriteSheetRowColumnIconTexture_ != 0)
-                break;
+            if (spriteSheetRowColumnIconTexture_ != 0) break;
         }
         spriteSheetExportIconsLoaded_ = true;
     }
@@ -2133,8 +2038,7 @@ void App::renderSpriteSheetExportPopup()
 
     auto drawModeButton = [this](SpriteSheetExportMode mode, unsigned int texture, const char* fallbackLabel) {
         const bool selected = (!spriteSheetExportUseCustomGroups_ && spriteSheetExportMode_ == mode);
-        if (selected)
-            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.20f, 0.45f, 0.75f, 0.90f));
+        if (selected) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.20f, 0.45f, 0.75f, 0.90f));
 
         bool clicked = false;
         if (texture != 0)
@@ -2149,8 +2053,7 @@ void App::renderSpriteSheetExportPopup()
             clicked = ImGui::Button(fallbackLabel, ImVec2(80.0f, 44.0f));
         }
 
-        if (selected)
-            ImGui::PopStyleColor();
+        if (selected) ImGui::PopStyleColor();
 
         if (clicked)
         {
@@ -2174,12 +2077,9 @@ void App::renderSpriteSheetExportPopup()
     //   否则当按钮把 false 改成 true 时，会出现“未 Push 却 Pop”的栈失衡，
     //   进而触发 ImGui 的 "Calling PopStyleColor() too many times!" 断言。
     const bool customModeSelectedBeforeClick = spriteSheetExportUseCustomGroups_;
-    if (customModeSelectedBeforeClick)
-        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.20f, 0.45f, 0.75f, 0.90f));
-    if (ImGui::Button("Custom Groups", ImVec2(130.0f, 44.0f)))
-        spriteSheetExportUseCustomGroups_ = true;
-    if (customModeSelectedBeforeClick)
-        ImGui::PopStyleColor();
+    if (customModeSelectedBeforeClick) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.20f, 0.45f, 0.75f, 0.90f));
+    if (ImGui::Button("Custom Groups", ImVec2(130.0f, 44.0f))) spriteSheetExportUseCustomGroups_ = true;
+    if (customModeSelectedBeforeClick) ImGui::PopStyleColor();
 
     ImGui::Separator();
 
@@ -2198,8 +2098,7 @@ void App::renderSpriteSheetExportPopup()
             ImGui::TextUnformatted("Grid config");
             ImGui::SetNextItemWidth(120.0f);
             ImGui::InputInt("Columns Per Row", &spriteSheetExportColumnsPerRow_);
-            if (spriteSheetExportColumnsPerRow_ < 1)
-                spriteSheetExportColumnsPerRow_ = 1;
+            if (spriteSheetExportColumnsPerRow_ < 1) spriteSheetExportColumnsPerRow_ = 1;
         }
 
         // 预估输出尺寸，帮助用户在导出前确认布局结果。
@@ -2209,8 +2108,7 @@ void App::renderSpriteSheetExportPopup()
             const int frameW = project->getWidth();
             const int frameH = project->getHeight();
             int frameCount = project->getFrameCount();
-            if (spriteSheetExportUseSelectedFrames_)
-                frameCount = static_cast<int>(activeContext_->getSelectedFrameIndices().size());
+            if (spriteSheetExportUseSelectedFrames_) frameCount = static_cast<int>(activeContext_->getSelectedFrameIndices().size());
 
             frameCount = std::max(0, frameCount);
             int outW = 0;
@@ -2246,8 +2144,7 @@ void App::renderSpriteSheetExportPopup()
         ImGui::TextUnformatted("Custom group settings");
         ImGui::SetNextItemWidth(120.0f);
         ImGui::InputInt("Group Spacing", &spriteSheetExportGroupSpacing_);
-        if (spriteSheetExportGroupSpacing_ < 0)
-            spriteSheetExportGroupSpacing_ = 0;
+        if (spriteSheetExportGroupSpacing_ < 0) spriteSheetExportGroupSpacing_ = 0;
 
         const std::vector<AppContext::FrameGroup>* groups = activeContext_
             ? &activeContext_->getFrameGroups()
@@ -2328,8 +2225,7 @@ bool App::openProjectFromPath(const std::string& path)
         return false;
     }
 
-    if (loadedProject->getName().empty())
-        loadedProject->setName(projectNameFromPath(path));
+    if (loadedProject->getName().empty()) loadedProject->setName(projectNameFromPath(path));
 
     createSessionFromProject(std::move(loadedProject), path);
     addRecentProjectPath(path);
@@ -2372,12 +2268,10 @@ void App::createSessionFromProject(std::unique_ptr<Project> project, const std::
 
 void App::addRecentProjectPath(const std::string& path)
 {
-    if (path.empty())
-        return;
+    if (path.empty()) return;
 
     // 仅记录可再次打开的项目文件，避免把 PNG 导入/导出路径混入 Open Recent。
-    if (!isSupportedProjectPath(path))
-        return;
+    if (!isSupportedProjectPath(path)) return;
 
     const std::string lowerPath = toLowerCopy(path);
     recentProjectPaths_.erase(
@@ -2390,8 +2284,7 @@ void App::addRecentProjectPath(const std::string& path)
 
     recentProjectPaths_.insert(recentProjectPaths_.begin(), path);
     static constexpr size_t kRecentLimit = 12;
-    if (recentProjectPaths_.size() > kRecentLimit)
-        recentProjectPaths_.resize(kRecentLimit);
+    if (recentProjectPaths_.size() > kRecentLimit) recentProjectPaths_.resize(kRecentLimit);
 
     refreshRecentProjectsMenu();
     // 每次 Recent 变更后立即落盘，避免异常退出导致数据丢失。
@@ -2400,8 +2293,7 @@ void App::addRecentProjectPath(const std::string& path)
 
 void App::refreshRecentProjectsMenu()
 {
-    if (fileMenu_)
-        fileMenu_->setRecentProjectPaths(recentProjectPaths_);
+    if (fileMenu_) fileMenu_->setRecentProjectPaths(recentProjectPaths_);
 }
 
 std::string App::getRecentProjectsStoragePath() const
@@ -2424,17 +2316,14 @@ void App::loadRecentProjectPaths()
     recentProjectPaths_.clear();
     const std::string storagePath = getRecentProjectsStoragePath();
     std::ifstream input(storagePath);
-    if (!input.is_open())
-        return; // 首次运行或文件不存在，视为无历史记录。
+    if (!input.is_open()) return; // 首次运行或文件不存在，视为无历史记录。
 
     std::string line;
     static constexpr size_t kRecentLimit = 12;
     while (std::getline(input, line))
     {
-        if (line.empty())
-            continue;
-        if (!isSupportedProjectPath(line))
-            continue;
+        if (line.empty()) continue;
+        if (!isSupportedProjectPath(line)) continue;
 
         // 读取阶段做去重（大小写不敏感），避免历史文件中出现重复路径。
         const std::string lowerLine = toLowerCopy(line);
@@ -2442,12 +2331,10 @@ void App::loadRecentProjectPaths()
             recentProjectPaths_.begin(),
             recentProjectPaths_.end(),
             [&lowerLine](const std::string& item) { return toLowerCopy(item) == lowerLine; });
-        if (existed)
-            continue;
+        if (existed) continue;
 
         recentProjectPaths_.push_back(line);
-        if (recentProjectPaths_.size() >= kRecentLimit)
-            break;
+        if (recentProjectPaths_.size() >= kRecentLimit) break;
     }
 }
 
@@ -2455,13 +2342,11 @@ void App::saveRecentProjectPaths() const
 {
     const std::string storagePath = getRecentProjectsStoragePath();
     std::ofstream output(storagePath, std::ios::trunc);
-    if (!output.is_open())
-        return;
+    if (!output.is_open()) return;
 
     for (const std::string& path : recentProjectPaths_)
     {
-        if (path.empty())
-            continue;
+        if (path.empty()) continue;
         output << path << '\n';
     }
 }
@@ -2504,3 +2389,4 @@ void App::createNewProject(int width, int height, int frameCount, uint32_t fillC
     // 下帧重建 dock，确保新窗口可见
     dockLayoutInitialized_ = false;
 }
+

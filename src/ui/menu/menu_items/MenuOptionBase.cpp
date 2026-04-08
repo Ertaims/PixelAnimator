@@ -1,4 +1,4 @@
-#include "MenuOptionBase.h"
+﻿#include "MenuOptionBase.h"
 
 // 构造函数
 MenuOptionBase::MenuOptionBase(Menu* menu)

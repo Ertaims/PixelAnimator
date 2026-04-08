@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "Tool.h"
 #include "imgui.h"
@@ -41,6 +41,7 @@ public:
      * @param zoom 当前缩放倍率
      * @param canvasWidth 画布像素宽
      * @param canvasHeight 画布像素高
+     * @param outPixelsChanged 输出参数，表示本帧是否对像素数据产生改动
      */
     void handleInteraction(AppContext& context,
                            Project::Frame& frame,
@@ -88,6 +89,7 @@ private:
         int startMouseX = 0;
         int startMouseY = 0;
         bool removeMode = false;
+        AppContext::PixelSelectionOp previewOp = AppContext::PixelSelectionOp::Replace;
         int activeHandle = -1;
         AppContext::PixelRect initialBounds;
         AppContext::PixelRect previewBounds;

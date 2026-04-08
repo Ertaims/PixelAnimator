@@ -1,4 +1,4 @@
-#include "io/ImageExporter.h"
+﻿#include "io/ImageExporter.h"
 
 #include "core/Project.h"
 
@@ -16,8 +16,7 @@ namespace
     // 统一错误信息写回，避免每个分支重复 if(errorMessage)。
     void assignError(std::string* errorMessage, const std::string& message)
     {
-        if (errorMessage)
-            *errorMessage = message;
+        if (errorMessage) *errorMessage = message;
     }
 
     // 把 RGBA8888 像素缓冲复制到 SDL_Surface。
@@ -63,8 +62,7 @@ namespace
     // - 若 frameIndices 为空，则自动扩展为“全部帧”。
     std::vector<int> buildFrameList(const Project& project, const std::vector<int>& frameIndices)
     {
-        if (!frameIndices.empty())
-            return frameIndices;
+        if (!frameIndices.empty()) return frameIndices;
 
         std::vector<int> all;
         const int frameCount = project.getFrameCount();
@@ -143,8 +141,7 @@ namespace
     {
         outWidth = 0;
         outHeight = 0;
-        if (frameCount <= 0)
-            return;
+        if (frameCount <= 0) return;
 
         if (layout == ImageExporter::SpriteSheetLayout::Column)
         {
@@ -186,7 +183,7 @@ bool ImageExporter::exportSingleFramePng(const Project& project,
                                          const std::string& path,
                                          std::string* errorMessage)
 {
-    // 1) 基本入参校验
+    // 基本入参校验
     if (path.empty())
     {
         assignError(errorMessage, "Export path is empty.");
@@ -208,7 +205,7 @@ bool ImageExporter::exportSingleFramePng(const Project& project,
         return false;
     }
 
-    // 2) 导出目标帧
+    // 导出目标帧
     const Project::Frame& frame = project.getFrame(frameIndex);
     return savePixelsAsPng(frame.pixels, width, height, path, errorMessage);
 }
@@ -241,8 +238,7 @@ bool ImageExporter::exportSpriteSheetPng(const Project& project,
         assignError(errorMessage, "No frames to export.");
         return false;
     }
-    if (!validateFrameList(project, frames, errorMessage))
-        return false;
+    if (!validateFrameList(project, frames, errorMessage)) return false;
 
     // 计算精灵图尺寸
     // Row:
@@ -329,7 +325,7 @@ bool ImageExporter::exportSpriteSheetPng(const Project& project,
         }
     }
 
-    // 5) 输出 PNG
+    // 输出 PNG
     return savePixelsAsPng(sheetPixels, sheetWidth, sheetHeight, path, errorMessage);
 }
 
@@ -384,8 +380,7 @@ bool ImageExporter::exportGroupedSpriteSheetPng(const Project& project,
             return false;
         }
 
-        if (!validateFrameList(project, group.frameIndices, errorMessage))
-            return false;
+        if (!validateFrameList(project, group.frameIndices, errorMessage)) return false;
 
         int blockW = 0;
         int blockH = 0;
@@ -407,8 +402,7 @@ bool ImageExporter::exportGroupedSpriteSheetPng(const Project& project,
 
         sheetWidth = std::max(sheetWidth, blockW);
         sheetHeight += blockH;
-        if (gi + 1 < groups.size())
-            sheetHeight += spacing;
+        if (gi + 1 < groups.size()) sheetHeight += spacing;
     }
 
     if (sheetWidth <= 0 || sheetHeight <= 0)
@@ -467,10 +461,10 @@ bool ImageExporter::exportGroupedSpriteSheetPng(const Project& project,
         }
 
         groupTopY += groupBlockHeights[gi];
-        if (gi + 1 < groups.size())
-            groupTopY += spacing;
+        if (gi + 1 < groups.size()) groupTopY += spacing;
     }
 
     // ---------------- 5) 输出 PNG ----------------
     return savePixelsAsPng(sheetPixels, sheetWidth, sheetHeight, path, errorMessage);
 }
+

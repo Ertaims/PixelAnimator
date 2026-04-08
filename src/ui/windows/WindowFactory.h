@@ -1,4 +1,4 @@
-#ifndef WINDOWFACTORY_H
+﻿#ifndef WINDOWFACTORY_H
 #define WINDOWFACTORY_H
 
 #include "ProjectWindow.h"

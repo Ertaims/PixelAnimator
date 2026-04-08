@@ -1,4 +1,6 @@
-#include "tools/RectSelectionTool.h"
+﻿#include "tools/RectSelectionTool.h"
+
+#include "core/Project.h"
 
 #include <algorithm>
 #include <array>
@@ -7,248 +9,614 @@
 
 namespace
 {
-// 将屏幕坐标映射为画布像素坐标，并夹到合法范围。
-void getClampedPixelFromMouse(const ImVec2& mousePos,
-                              const ImVec2& imagePos,
-                              int zoom,
-                              int canvasWidth,
-                              int canvasHeight,
-                              int& outX,
-                              int& outY)
-{
-    const float localX = mousePos.x - imagePos.x;
-    const float localY = mousePos.y - imagePos.y;
-    outX = std::clamp(static_cast<int>(std::floor(localX / static_cast<float>(zoom))), 0, canvasWidth - 1);
-    outY = std::clamp(static_cast<int>(std::floor(localY / static_cast<float>(zoom))), 0, canvasHeight - 1);
-}
-
-// 判断像素点是否位于给定矩形内。
-bool isPixelInRect(int x, int y, const AppContext::PixelRect& rect)
-{
-    if (rect.width <= 0 || rect.height <= 0)
-        return false;
-    return x >= rect.x
-        && y >= rect.y
-        && x < (rect.x + rect.width)
-        && y < (rect.y + rect.height);
-}
-
-// 计算“包含端点”的拖拽矩形。
-AppContext::PixelRect rectFromDragPixels(int x0, int y0, int x1, int y1)
-{
-    AppContext::PixelRect rect;
-    rect.x = std::min(x0, x1);
-    rect.y = std::min(y0, y1);
-    rect.width = std::abs(x1 - x0) + 1;
-    rect.height = std::abs(y1 - y0) + 1;
-    return rect;
-}
-
-// 画布边界裁剪（AppContext::PixelRect 版本）。
-void clampRectToCanvas(AppContext::PixelRect& rect, int canvasWidth, int canvasHeight)
-{
-    if (canvasWidth <= 0 || canvasHeight <= 0)
+    /**
+     * @brief 将鼠标屏幕坐标转换为画布像素坐标，并做边界夹取。
+     *
+     * @param mousePos 鼠标在屏幕空间的位置
+     * @param imagePos 画布图像左上角在屏幕空间的位置
+     * @param zoom 当前画布缩放倍率（每个像素占据 zoom x zoom 屏幕像素）
+     * @param canvasWidth 画布像素宽度
+     * @param canvasHeight 画布像素高度
+     * @param outX 输出的像素 X（已夹取到合法范围）
+     * @param outY 输出的像素 Y（已夹取到合法范围）
+     */
+    void getClampedPixelFromMouse(const ImVec2& mousePos,
+                                  const ImVec2& imagePos,
+                                  int zoom,
+                                  int canvasWidth,
+                                  int canvasHeight,
+                                  int& outX,
+                                  int& outY)
     {
-        rect = {};
-        return;
+        const float localX = mousePos.x - imagePos.x;
+        const float localY = mousePos.y - imagePos.y;
+        outX = std::clamp(static_cast<int>(std::floor(localX / static_cast<float>(zoom))), 0, canvasWidth - 1);
+        outY = std::clamp(static_cast<int>(std::floor(localY / static_cast<float>(zoom))), 0, canvasHeight - 1);
     }
 
-    const int x0 = std::clamp(rect.x, 0, canvasWidth - 1);
-    const int y0 = std::clamp(rect.y, 0, canvasHeight - 1);
-    const int x1 = std::clamp(rect.x + rect.width - 1, 0, canvasWidth - 1);
-    const int y1 = std::clamp(rect.y + rect.height - 1, 0, canvasHeight - 1);
-    rect.x = std::min(x0, x1);
-    rect.y = std::min(y0, y1);
-    rect.width = std::max(1, std::abs(x1 - x0) + 1);
-    rect.height = std::max(1, std::abs(y1 - y0) + 1);
-}
-
-// 像素矩形转屏幕矩形。
-void convertPixelRectToScreen(const AppContext::PixelRect& rect,
-                              const ImVec2& imagePos,
-                              int zoom,
-                              ImVec2& outMin,
-                              ImVec2& outMax)
-{
-    outMin = ImVec2(imagePos.x + static_cast<float>(rect.x * zoom),
-                    imagePos.y + static_cast<float>(rect.y * zoom));
-    outMax = ImVec2(imagePos.x + static_cast<float>((rect.x + rect.width) * zoom),
-                    imagePos.y + static_cast<float>((rect.y + rect.height) * zoom));
-}
-
-// 计算 8 个手柄中心点（NW/N/NE/E/SE/S/SW/W）。
-std::array<ImVec2, 8> getSelectionHandleCenters(const AppContext::PixelRect& rect,
-                                                const ImVec2& imagePos,
-                                                int zoom)
-{
-    ImVec2 minP(0.0f, 0.0f);
-    ImVec2 maxP(0.0f, 0.0f);
-    convertPixelRectToScreen(rect, imagePos, zoom, minP, maxP);
-    const float midX = (minP.x + maxP.x) * 0.5f;
-    const float midY = (minP.y + maxP.y) * 0.5f;
-    return {{
-        ImVec2(minP.x, minP.y),
-        ImVec2(midX, minP.y),
-        ImVec2(maxP.x, minP.y),
-        ImVec2(maxP.x, midY),
-        ImVec2(maxP.x, maxP.y),
-        ImVec2(midX, maxP.y),
-        ImVec2(minP.x, maxP.y),
-        ImVec2(minP.x, midY)
-    }};
-}
-
-// 手柄命中测试：命中返回 0~7，否则 -1。
-int hitTestSelectionHandle(const AppContext::PixelRect& rect,
-                           const ImVec2& imagePos,
-                           int zoom,
-                           const ImVec2& mousePos,
-                           float handleHalfSize)
-{
-    const auto centers = getSelectionHandleCenters(rect, imagePos, zoom);
-    for (int i = 0; i < static_cast<int>(centers.size()); ++i)
+    // 判断像素点是否位于给定矩形内。
+    bool isPixelInRect(int x, int y, const AppContext::PixelRect& rect)
     {
-        const ImVec2 c = centers[static_cast<size_t>(i)];
-        if (mousePos.x >= c.x - handleHalfSize && mousePos.x <= c.x + handleHalfSize
-            && mousePos.y >= c.y - handleHalfSize && mousePos.y <= c.y + handleHalfSize)
-        {
-            return i;
-        }
-    }
-    return -1;
-}
-
-// 缩放结果：包含标准化后的目标矩形，以及是否发生轴向翻转。
-struct ResizeResult
-{
-    AppContext::PixelRect rect;
-    bool flipX = false;
-    bool flipY = false;
-};
-
-// 根据手柄拖拽构造目标矩形；支持越过对边后的 X/Y 反转，Ctrl 时保持等比。
-ResizeResult buildResizedRect(const AppContext::PixelRect& initial,
-                              int handle,
-                              int deltaX,
-                              int deltaY,
-                              int canvasWidth,
-                              int canvasHeight,
-                              bool keepAspect)
-{
-    int left = initial.x;
-    int top = initial.y;
-    int right = initial.x + initial.width - 1;
-    int bottom = initial.y + initial.height - 1;
-
-    const bool moveLeft = (handle == 0 || handle == 6 || handle == 7);
-    const bool moveRight = (handle == 2 || handle == 3 || handle == 4);
-    const bool moveTop = (handle == 0 || handle == 1 || handle == 2);
-    const bool moveBottom = (handle == 4 || handle == 5 || handle == 6);
-
-    if (moveLeft)
-        left += deltaX;
-    if (moveRight)
-        right += deltaX;
-    if (moveTop)
-        top += deltaY;
-    if (moveBottom)
-        bottom += deltaY;
-
-    if (keepAspect && initial.width > 0 && initial.height > 0)
-    {
-        const float aspect = static_cast<float>(initial.width) / static_cast<float>(initial.height);
-        const int curW = std::abs(right - left) + 1;
-        const int curH = std::abs(bottom - top) + 1;
-        int newW = curW;
-        int newH = curH;
-
-        if ((moveLeft || moveRight) && (moveTop || moveBottom))
-        {
-            const float sx = static_cast<float>(std::max(1, curW)) / static_cast<float>(std::max(1, initial.width));
-            const float sy = static_cast<float>(std::max(1, curH)) / static_cast<float>(std::max(1, initial.height));
-            const float s = std::max(sx, sy);
-            newW = std::max(1, static_cast<int>(std::lround(static_cast<float>(initial.width) * s)));
-            newH = std::max(1, static_cast<int>(std::lround(static_cast<float>(initial.height) * s)));
-        }
-        else if (moveLeft || moveRight)
-        {
-            newW = std::max(1, curW);
-            newH = std::max(1, static_cast<int>(std::lround(static_cast<float>(newW) / aspect)));
-        }
-        else if (moveTop || moveBottom)
-        {
-            newH = std::max(1, curH);
-            newW = std::max(1, static_cast<int>(std::lround(static_cast<float>(newH) * aspect)));
-        }
-
-        if (moveLeft && !moveRight)
-            left = right - newW + 1;
-        else
-            right = left + ((right >= left) ? (newW - 1) : -(newW - 1));
-
-        if (moveTop && !moveBottom)
-            top = bottom - newH + 1;
-        else if (moveTop || moveBottom)
-            bottom = top + ((bottom >= top) ? (newH - 1) : -(newH - 1));
-        else
-        {
-            const float centerY = static_cast<float>(initial.y) + (static_cast<float>(initial.height - 1) * 0.5f);
-            top = static_cast<int>(std::lround(centerY - static_cast<float>(newH - 1) * 0.5f));
-            bottom = top + newH - 1;
-        }
-
-        if ((moveTop || moveBottom) && !(moveLeft || moveRight))
-        {
-            const float centerX = static_cast<float>(initial.x) + (static_cast<float>(initial.width - 1) * 0.5f);
-            left = static_cast<int>(std::lround(centerX - static_cast<float>(newW - 1) * 0.5f));
-            right = left + newW - 1;
-        }
+        if (rect.width <= 0 || rect.height <= 0) return false;
+        return x >= rect.x
+            && y >= rect.y
+            && x < (rect.x + rect.width)
+            && y < (rect.y + rect.height);
     }
 
-    ResizeResult out;
-    out.flipX = right < left;
-    out.flipY = bottom < top;
+    // 计算“包含端点”的拖拽矩形。
+    AppContext::PixelRect rectFromDragPixels(int x0, int y0, int x1, int y1)
+    {
+        AppContext::PixelRect rect;
+        rect.x = std::min(x0, x1);
+        rect.y = std::min(y0, y1);
+        rect.width = std::abs(x1 - x0) + 1;
+        rect.height = std::abs(y1 - y0) + 1;
+        return rect;
+    }
 
-    AppContext::PixelRect normalized;
-    normalized.x = std::min(left, right);
-    normalized.y = std::min(top, bottom);
-    normalized.width = std::abs(right - left) + 1;
-    normalized.height = std::abs(bottom - top) + 1;
-    clampRectToCanvas(normalized, canvasWidth, canvasHeight);
-    out.rect = normalized;
-    return out;
-}
-
-// 绘制蚂蚁线边框。
-void drawMarchingAntsRect(ImDrawList* drawList,
-                          const ImVec2& minP,
-                          const ImVec2& maxP,
-                          float segmentLength,
-                          float timePhase)
-{
-    if (!drawList)
-        return;
-    const float width = maxP.x - minP.x;
-    const float height = maxP.y - minP.y;
-    if (width <= 0.0f || height <= 0.0f || segmentLength <= 0.0f)
-        return;
-
-    const ImU32 whiteColor = IM_COL32(255, 255, 255, 255);
-    const ImU32 blackColor = IM_COL32(20, 20, 20, 255);
-    const float patternLength = segmentLength * 2.0f;
-    const float phase = std::fmod(timePhase, patternLength);
-
-    auto drawEdge = [&](const ImVec2& p0, const ImVec2& p1, float edgeLen, float offsetBase) {
-        if (edgeLen <= 0.0f)
+    /**
+     * @brief 将像素矩形裁剪到画布范围内。
+     *
+     * @param rect 传入待裁剪矩形，返回裁剪后矩形
+     * @param canvasWidth 画布像素宽度
+     * @param canvasHeight 画布像素高度
+     */
+    void clampRectToCanvas(AppContext::PixelRect& rect, int canvasWidth, int canvasHeight)
+    {
+        if (canvasWidth <= 0 || canvasHeight <= 0)
+        {
+            rect = {};
             return;
+        }
 
+        const int x0 = std::clamp(rect.x, 0, canvasWidth - 1);
+        const int y0 = std::clamp(rect.y, 0, canvasHeight - 1);
+        const int x1 = std::clamp(rect.x + rect.width - 1, 0, canvasWidth - 1);
+        const int y1 = std::clamp(rect.y + rect.height - 1, 0, canvasHeight - 1);
+        rect.x = std::min(x0, x1);
+        rect.y = std::min(y0, y1);
+        rect.width = std::max(1, std::abs(x1 - x0) + 1);
+        rect.height = std::max(1, std::abs(y1 - y0) + 1);
+    }
+
+    /**
+     * @brief 将画布像素矩形转换为屏幕坐标矩形。
+     *
+     * @param rect 像素坐标系矩形
+     * @param imagePos 画布图像左上角屏幕坐标
+     * @param zoom 当前缩放倍率
+     * @param outMin 输出屏幕矩形左上角
+     * @param outMax 输出屏幕矩形右下角
+     */
+    void convertPixelRectToScreen(const AppContext::PixelRect& rect,
+                                  const ImVec2& imagePos,
+                                  int zoom,
+                                  ImVec2& outMin,
+                                  ImVec2& outMax)
+    {
+        outMin = ImVec2(imagePos.x + static_cast<float>(rect.x * zoom),
+                        imagePos.y + static_cast<float>(rect.y * zoom));
+        outMax = ImVec2(imagePos.x + static_cast<float>((rect.x + rect.width) * zoom),
+                        imagePos.y + static_cast<float>((rect.y + rect.height) * zoom));
+    }
+
+    // 计算 8 个手柄中心点（NW/N/NE/E/SE/S/SW/W）。
+    std::array<ImVec2, 8> getSelectionHandleCenters(const AppContext::PixelRect& rect,
+                                                    const ImVec2& imagePos,
+                                                    int zoom)
+    {
+        ImVec2 minP(0.0f, 0.0f);
+        ImVec2 maxP(0.0f, 0.0f);
+        convertPixelRectToScreen(rect, imagePos, zoom, minP, maxP);
+        const float midX = (minP.x + maxP.x) * 0.5f;
+        const float midY = (minP.y + maxP.y) * 0.5f;
+        return {{
+            ImVec2(minP.x, minP.y),
+            ImVec2(midX, minP.y),
+            ImVec2(maxP.x, minP.y),
+            ImVec2(maxP.x, midY),
+            ImVec2(maxP.x, maxP.y),
+            ImVec2(midX, maxP.y),
+            ImVec2(minP.x, maxP.y),
+            ImVec2(minP.x, midY)
+        }};
+    }
+
+    /**
+     * @brief 测试鼠标是否命中 8 个缩放手柄。
+     *
+     * @param rect 当前选区外接矩形
+     * @param imagePos 画布图像左上角屏幕坐标
+     * @param zoom 当前缩放倍率
+     * @param mousePos 鼠标屏幕坐标
+     * @param handleHalfSize 手柄半尺寸（点击判定范围）
+     * @return int 命中返回 0~7，未命中返回 -1
+     */
+    int hitTestSelectionHandle(const AppContext::PixelRect& rect,
+                               const ImVec2& imagePos,
+                               int zoom,
+                               const ImVec2& mousePos,
+                               float handleHalfSize)
+    {
+        const auto centers = getSelectionHandleCenters(rect, imagePos, zoom);
+        for (int i = 0; i < static_cast<int>(centers.size()); ++i)
+        {
+            const ImVec2 c = centers[static_cast<size_t>(i)];
+            if (mousePos.x >= c.x - handleHalfSize && mousePos.x <= c.x + handleHalfSize
+                && mousePos.y >= c.y - handleHalfSize && mousePos.y <= c.y + handleHalfSize)
+            {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    // 缩放结果：包含标准化后的目标矩形，以及是否发生轴向翻转。
+    struct ResizeResult
+    {
+        AppContext::PixelRect rect;
+        bool flipX = false;
+        bool flipY = false;
+    };
+
+    /**
+     * @brief 根据手柄拖拽计算缩放后的目标矩形。
+     *
+     * @param initial 拖拽开始时的初始选区矩形
+     * @param handle 当前激活手柄编号（0~7）
+     * @param deltaX 鼠标在像素坐标中的水平位移
+     * @param deltaY 鼠标在像素坐标中的垂直位移
+     * @param canvasWidth 画布像素宽度
+     * @param canvasHeight 画布像素高度
+     * @param keepAspect 是否保持等比例缩放（Ctrl）
+     * @return ResizeResult 目标矩形以及 X/Y 轴翻转标记
+     */
+    ResizeResult buildResizedRect(const AppContext::PixelRect& initial,
+                                  int handle,
+                                  int deltaX,
+                                  int deltaY,
+                                  int canvasWidth,
+                                  int canvasHeight,
+                                  bool keepAspect)
+    {
+        int left = initial.x;
+        int top = initial.y;
+        int right = initial.x + initial.width - 1;
+        int bottom = initial.y + initial.height - 1;
+
+        const bool moveLeft = (handle == 0 || handle == 6 || handle == 7);
+        const bool moveRight = (handle == 2 || handle == 3 || handle == 4);
+        const bool moveTop = (handle == 0 || handle == 1 || handle == 2);
+        const bool moveBottom = (handle == 4 || handle == 5 || handle == 6);
+
+        if (moveLeft) left += deltaX;
+        if (moveRight) right += deltaX;
+        if (moveTop) top += deltaY;
+        if (moveBottom) bottom += deltaY;
+
+        if (keepAspect && initial.width > 0 && initial.height > 0)
+        {
+            const float aspect = static_cast<float>(initial.width) / static_cast<float>(initial.height);
+            const int curW = std::abs(right - left) + 1;
+            const int curH = std::abs(bottom - top) + 1;
+            int newW = curW;
+            int newH = curH;
+
+            if ((moveLeft || moveRight) && (moveTop || moveBottom))
+            {
+                const float sx = static_cast<float>(std::max(1, curW)) / static_cast<float>(std::max(1, initial.width));
+                const float sy = static_cast<float>(std::max(1, curH)) / static_cast<float>(std::max(1, initial.height));
+                const float s = std::max(sx, sy);
+                newW = std::max(1, static_cast<int>(std::lround(static_cast<float>(initial.width) * s)));
+                newH = std::max(1, static_cast<int>(std::lround(static_cast<float>(initial.height) * s)));
+            }
+            else if (moveLeft || moveRight)
+            {
+                newW = std::max(1, curW);
+                newH = std::max(1, static_cast<int>(std::lround(static_cast<float>(newW) / aspect)));
+            }
+            else if (moveTop || moveBottom)
+            {
+                newH = std::max(1, curH);
+                newW = std::max(1, static_cast<int>(std::lround(static_cast<float>(newH) * aspect)));
+            }
+
+            if (moveLeft && !moveRight) left = right - newW + 1;
+            else
+                right = left + ((right >= left) ? (newW - 1) : -(newW - 1));
+
+            if (moveTop && !moveBottom) top = bottom - newH + 1;
+            else if (moveTop || moveBottom)
+                bottom = top + ((bottom >= top) ? (newH - 1) : -(newH - 1));
+            else
+            {
+                const float centerY = static_cast<float>(initial.y) + (static_cast<float>(initial.height - 1) * 0.5f);
+                top = static_cast<int>(std::lround(centerY - static_cast<float>(newH - 1) * 0.5f));
+                bottom = top + newH - 1;
+            }
+
+            if ((moveTop || moveBottom) && !(moveLeft || moveRight))
+            {
+                const float centerX = static_cast<float>(initial.x) + (static_cast<float>(initial.width - 1) * 0.5f);
+                left = static_cast<int>(std::lround(centerX - static_cast<float>(newW - 1) * 0.5f));
+                right = left + newW - 1;
+            }
+        }
+
+        ResizeResult out;
+        out.flipX = right < left;
+        out.flipY = bottom < top;
+
+        AppContext::PixelRect normalized;
+        normalized.x = std::min(left, right);
+        normalized.y = std::min(top, bottom);
+        normalized.width = std::abs(right - left) + 1;
+        normalized.height = std::abs(bottom - top) + 1;
+        clampRectToCanvas(normalized, canvasWidth, canvasHeight);
+        out.rect = normalized;
+        return out;
+    }
+
+    // 绘制蚂蚁线边框。
+    void drawMarchingAntsRect(ImDrawList* drawList,
+                              const ImVec2& minP,
+                              const ImVec2& maxP,
+                              float segmentLength,
+                              float timePhase)
+    {
+        if (!drawList) return;
+        const float width = maxP.x - minP.x;
+        const float height = maxP.y - minP.y;
+        if (width <= 0.0f || height <= 0.0f || segmentLength <= 0.0f) return;
+
+        const ImU32 whiteColor = IM_COL32(255, 255, 255, 255);
+        const ImU32 blackColor = IM_COL32(20, 20, 20, 255);
+        const float patternLength = segmentLength * 2.0f;
+        const float phase = std::fmod(timePhase, patternLength);
+
+        auto drawEdge = [&](const ImVec2& p0, const ImVec2& p1, float edgeLen, float offsetBase) {
+            if (edgeLen <= 0.0f) return;
+
+            const ImVec2 dir((p1.x - p0.x) / edgeLen, (p1.y - p0.y) / edgeLen);
+            for (float s = -phase; s < edgeLen; s += segmentLength)
+            {
+                const float start = std::max(0.0f, s);
+                const float end = std::min(edgeLen, s + segmentLength);
+                if (end <= start) continue;
+
+                const int stripeIndex = static_cast<int>(std::floor((s + phase + offsetBase) / segmentLength));
+                const ImU32 col = ((stripeIndex & 1) == 0) ? whiteColor : blackColor;
+                const ImVec2 a(p0.x + dir.x * start, p0.y + dir.y * start);
+                const ImVec2 b(p0.x + dir.x * end, p0.y + dir.y * end);
+                drawList->AddLine(a, b, col, 2.0f);
+            }
+        };
+
+        drawEdge(ImVec2(minP.x, minP.y), ImVec2(maxP.x, minP.y), width, 0.0f);
+        drawEdge(ImVec2(maxP.x, minP.y), ImVec2(maxP.x, maxP.y), height, width);
+        drawEdge(ImVec2(maxP.x, maxP.y), ImVec2(minP.x, maxP.y), width, width + height);
+        drawEdge(ImVec2(minP.x, maxP.y), ImVec2(minP.x, minP.y), height, width + height + width);
+    }
+
+    /**
+     * @brief 将当前选区像素整体平移到新位置，并执行“剪切式移动”。
+     *
+     * 行为说明：
+     * - 先把源选区像素从结果图中清空（透明）；
+     * - 再把源选区像素搬运到 (x+dx, y+dy)；
+     * - 越界目标像素自动裁掉；
+     * - 仅处理“当前选区中的像素”，其余像素保持不变。
+     */
+    bool buildMovedPixelsFromSource(const std::vector<uint32_t>& sourcePixels,
+                                    std::vector<uint32_t>& outPixels,
+                                    const std::vector<uint8_t>& sourceMask,
+                                    int canvasWidth,
+                                    int canvasHeight,
+                                    int dx,
+                                    int dy)
+    {
+        outPixels = sourcePixels;
+
+        // 先清空源选区像素。
+        for (int y = 0; y < canvasHeight; ++y)
+        {
+            const size_t rowOffset = static_cast<size_t>(y) * static_cast<size_t>(canvasWidth);
+            for (int x = 0; x < canvasWidth; ++x)
+            {
+                const size_t idx = rowOffset + static_cast<size_t>(x);
+                if (idx >= sourceMask.size() || sourceMask[idx] == 0) continue;
+                outPixels[idx] = 0x00000000u;
+            }
+        }
+
+        // 再把源选区像素搬运到目标位置。
+        for (int y = 0; y < canvasHeight; ++y)
+        {
+            const size_t rowOffset = static_cast<size_t>(y) * static_cast<size_t>(canvasWidth);
+            for (int x = 0; x < canvasWidth; ++x)
+            {
+                const size_t srcIdx = rowOffset + static_cast<size_t>(x);
+                if (srcIdx >= sourceMask.size() || sourceMask[srcIdx] == 0) continue;
+
+                const int nx = x + dx;
+                const int ny = y + dy;
+                if (nx < 0 || ny < 0 || nx >= canvasWidth || ny >= canvasHeight) continue;
+
+                const size_t dstIdx = static_cast<size_t>(ny) * static_cast<size_t>(canvasWidth) + static_cast<size_t>(nx);
+                outPixels[dstIdx] = sourcePixels[srcIdx];
+            }
+        }
+
+        return outPixels != sourcePixels;
+    }
+
+    /**
+     * @brief 将当前选区像素按 fromRect -> toRect 做缩放变换（最近邻，反向采样）。
+     *
+     * 行为说明：
+     * - 与选区掩码一致，采用“目标反查源”的方式避免空洞；
+     * - 只会搬运“源选区中的像素”；
+     * - 同样是剪切式：源选区先清空，再写入目标；
+     * - 非选区像素保持不变。
+     */
+    bool buildScaledPixelsFromSource(const std::vector<uint32_t>& sourcePixels,
+                                     std::vector<uint32_t>& outPixels,
+                                     const std::vector<uint8_t>& sourceMask,
+                                     int canvasWidth,
+                                     int canvasHeight,
+                                     const AppContext::PixelRect& fromRect,
+                                     const AppContext::PixelRect& toRect,
+                                     bool flipX,
+                                     bool flipY)
+    {
+        if (fromRect.width <= 0 || fromRect.height <= 0 || toRect.width <= 0 || toRect.height <= 0) return false;
+        outPixels = sourcePixels;
+
+        // 清空源选区像素。
+        for (int y = 0; y < canvasHeight; ++y)
+        {
+            const size_t rowOffset = static_cast<size_t>(y) * static_cast<size_t>(canvasWidth);
+            for (int x = 0; x < canvasWidth; ++x)
+            {
+                const size_t idx = rowOffset + static_cast<size_t>(x);
+                if (idx >= sourceMask.size() || sourceMask[idx] == 0) continue;
+                outPixels[idx] = 0x00000000u;
+            }
+        }
+
+        // 目标像素反向映射到源矩形。
+        for (int dy = toRect.y; dy < toRect.y + toRect.height; ++dy)
+        {
+            for (int dx = toRect.x; dx < toRect.x + toRect.width; ++dx)
+            {
+                if (dx < 0 || dy < 0 || dx >= canvasWidth || dy >= canvasHeight) continue;
+
+                const float u = (toRect.width <= 1)
+                    ? 0.0f
+                    : static_cast<float>(dx - toRect.x) / static_cast<float>(toRect.width - 1);
+                const float v = (toRect.height <= 1)
+                    ? 0.0f
+                    : static_cast<float>(dy - toRect.y) / static_cast<float>(toRect.height - 1);
+
+                const float sampleU = flipX ? (1.0f - u) : u;
+                const float sampleV = flipY ? (1.0f - v) : v;
+                const int sx = fromRect.x + static_cast<int>(std::lround(sampleU * static_cast<float>(fromRect.width - 1)));
+                const int sy = fromRect.y + static_cast<int>(std::lround(sampleV * static_cast<float>(fromRect.height - 1)));
+                if (sx < 0 || sy < 0 || sx >= canvasWidth || sy >= canvasHeight) continue;
+
+                const size_t srcIdx = static_cast<size_t>(sy) * static_cast<size_t>(canvasWidth) + static_cast<size_t>(sx);
+                if (srcIdx >= sourceMask.size() || sourceMask[srcIdx] == 0) continue;
+                const size_t dstIdx = static_cast<size_t>(dy) * static_cast<size_t>(canvasWidth) + static_cast<size_t>(dx);
+                outPixels[dstIdx] = sourcePixels[srcIdx];
+            }
+        }
+
+        return outPixels != sourcePixels;
+    }
+
+    bool buildMovedMaskFromSource(const std::vector<uint8_t>& sourceMask,
+                                  std::vector<uint8_t>& outMask,
+                                  int canvasWidth,
+                                  int canvasHeight,
+                                  int dx,
+                                  int dy)
+    {
+        outMask.assign(static_cast<size_t>(canvasWidth) * static_cast<size_t>(canvasHeight), static_cast<uint8_t>(0));
+        if (sourceMask.size() != outMask.size()) return false;
+
+        for (int y = 0; y < canvasHeight; ++y)
+        {
+            const size_t rowOffset = static_cast<size_t>(y) * static_cast<size_t>(canvasWidth);
+            for (int x = 0; x < canvasWidth; ++x)
+            {
+                const size_t srcIdx = rowOffset + static_cast<size_t>(x);
+                if (sourceMask[srcIdx] == 0) continue;
+
+                const int nx = x + dx;
+                const int ny = y + dy;
+                if (nx < 0 || ny < 0 || nx >= canvasWidth || ny >= canvasHeight) continue;
+
+                const size_t dstIdx = static_cast<size_t>(ny) * static_cast<size_t>(canvasWidth) + static_cast<size_t>(nx);
+                outMask[dstIdx] = 1;
+            }
+        }
+        return true;
+    }
+
+    bool buildScaledMaskFromSource(const std::vector<uint8_t>& sourceMask,
+                                   std::vector<uint8_t>& outMask,
+                                   int canvasWidth,
+                                   int canvasHeight,
+                                   const AppContext::PixelRect& fromRect,
+                                   const AppContext::PixelRect& toRect,
+                                   bool flipX,
+                                   bool flipY)
+    {
+        outMask.assign(static_cast<size_t>(canvasWidth) * static_cast<size_t>(canvasHeight), static_cast<uint8_t>(0));
+        if (sourceMask.size() != outMask.size()) return false;
+        if (fromRect.width <= 0 || fromRect.height <= 0 || toRect.width <= 0 || toRect.height <= 0) return false;
+
+        for (int dy = toRect.y; dy < toRect.y + toRect.height; ++dy)
+        {
+            for (int dx = toRect.x; dx < toRect.x + toRect.width; ++dx)
+            {
+                if (dx < 0 || dy < 0 || dx >= canvasWidth || dy >= canvasHeight) continue;
+
+                const float u = (toRect.width <= 1)
+                    ? 0.0f
+                    : static_cast<float>(dx - toRect.x) / static_cast<float>(toRect.width - 1);
+                const float v = (toRect.height <= 1)
+                    ? 0.0f
+                    : static_cast<float>(dy - toRect.y) / static_cast<float>(toRect.height - 1);
+
+                const float sampleU = flipX ? (1.0f - u) : u;
+                const float sampleV = flipY ? (1.0f - v) : v;
+                const int sx = fromRect.x + static_cast<int>(std::lround(sampleU * static_cast<float>(fromRect.width - 1)));
+                const int sy = fromRect.y + static_cast<int>(std::lround(sampleV * static_cast<float>(fromRect.height - 1)));
+                if (sx < 0 || sy < 0 || sx >= canvasWidth || sy >= canvasHeight) continue;
+
+                const size_t srcIdx = static_cast<size_t>(sy) * static_cast<size_t>(canvasWidth) + static_cast<size_t>(sx);
+                if (sourceMask[srcIdx] == 0) continue;
+
+                const size_t dstIdx = static_cast<size_t>(dy) * static_cast<size_t>(canvasWidth) + static_cast<size_t>(dx);
+                outMask[dstIdx] = 1;
+            }
+        }
+        return true;
+    }
+
+    void captureSelectionMask(const AppContext& context,
+                              int canvasWidth,
+                              int canvasHeight,
+                              std::vector<uint8_t>& outMask)
+    {
+        outMask.assign(static_cast<size_t>(canvasWidth) * static_cast<size_t>(canvasHeight), static_cast<uint8_t>(0));
+        for (int y = 0; y < canvasHeight; ++y)
+        {
+            const size_t rowOffset = static_cast<size_t>(y) * static_cast<size_t>(canvasWidth);
+            for (int x = 0; x < canvasWidth; ++x)
+            {
+                if (context.isPixelSelected(x, y, canvasWidth, canvasHeight)) outMask[rowOffset + static_cast<size_t>(x)] = 1;
+            }
+        }
+    }
+
+    bool isSameRect(const AppContext::PixelRect& a, const AppContext::PixelRect& b)
+    {
+        return a.x == b.x && a.y == b.y && a.width == b.width && a.height == b.height;
+    }
+
+    void captureSelectionMaskFromContext(const AppContext& context,
+                                         int canvasWidth,
+                                         int canvasHeight,
+                                         std::vector<uint8_t>& outMask)
+    {
+        outMask.assign(static_cast<size_t>(canvasWidth) * static_cast<size_t>(canvasHeight), static_cast<uint8_t>(0));
+        for (int y = 0; y < canvasHeight; ++y)
+        {
+            const size_t rowOffset = static_cast<size_t>(y) * static_cast<size_t>(canvasWidth);
+            for (int x = 0; x < canvasWidth; ++x)
+            {
+                if (context.isPixelSelected(x, y, canvasWidth, canvasHeight)) outMask[rowOffset + static_cast<size_t>(x)] = 1;
+            }
+        }
+    }
+
+    bool maskHasAnySelected(const std::vector<uint8_t>& mask)
+    {
+        for (const uint8_t v : mask)
+        {
+            if (v != 0) return true;
+        }
+        return false;
+    }
+
+    void applyRectSelectionOpToMask(std::vector<uint8_t>& ioMask,
+                                    int canvasWidth,
+                                    int canvasHeight,
+                                    const AppContext::PixelRect& rect,
+                                    AppContext::PixelSelectionOp op)
+    {
+        if (ioMask.size() != static_cast<size_t>(canvasWidth) * static_cast<size_t>(canvasHeight)) return;
+        if (canvasWidth <= 0 || canvasHeight <= 0 || rect.width <= 0 || rect.height <= 0) return;
+
+        AppContext::PixelRect clamped = rect;
+        clampRectToCanvas(clamped, canvasWidth, canvasHeight);
+
+        if (op == AppContext::PixelSelectionOp::Replace) std::fill(ioMask.begin(), ioMask.end(), static_cast<uint8_t>(0));
+
+        for (int y = clamped.y; y < clamped.y + clamped.height; ++y)
+        {
+            const size_t rowOffset = static_cast<size_t>(y) * static_cast<size_t>(canvasWidth);
+            for (int x = clamped.x; x < clamped.x + clamped.width; ++x)
+            {
+                const size_t idx = rowOffset + static_cast<size_t>(x);
+                if (op == AppContext::PixelSelectionOp::Remove) ioMask[idx] = 0;
+                else
+                    ioMask[idx] = 1;
+            }
+        }
+    }
+
+    void drawMaskSolidOutline(ImDrawList* drawList,
+                              const std::vector<uint8_t>& mask,
+                              int canvasWidth,
+                              int canvasHeight,
+                              const ImVec2& imagePos,
+                              int zoom,
+                              ImU32 color,
+                              float thickness)
+    {
+        if (!drawList || zoom <= 0) return;
+        if (mask.size() != static_cast<size_t>(canvasWidth) * static_cast<size_t>(canvasHeight)) return;
+
+        const auto isSel = [&](int x, int y) -> bool {
+            if (x < 0 || y < 0 || x >= canvasWidth || y >= canvasHeight) return false;
+            const size_t idx = static_cast<size_t>(y) * static_cast<size_t>(canvasWidth) + static_cast<size_t>(x);
+            return mask[idx] != 0;
+        };
+
+        for (int y = 0; y < canvasHeight; ++y)
+        {
+            for (int x = 0; x < canvasWidth; ++x)
+            {
+                if (!isSel(x, y)) continue;
+
+                const float x0 = imagePos.x + static_cast<float>(x * zoom);
+                const float y0 = imagePos.y + static_cast<float>(y * zoom);
+                const float x1 = x0 + static_cast<float>(zoom);
+                const float y1 = y0 + static_cast<float>(zoom);
+
+                if (!isSel(x, y - 1)) drawList->AddLine(ImVec2(x0, y0), ImVec2(x1, y0), color, thickness);
+                if (!isSel(x + 1, y)) drawList->AddLine(ImVec2(x1, y0), ImVec2(x1, y1), color, thickness);
+                if (!isSel(x, y + 1)) drawList->AddLine(ImVec2(x0, y1), ImVec2(x1, y1), color, thickness);
+                if (!isSel(x - 1, y)) drawList->AddLine(ImVec2(x0, y0), ImVec2(x0, y1), color, thickness);
+            }
+        }
+    }
+
+    void drawMarchingAntsEdge(ImDrawList* drawList,
+                              const ImVec2& p0,
+                              const ImVec2& p1,
+                              float edgeLen,
+                              float segmentLength,
+                              float timePhase,
+                              float offsetBase)
+    {
+        if (!drawList || edgeLen <= 0.0f || segmentLength <= 0.0f) return;
+
+        const ImU32 whiteColor = IM_COL32(255, 255, 255, 255);
+        const ImU32 blackColor = IM_COL32(20, 20, 20, 255);
+        const float patternLength = segmentLength * 2.0f;
+        const float phase = std::fmod(timePhase, patternLength);
         const ImVec2 dir((p1.x - p0.x) / edgeLen, (p1.y - p0.y) / edgeLen);
+
         for (float s = -phase; s < edgeLen; s += segmentLength)
         {
             const float start = std::max(0.0f, s);
             const float end = std::min(edgeLen, s + segmentLength);
-            if (end <= start)
-                continue;
+            if (end <= start) continue;
 
             const int stripeIndex = static_cast<int>(std::floor((s + phase + offsetBase) / segmentLength));
             const ImU32 col = ((stripeIndex & 1) == 0) ? whiteColor : blackColor;
@@ -256,159 +624,46 @@ void drawMarchingAntsRect(ImDrawList* drawList,
             const ImVec2 b(p0.x + dir.x * end, p0.y + dir.y * end);
             drawList->AddLine(a, b, col, 2.0f);
         }
-    };
-
-    drawEdge(ImVec2(minP.x, minP.y), ImVec2(maxP.x, minP.y), width, 0.0f);
-    drawEdge(ImVec2(maxP.x, minP.y), ImVec2(maxP.x, maxP.y), height, width);
-    drawEdge(ImVec2(maxP.x, maxP.y), ImVec2(minP.x, maxP.y), width, width + height);
-    drawEdge(ImVec2(minP.x, maxP.y), ImVec2(minP.x, minP.y), height, width + height + width);
-}
-
-/**
- * @brief 将当前选区像素整体平移到新位置，并执行“剪切式移动”。
- *
- * 行为说明：
- * - 先把源选区像素从结果图中清空（透明）；
- * - 再把源选区像素搬运到 (x+dx, y+dy)；
- * - 越界目标像素自动裁掉；
- * - 仅处理“当前选区中的像素”，其余像素保持不变。
- */
-bool buildMovedPixelsFromSource(const std::vector<uint32_t>& sourcePixels,
-                                std::vector<uint32_t>& outPixels,
-                                const std::vector<uint8_t>& sourceMask,
-                                int canvasWidth,
-                                int canvasHeight,
-                                int dx,
-                                int dy)
-{
-    outPixels = sourcePixels;
-
-    // 1) 先清空源选区像素。
-    for (int y = 0; y < canvasHeight; ++y)
-    {
-        const size_t rowOffset = static_cast<size_t>(y) * static_cast<size_t>(canvasWidth);
-        for (int x = 0; x < canvasWidth; ++x)
-        {
-            const size_t idx = rowOffset + static_cast<size_t>(x);
-            if (idx >= sourceMask.size() || sourceMask[idx] == 0)
-                continue;
-            outPixels[idx] = 0x00000000u;
-        }
     }
 
-    // 2) 再把源选区像素搬运到目标位置。
-    for (int y = 0; y < canvasHeight; ++y)
+    void drawMarchingAntsMask(ImDrawList* drawList,
+                              const std::vector<uint8_t>& mask,
+                              int canvasWidth,
+                              int canvasHeight,
+                              const ImVec2& imagePos,
+                              int zoom,
+                              float segmentLength,
+                              float timePhase)
     {
-        const size_t rowOffset = static_cast<size_t>(y) * static_cast<size_t>(canvasWidth);
-        for (int x = 0; x < canvasWidth; ++x)
+        if (!drawList || zoom <= 0) return;
+        if (mask.size() != static_cast<size_t>(canvasWidth) * static_cast<size_t>(canvasHeight)) return;
+
+        const auto isSel = [&](int x, int y) -> bool {
+            if (x < 0 || y < 0 || x >= canvasWidth || y >= canvasHeight) return false;
+            const size_t idx = static_cast<size_t>(y) * static_cast<size_t>(canvasWidth) + static_cast<size_t>(x);
+            return mask[idx] != 0;
+        };
+
+        const float edgeLen = static_cast<float>(zoom);
+        for (int y = 0; y < canvasHeight; ++y)
         {
-            const size_t srcIdx = rowOffset + static_cast<size_t>(x);
-            if (srcIdx >= sourceMask.size() || sourceMask[srcIdx] == 0)
-                continue;
+            for (int x = 0; x < canvasWidth; ++x)
+            {
+                if (!isSel(x, y)) continue;
 
-            const int nx = x + dx;
-            const int ny = y + dy;
-            if (nx < 0 || ny < 0 || nx >= canvasWidth || ny >= canvasHeight)
-                continue;
+                const float x0 = imagePos.x + static_cast<float>(x * zoom);
+                const float y0 = imagePos.y + static_cast<float>(y * zoom);
+                const float x1 = x0 + static_cast<float>(zoom);
+                const float y1 = y0 + static_cast<float>(zoom);
+                const float base = static_cast<float>((x + y) * zoom);
 
-            const size_t dstIdx = static_cast<size_t>(ny) * static_cast<size_t>(canvasWidth) + static_cast<size_t>(nx);
-            outPixels[dstIdx] = sourcePixels[srcIdx];
+                if (!isSel(x, y - 1)) drawMarchingAntsEdge(drawList, ImVec2(x0, y0), ImVec2(x1, y0), edgeLen, segmentLength, timePhase, base);
+                if (!isSel(x + 1, y)) drawMarchingAntsEdge(drawList, ImVec2(x1, y0), ImVec2(x1, y1), edgeLen, segmentLength, timePhase, base + edgeLen);
+                if (!isSel(x, y + 1)) drawMarchingAntsEdge(drawList, ImVec2(x0, y1), ImVec2(x1, y1), edgeLen, segmentLength, timePhase, base + edgeLen * 2.0f);
+                if (!isSel(x - 1, y)) drawMarchingAntsEdge(drawList, ImVec2(x0, y0), ImVec2(x0, y1), edgeLen, segmentLength, timePhase, base + edgeLen * 3.0f);
+            }
         }
     }
-
-    return outPixels != sourcePixels;
-}
-
-/**
- * @brief 将当前选区像素按 fromRect -> toRect 做缩放变换（最近邻，反向采样）。
- *
- * 行为说明：
- * - 与选区掩码一致，采用“目标反查源”的方式避免空洞；
- * - 只会搬运“源选区中的像素”；
- * - 同样是剪切式：源选区先清空，再写入目标；
- * - 非选区像素保持不变。
- */
-bool buildScaledPixelsFromSource(const std::vector<uint32_t>& sourcePixels,
-                                 std::vector<uint32_t>& outPixels,
-                                 const std::vector<uint8_t>& sourceMask,
-                                 int canvasWidth,
-                                 int canvasHeight,
-                                 const AppContext::PixelRect& fromRect,
-                                 const AppContext::PixelRect& toRect,
-                                 bool flipX,
-                                 bool flipY)
-{
-    if (fromRect.width <= 0 || fromRect.height <= 0 || toRect.width <= 0 || toRect.height <= 0)
-        return false;
-    outPixels = sourcePixels;
-
-    // 1) 清空源选区像素。
-    for (int y = 0; y < canvasHeight; ++y)
-    {
-        const size_t rowOffset = static_cast<size_t>(y) * static_cast<size_t>(canvasWidth);
-        for (int x = 0; x < canvasWidth; ++x)
-        {
-            const size_t idx = rowOffset + static_cast<size_t>(x);
-            if (idx >= sourceMask.size() || sourceMask[idx] == 0)
-                continue;
-            outPixels[idx] = 0x00000000u;
-        }
-    }
-
-    // 2) 目标像素反向映射到源矩形。
-    for (int dy = toRect.y; dy < toRect.y + toRect.height; ++dy)
-    {
-        for (int dx = toRect.x; dx < toRect.x + toRect.width; ++dx)
-        {
-            if (dx < 0 || dy < 0 || dx >= canvasWidth || dy >= canvasHeight)
-                continue;
-
-            const float u = (toRect.width <= 1)
-                ? 0.0f
-                : static_cast<float>(dx - toRect.x) / static_cast<float>(toRect.width - 1);
-            const float v = (toRect.height <= 1)
-                ? 0.0f
-                : static_cast<float>(dy - toRect.y) / static_cast<float>(toRect.height - 1);
-
-            const float sampleU = flipX ? (1.0f - u) : u;
-            const float sampleV = flipY ? (1.0f - v) : v;
-            const int sx = fromRect.x + static_cast<int>(std::lround(sampleU * static_cast<float>(fromRect.width - 1)));
-            const int sy = fromRect.y + static_cast<int>(std::lround(sampleV * static_cast<float>(fromRect.height - 1)));
-            if (sx < 0 || sy < 0 || sx >= canvasWidth || sy >= canvasHeight)
-                continue;
-
-            const size_t srcIdx = static_cast<size_t>(sy) * static_cast<size_t>(canvasWidth) + static_cast<size_t>(sx);
-            if (srcIdx >= sourceMask.size() || sourceMask[srcIdx] == 0)
-                continue;
-            const size_t dstIdx = static_cast<size_t>(dy) * static_cast<size_t>(canvasWidth) + static_cast<size_t>(dx);
-            outPixels[dstIdx] = sourcePixels[srcIdx];
-        }
-    }
-
-    return outPixels != sourcePixels;
-}
-
-void captureSelectionMask(const AppContext& context,
-                          int canvasWidth,
-                          int canvasHeight,
-                          std::vector<uint8_t>& outMask)
-{
-    outMask.assign(static_cast<size_t>(canvasWidth) * static_cast<size_t>(canvasHeight), static_cast<uint8_t>(0));
-    for (int y = 0; y < canvasHeight; ++y)
-    {
-        const size_t rowOffset = static_cast<size_t>(y) * static_cast<size_t>(canvasWidth);
-        for (int x = 0; x < canvasWidth; ++x)
-        {
-            if (context.isPixelSelected(x, y, canvasWidth, canvasHeight))
-                outMask[rowOffset + static_cast<size_t>(x)] = 1;
-        }
-    }
-}
-
-bool isSameRect(const AppContext::PixelRect& a, const AppContext::PixelRect& b)
-{
-    return a.x == b.x && a.y == b.y && a.width == b.width && a.height == b.height;
-}
 } // namespace
 
 bool RectSelectionTool::apply(Project::Frame& frame,
@@ -517,6 +772,10 @@ void RectSelectionTool::handleInteraction(AppContext& context,
             state_.dragStartX = mousePixelX;
             state_.dragStartY = mousePixelY;
             state_.removeMode = false;
+            // 左键框选：按下瞬间决定是 Replace 还是 Add，拖拽过程不再抖动。
+            state_.previewOp = ImGui::GetIO().KeyCtrl
+                ? AppContext::PixelSelectionOp::Add
+                : AppContext::PixelSelectionOp::Replace;
             state_.previewBounds = rectFromDragPixels(mousePixelX, mousePixelY, mousePixelX, mousePixelY);
             state_.previewBoundsValid = true;
             state_.previewFlipX = false;
@@ -530,6 +789,7 @@ void RectSelectionTool::handleInteraction(AppContext& context,
         state_.dragStartX = mousePixelX;
         state_.dragStartY = mousePixelY;
         state_.removeMode = true;
+        state_.previewOp = AppContext::PixelSelectionOp::Remove;
         state_.previewBounds = rectFromDragPixels(mousePixelX, mousePixelY, mousePixelX, mousePixelY);
         state_.previewBoundsValid = true;
         state_.previewFlipX = false;
@@ -551,7 +811,7 @@ void RectSelectionTool::handleInteraction(AppContext& context,
         {
             const AppContext::PixelSelectionOp op = usingRight
                 ? AppContext::PixelSelectionOp::Remove
-                : (ImGui::GetIO().KeyCtrl ? AppContext::PixelSelectionOp::Add : AppContext::PixelSelectionOp::Replace);
+                : state_.previewOp;
             context.applyRectPixelSelection(
                 state_.dragStartX,
                 state_.dragStartY,
@@ -703,30 +963,75 @@ void RectSelectionTool::renderOverlay(const AppContext& context,
                                       int zoom,
                                       bool anyPopupOpen) const
 {
-    if (!drawList)
-        return;
+    if (!drawList) return;
 
-    AppContext::PixelRect drawBounds;
-    bool drawBoundsValid = context.getPixelSelectionBounds(drawBounds);
-    ImU32 boundsColor = IM_COL32(255, 210, 80, 255);
-    if (state_.previewBoundsValid)
-    {
-        drawBounds = state_.previewBounds;
-        drawBoundsValid = true;
-        boundsColor = IM_COL32(80, 220, 255, 255);
-    }
-    if (!drawBoundsValid)
-        return;
-
-    ImVec2 selMin(0.0f, 0.0f);
-    ImVec2 selMax(0.0f, 0.0f);
-    convertPixelRectToScreen(drawBounds, imagePos, zoom, selMin, selMax);
-
-    drawList->AddRect(selMin, selMax, boundsColor, 0.0f, 0, 1.0f);
     const float segmentLength = std::max(3.0f, std::min(8.0f, static_cast<float>(zoom) * 0.35f));
     const float antsSpeed = 70.0f;
     const float timePhase = static_cast<float>(ImGui::GetTime()) * antsSpeed;
-    drawMarchingAntsRect(drawList, selMin, selMax, segmentLength, timePhase);
+    const Project* project = context.getProject();
+    if (!project) return;
+
+    const int canvasWidth = std::max(1, project->getWidth());
+    const int canvasHeight = std::max(1, project->getHeight());
+
+    std::vector<uint8_t> committedMask;
+    captureSelectionMaskFromContext(context, canvasWidth, canvasHeight, committedMask);
+
+    // displayMask 表示当前帧真正要显示的“选区轮廓依据”：
+    // - 空闲：已提交选区；
+    // - 框选：布尔运算后的临时结果（并可保留旧轮廓参考）；
+    // - 平移/缩放：实时变换后的临时结果（不保留原始轮廓）。
+    std::vector<uint8_t> displayMask = committedMask;
+    ImU32 displayColor = IM_COL32(255, 210, 80, 255);
+
+    if (state_.mode == InteractionState::Mode::BoxSelecting && state_.previewBoundsValid)
+    {
+        std::vector<uint8_t> previewMask = committedMask;
+        applyRectSelectionOpToMask(
+            previewMask,
+            canvasWidth,
+            canvasHeight,
+            state_.previewBounds,
+            state_.previewOp);
+        displayMask.swap(previewMask);
+
+        if (state_.previewOp == AppContext::PixelSelectionOp::Add) displayColor = IM_COL32(90, 230, 140, 255);
+        else if (state_.previewOp == AppContext::PixelSelectionOp::Remove)
+            displayColor = IM_COL32(255, 120, 120, 255);
+        else
+            displayColor = IM_COL32(80, 220, 255, 255);
+
+        // 仅在框选阶段保留旧轮廓参考（用户此前明确希望此行为）。
+        if (maskHasAnySelected(committedMask)) drawMaskSolidOutline(drawList, committedMask, canvasWidth, canvasHeight, imagePos, zoom, IM_COL32(190, 170, 80, 180), 1.0f);
+    }
+    else if (state_.mode == InteractionState::Mode::Moving && state_.previewBoundsValid && sourceCacheValid_)
+    {
+        const int dx = state_.previewBounds.x - state_.initialBounds.x;
+        const int dy = state_.previewBounds.y - state_.initialBounds.y;
+        buildMovedMaskFromSource(sourceSelectionMask_, displayMask, canvasWidth, canvasHeight, dx, dy);
+        displayColor = IM_COL32(80, 220, 255, 255);
+    }
+    else if (state_.mode == InteractionState::Mode::Resizing && state_.previewBoundsValid && sourceCacheValid_)
+    {
+        buildScaledMaskFromSource(
+            sourceSelectionMask_,
+            displayMask,
+            canvasWidth,
+            canvasHeight,
+            sourceBounds_,
+            state_.previewBounds,
+            state_.previewFlipX,
+            state_.previewFlipY);
+        displayColor = IM_COL32(80, 220, 255, 255);
+    }
+
+    if (!maskHasAnySelected(displayMask)) return;
+
+    drawMaskSolidOutline(drawList, displayMask, canvasWidth, canvasHeight, imagePos, zoom, displayColor, 1.2f);
+    drawMarchingAntsMask(drawList, displayMask, canvasWidth, canvasHeight, imagePos, zoom, segmentLength, timePhase);
+
+    AppContext::PixelRect currentBounds;
+    const bool hasCurrentBounds = context.getPixelSelectionBounds(currentBounds);
 
     /**
      * 8 手柄显示策略：
@@ -739,11 +1044,12 @@ void RectSelectionTool::renderOverlay(const AppContext& context,
         && context.getTool() == ToolType::RectSelection
         && state_.mode == InteractionState::Mode::None;
 
-    if (!showHandles)
-        return;
+    if (!showHandles) return;
+
+    if (!hasCurrentBounds) return;
 
     const float handleHalf = std::max(4.0f, std::min(10.0f, static_cast<float>(zoom) * 0.45f));
-    const auto handleCenters = getSelectionHandleCenters(drawBounds, imagePos, zoom);
+    const auto handleCenters = getSelectionHandleCenters(currentBounds, imagePos, zoom);
     for (const ImVec2& c : handleCenters)
     {
         drawList->AddRectFilled(ImVec2(c.x - handleHalf, c.y - handleHalf),

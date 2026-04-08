@@ -1,4 +1,4 @@
-#include "statusBar.h"
+﻿#include "statusBar.h"
 #include "core/AppContext.h"
 
 #include <imgui.h>
@@ -8,78 +8,75 @@
 
 namespace
 {
-const std::array<const char*, 8> kToolNames = {
-    "Brush",
-    "Eraser",
-    "Eyedropper",
-    "Fill",
-    "Rect Selection",
-    "Line",
-    "Rect",
-    "RectFilled"
-};
+    const std::array<const char*, 8> kToolNames = {
+        "Brush",
+        "Eraser",
+        "Eyedropper",
+        "Fill",
+        "Rect Selection",
+        "Line",
+        "Rect",
+        "RectFilled"
+    };
 
-const char* getToolName(const AppContext& ctx)
-{
-    const int index = static_cast<int>(ctx.getTool());
-    if (index >= 0 && index < static_cast<int>(kToolNames.size()))
+    const char* getToolName(const AppContext& ctx)
     {
-        return kToolNames[static_cast<size_t>(index)];
-    }
-    return "Unknown";
-}
-
-void drawLeft(const AppContext& ctx)
-{
-    const char* name = "Untitled";
-    if (ctx.hasProject())
-    {
-        name = ctx.getProjectFilePath().empty()
-            ? "Untitled"
-            : ctx.getProjectFilePath().c_str();
+        const int index = static_cast<int>(ctx.getTool());
+        if (index >= 0 && index < static_cast<int>(kToolNames.size())) return kToolNames[static_cast<size_t>(index)];
+        return "Unknown";
     }
 
-    ImGui::TextUnformatted(name);
-
-    if (ctx.isProjectDirty())
+    void drawLeft(const AppContext& ctx)
     {
-        ImGui::SameLine();
-        ImGui::TextUnformatted("*");
+        const char* name = "Untitled";
+        if (ctx.hasProject())
+        {
+            name = ctx.getProjectFilePath().empty()
+                ? "Untitled"
+                : ctx.getProjectFilePath().c_str();
+        }
+
+        ImGui::TextUnformatted(name);
+
+        if (ctx.isProjectDirty())
+        {
+            ImGui::SameLine();
+            ImGui::TextUnformatted("*");
+        }
     }
-}
 
-void drawCenter(const AppContext& ctx, float columnWidth)
-{
-    const char* toolName = getToolName(ctx);
-    const ImVec2 textSize = ImGui::CalcTextSize(toolName);
+    void drawCenter(const AppContext& ctx, float columnWidth)
+    {
+        const char* toolName = getToolName(ctx);
+        const ImVec2 textSize = ImGui::CalcTextSize(toolName);
 
-    // 把光标移动到本列的中心位置
-    const float offsetX = std::max(0.0f, (columnWidth - textSize.x) * 0.5f);
-    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + offsetX);
+        // 把光标移动到本列的中心位置
+        const float offsetX = std::max(0.0f, (columnWidth - textSize.x) * 0.5f);
+        ImGui::SetCursorPosX(ImGui::GetCursorPosX() + offsetX);
 
-    ImGui::Text("Tool: %s", toolName);
-}
+        ImGui::Text("Tool: %s", toolName);
+    }
 
-void drawRight(float columnWidth)
-{
-    ImGuiIO& io = ImGui::GetIO();
-    const char* fmt = "FPS: %.1f";
-    const ImVec2 textSize = ImGui::CalcTextSize("FPS: 999.9");
+    void drawRight(float columnWidth)
+    {
+        ImGuiIO& io = ImGui::GetIO();
+        const char* fmt = "FPS: %.1f";
+        const ImVec2 textSize = ImGui::CalcTextSize("FPS: 999.9");
 
-    // 右对齐：当前列宽 - 文本宽度
-    const float offsetX = std::max(0.0f, columnWidth - textSize.x);
-    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + offsetX);
+        // 右对齐：当前列宽 - 文本宽度
+        const float offsetX = std::max(0.0f, columnWidth - textSize.x);
+        ImGui::SetCursorPosX(ImGui::GetCursorPosX() + offsetX);
 
-    ImGui::Text(fmt, io.Framerate);
-}
+        ImGui::Text(fmt, io.Framerate);
+    }
 } // namespace
 
 void statusBar::draw(const AppContext& ctx)
 {
     // 核心思路：
-    // 1) 每帧根据主视口(WorkPos/WorkSize)计算位置与尺寸，窗口缩放时自动更新。
-    // 2) 高度使用 ImGui 的当前字体与内边距，保证 DPI/字号变化下视觉一致。
-    // 3) 通过表格分三列实现左/中/右区域布局。
+    // 每帧根据主视口(WorkPos/WorkSize)计算位置与尺寸，窗口缩放时自动更新。
+    // 高度使用 ImGui 的当前字体与内边距，保证 DPI/字号变化下视觉一致。
+    // 通过表格分三列实现左/中/右区域布局。
 
     ImGuiViewport* viewport = ImGui::GetMainViewport();
     const ImGuiStyle& style = ImGui::GetStyle();
@@ -132,3 +129,4 @@ void statusBar::draw(const AppContext& ctx)
 
     ImGui::End();
 }
+

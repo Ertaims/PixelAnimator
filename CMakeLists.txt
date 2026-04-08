@@ -33,6 +33,9 @@ set(SOURCES
     src/tools/EraserTool.cpp
     src/tools/EyedropperTool.cpp
     src/tools/FillTool.cpp
+    src/tools/LineTool.cpp
+    src/tools/RectFilledTool.cpp
+    src/tools/RectangleTool.cpp
     src/tools/RectSelectionTool.cpp
     src/ui/menu/MenuBase.cpp
     src/ui/menu/MenuItem.cpp

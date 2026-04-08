@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "core/AppContext.h"
 #include "core/Project.h"

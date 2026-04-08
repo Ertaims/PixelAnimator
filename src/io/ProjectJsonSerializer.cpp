@@ -1,4 +1,4 @@
-#include "io/ProjectJsonSerializer.h"
+﻿#include "io/ProjectJsonSerializer.h"
 
 #include "core/Project.h"
 #include "nlohmann/json.hpp"
@@ -36,14 +36,12 @@ namespace
     // 从字符串 s 的 offset 位置解析两个十六进制字符（一个字节）。
     bool parseHexByte(const std::string& s, size_t offset, uint8_t& out)
     {
-        if (offset + 2 > s.size())
-            return false;
+        if (offset + 2 > s.size()) return false;
         const std::string part = s.substr(offset, 2);
         unsigned int value = 0;
         std::istringstream iss(part);
         iss >> std::hex >> value;
-        if (iss.fail() || !iss.eof() || value > 0xFF)
-            return false;
+        if (iss.fail() || !iss.eof() || value > 0xFF) return false;
         out = static_cast<uint8_t>(value);
         return true;
     }
@@ -53,8 +51,7 @@ namespace
     {
         // 支持格式：#RRGGBBAA。
         // 严格长度校验可避免 "#FFF" 这类简写造成歧义。
-        if (text.size() != 9 || text[0] != '#')
-            return false;
+        if (text.size() != 9 || text[0] != '#') return false;
 
         uint8_t r = 0;
         uint8_t g = 0;
@@ -91,20 +88,19 @@ namespace
     // 统一错误写回入口，减少重复 if(errorMessage) 判断。
     void assignError(std::string* errorMessage, const std::string& message)
     {
-        if (errorMessage)
-            *errorMessage = message;
+        if (errorMessage) *errorMessage = message;
     }
 }
 
 bool ProjectJsonSerializer::save(const Project& project, const std::string& path, std::string* errorMessage)
 {
-    // 1) 构建根对象与格式标识。
+    // 构建根对象与格式标识。
     //    load() 会严格校验 format/version，保证格式可控。
     json root;
     root["format"] = kFormatName;
     root["version"] = kJsonVersion;
 
-    // 2) 写入元信息。
+    // 写入元信息。
     //    当前 createdAt/updatedAt 都写当前时间；后续可从项目状态中读取真实值。
     const std::string now = utcNowIso8601();
     root["meta"] = {
@@ -113,20 +109,20 @@ bool ProjectJsonSerializer::save(const Project& project, const std::string& path
         {"updatedAt", now}
     };
 
-    // 3) 写入画布基础数据。
+    // 写入画布基础数据。
     root["canvas"] = {
         {"width", project.getWidth()},
         {"height", project.getHeight()},
         {"background", {{"mode", "checkerboard"}}}
     };
 
-    // 4) 写入时间轴概要信息。
+    // 写入时间轴概要信息。
     root["timeline"] = {
         {"fps", project.getTimelineFps()},
         {"frameCount", project.getFrameCount()}
     };
 
-    // 5) 写入帧数组。
+    // 写入帧数组。
     //    每个像素转成 "#RRGGBBAA" 文本，换取可读性。
     json frames = json::array();
     for (int i = 0; i < project.getFrameCount(); ++i)
@@ -144,7 +140,7 @@ bool ProjectJsonSerializer::save(const Project& project, const std::string& path
     }
     root["frames"] = std::move(frames);
 
-    // 6) 写入可选 UI 状态字段（当前为默认模板值）。
+    // 写入可选 UI 状态字段（当前为默认模板值）。
     //    这些字段暂不反向驱动 Project 核心结构，但保留可扩展空间。
     root["palette"] = {
         "#00000000", "#FFFFFFFF", "#FF0000FF", "#00FF00FF", "#0000FFFF"
@@ -154,7 +150,7 @@ bool ProjectJsonSerializer::save(const Project& project, const std::string& path
         {"brushSize", 1}
     };
 
-    // 7) 落盘输出（2 空格缩进，便于人工阅读）。
+    // 落盘输出（2 空格缩进，便于人工阅读）。
     std::ofstream out(path);
     if (!out)
     {
@@ -172,7 +168,7 @@ bool ProjectJsonSerializer::save(const Project& project, const std::string& path
 
 std::unique_ptr<Project> ProjectJsonSerializer::load(const std::string& path, std::string* errorMessage)
 {
-    // 1) 打开并解析 JSON。
+    // 打开并解析 JSON。
     std::ifstream in(path);
     if (!in)
     {
@@ -197,7 +193,7 @@ std::unique_ptr<Project> ProjectJsonSerializer::load(const std::string& path, st
         return nullptr;
     }
 
-    // 2) 格式识别：先校验 format，再校验 version。
+    // 格式识别：先校验 format，再校验 version。
     //    这样可以更清晰地区分“文件不是本格式”与“版本不兼容”。
     const std::string format = root.value("format", "");
     if (format != kFormatName)
@@ -213,7 +209,7 @@ std::unique_ptr<Project> ProjectJsonSerializer::load(const std::string& path, st
         return nullptr;
     }
 
-    // 3) 读取画布尺寸。
+    // 读取画布尺寸。
     //    尺寸非法时直接失败，避免后续创建异常 Project。
     const json& canvas = root["canvas"];
     const int width = canvas.value("width", 0);
@@ -224,7 +220,7 @@ std::unique_ptr<Project> ProjectJsonSerializer::load(const std::string& path, st
         return nullptr;
     }
 
-    // 4) 读取帧信息并做一致性校验。
+    // 读取帧信息并做一致性校验。
     //    优先使用 timeline.frameCount；若缺失则回退到 frames.size()。
     const json timeline = root.value("timeline", json::object());
     const int frameCountFromTimeline = timeline.value("frameCount", 0);
@@ -250,13 +246,13 @@ std::unique_ptr<Project> ProjectJsonSerializer::load(const std::string& path, st
         return nullptr;
     }
 
-    // 5) 构建 Project，并恢复项目名。
+    // 构建 Project，并恢复项目名。
     auto project = std::make_unique<Project>(width, height, frameCount, 0x00000000);
     const std::string name = root.value("meta", json::object()).value("name", "Untitled");
     project->setName(name);
     project->setTimelineFps(timelineFps);
 
-    // 6) 逐帧解析像素。
+    // 逐帧解析像素。
     //    每帧像素数量必须严格等于 width * height。
     const size_t expectedPixelCount = static_cast<size_t>(width) * static_cast<size_t>(height);
     for (int i = 0; i < frameCount; ++i)
@@ -278,7 +274,7 @@ std::unique_ptr<Project> ProjectJsonSerializer::load(const std::string& path, st
         Project::Frame& frame = project->getFrame(i);
         frame.pixels.resize(expectedPixelCount);
 
-        // 7) 逐像素解析 "#RRGGBBAA" -> RGBA8888。
+        // 逐像素解析 "#RRGGBBAA" -> RGBA8888。
         for (size_t p = 0; p < expectedPixelCount; ++p)
         {
             if (!pixelsArray[p].is_string())
@@ -304,3 +300,4 @@ std::unique_ptr<Project> ProjectJsonSerializer::load(const std::string& path, st
 
     return project;
 }
+

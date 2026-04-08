@@ -1,4 +1,4 @@
-#include "tools/EraserTool.h"
+﻿#include "tools/EraserTool.h"
 
 #include <algorithm>
 #include <cstdint>
@@ -27,8 +27,7 @@ bool EraserTool::apply(Project::Frame& frame,
         for (int px = minX; px <= maxX; ++px)
         {
             // 选区联动：仅在可编辑像素上执行擦除。
-            if (!context.canEditPixel(px, py, canvasWidth, canvasHeight))
-                continue;
+            if (!context.canEditPixel(px, py, canvasWidth, canvasHeight)) continue;
 
             uint32_t& pixel = frame.pixels[row + static_cast<size_t>(px)];
             if (pixel != eraseColor)
