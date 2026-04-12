@@ -29,6 +29,7 @@ set(SOURCES
     src/io/ProjectJsonSerializer.cpp
     src/io/ImageExporter.cpp
     src/io/ImageImporter.cpp
+    src/commands/PixelClipboardCommands.cpp
     src/tools/BrushTool.cpp
     src/tools/EraserTool.cpp
     src/tools/EyedropperTool.cpp

@@ -2,6 +2,7 @@
 #define PROJECTWINDOW_H
 
 #include "Window.h"
+#include "commands/PixelClipboardCommands.h"
 #include "tools/LineTool.h"
 #include "tools/RectFilledTool.h"
 #include "tools/RectangleTool.h"
@@ -56,6 +57,15 @@ public:
      * @param label 新的窗口标签字符串。
      */
     void setWindowLabel(const std::string& label) { windowLabel_ = label; }
+
+    // 启动粘贴预览（由 App 的 Paste 命令触发）。
+    void beginPastePreview(const commands::PixelClipboardData& clipboard);
+
+    // 是否处于粘贴预览态。
+    bool isPastePreviewActive() const;
+
+    // 取消粘贴预览。
+    void cancelPastePreview();
 
 private:
     // 画布纹理状态结构体，用于存储画布纹理的相关信息。
@@ -129,9 +139,19 @@ private:
     struct StrokeContinuityState
     {
         bool active = false;                        // 当前是否处于连续笔划拖拽中
+        bool changedDuringStroke = false;           // 本次笔划过程中是否实际修改过像素
         int lastX = 0;                              // 上一次采样到的像素 X
         int lastY = 0;                              // 上一次采样到的像素 Y
         ToolType tool = ToolType::Brush;            // 启动笔划时的工具类型（Brush/Eraser）
+    };
+
+    // 粘贴预览状态（每个项目窗口独立）。
+    struct PastePreviewState
+    {
+        bool active = false;                             // 当前是否处于粘贴预览模式
+        commands::PixelClipboardData clipboard;          // 预览使用的剪贴板快照
+        int originX = 0;                                 // 预览锚点（画布像素坐标）
+        int originY = 0;                                 // 预览锚点（画布像素坐标）
     };
 
     /**
@@ -172,6 +192,9 @@ private:
     RectangleTool rectangleTool_;                   // 矩形工具实例（每个项目窗口独立）
     RectFilledTool rectFilledTool_;                 // 填充矩形工具实例（每个项目窗口独立）
     RectSelectionTool rectSelectionTool_;           // 矩形框选工具实例（每个项目窗口独立）
+    PastePreviewState pastePreviewState_;           // 粘贴预览状态（每个项目窗口独立）
+    int lastCanvasWidth_ = 0;                       // 上一帧渲染时的画布宽度（用于自动适配缩放）
+    int lastCanvasHeight_ = 0;                      // 上一帧渲染时的画布高度（用于自动适配缩放）
     int pendingCanvasWidth_ = 0;                    // 待处理的画布宽度
     int pendingCanvasHeight_ = 0;                   // 待处理的画布高度
 };

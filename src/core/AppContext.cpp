@@ -4,6 +4,7 @@
  */
 
 #include "AppContext.h"
+#include "Project.h"
 
 #include <algorithm>
 #include <cmath>
@@ -56,6 +57,22 @@ namespace
     {
         return std::find(mask.begin(), mask.end(), static_cast<uint8_t>(1)) != mask.end();
     }
+
+    // 比较两个项目是否在“可编辑语义”上完全一致。
+    bool areProjectsEquivalent(const Project& lhs, const Project& rhs)
+    {
+        if (lhs.getName() != rhs.getName()) return false;
+        if (lhs.getWidth() != rhs.getWidth()) return false;
+        if (lhs.getHeight() != rhs.getHeight()) return false;
+        if (lhs.getTimelineFps() != rhs.getTimelineFps()) return false;
+        if (lhs.getFrameCount() != rhs.getFrameCount()) return false;
+
+        for (int i = 0; i < lhs.getFrameCount(); ++i)
+        {
+            if (lhs.getFrame(i).pixels != rhs.getFrame(i).pixels) return false;
+        }
+        return true;
+    }
 } // namespace
 
 // 后续实现 CommandStack 后在此包含，并取消下方 TODO 注释
@@ -64,6 +81,55 @@ namespace
 AppContext::AppContext() = default;
 
 AppContext::~AppContext() = default;
+
+void AppContext::setProjectDirty(bool dirty, const std::string& actionLabel)
+{
+    // 标记“已保存”时，仅更新 dirty 位与“已保存历史指针”。
+    if (!dirty)
+    {
+        projectDirty_ = false;
+        undoHistorySavedIndex_ = undoHistoryCurrentIndex_;
+        return;
+    }
+
+    // 无项目时不记录快照。
+    if (!project_)
+    {
+        projectDirty_ = true;
+        return;
+    }
+
+    // 历史为空时先创建基线，确保 undo/redo 指针总是有锚点。
+    if (undoHistory_.empty())
+    {
+        undoHistory_.push_back(captureUndoHistoryEntry("Initial"));
+        undoHistoryCurrentIndex_ = 0;
+        undoHistorySavedIndex_ = 0;
+    }
+
+    // 从当前状态生成候选快照。若与当前指针条目等价，则不追加历史，避免重复噪声。
+    UndoHistoryEntry candidate = captureUndoHistoryEntry(actionLabel.empty() ? "Edit" : actionLabel);
+    if (undoHistoryCurrentIndex_ >= 0
+        && undoHistoryCurrentIndex_ < static_cast<int>(undoHistory_.size())
+        && isEquivalentToCurrentState(undoHistory_[static_cast<size_t>(undoHistoryCurrentIndex_)]))
+    {
+        projectDirty_ = (undoHistoryCurrentIndex_ != undoHistorySavedIndex_);
+        return;
+    }
+
+    // 若当前位于历史中间，再次编辑需要先裁掉 redo 分支。
+    if (undoHistoryCurrentIndex_ + 1 < static_cast<int>(undoHistory_.size()))
+    {
+        undoHistory_.erase(
+            undoHistory_.begin() + static_cast<long long>(undoHistoryCurrentIndex_ + 1),
+            undoHistory_.end());
+    }
+
+    undoHistory_.push_back(std::move(candidate));
+    undoHistoryCurrentIndex_ = static_cast<int>(undoHistory_.size()) - 1;
+    trimUndoHistoryToLimit();
+    projectDirty_ = (undoHistoryCurrentIndex_ != undoHistorySavedIndex_);
+}
 
 void AppContext::setBrushSize(int size)
 {
@@ -75,7 +141,7 @@ void AppContext::setBrushSize(int size)
 
 void AppContext::setCanvasZoom(int zoom)
 {
-    static const int allowed[] = {1, 2, 4, 8, 16, 32, 64, 128, 256};
+    static const int allowed[] = {1, 2, 3, 4, 6, 8, 12, 16, 24, 32, 48, 64, 96, 128, 192, 256, 384, 512, 768, 1024};
     for (int z : allowed)
     {
         if (z == zoom)
@@ -559,24 +625,161 @@ void AppContext::clearFrameGroups()
 
 bool AppContext::canUndo() const
 {
-    // TODO: 实现 CommandStack 后改为 return commandStack_ && commandStack_->canUndo();
-    return false;
+    return undoHistoryCurrentIndex_ > 0 && undoHistoryCurrentIndex_ < static_cast<int>(undoHistory_.size());
 }
 
 bool AppContext::canRedo() const
 {
-    // TODO: 实现 CommandStack 后改为 return commandStack_ && commandStack_->canRedo();
-    return false;
+    return undoHistoryCurrentIndex_ >= 0
+        && undoHistoryCurrentIndex_ + 1 < static_cast<int>(undoHistory_.size());
 }
 
 void AppContext::undo()
 {
-    // TODO: 实现 CommandStack 后取消注释：
-    // if (commandStack_) commandStack_->undo();
+    if (!canUndo()) return;
+    --undoHistoryCurrentIndex_;
+    applyUndoHistoryEntry(undoHistory_[static_cast<size_t>(undoHistoryCurrentIndex_)]);
+    projectDirty_ = (undoHistoryCurrentIndex_ != undoHistorySavedIndex_);
 }
 
 void AppContext::redo()
 {
-    // TODO: 实现 CommandStack 后取消注释：
-    // if (commandStack_) commandStack_->redo();
+    if (!canRedo()) return;
+    ++undoHistoryCurrentIndex_;
+    applyUndoHistoryEntry(undoHistory_[static_cast<size_t>(undoHistoryCurrentIndex_)]);
+    projectDirty_ = (undoHistoryCurrentIndex_ != undoHistorySavedIndex_);
+}
+
+void AppContext::resetUndoRedoHistory(const std::string& initialLabel)
+{
+    undoHistory_.clear();
+    undoHistoryCurrentIndex_ = -1;
+    undoHistorySavedIndex_ = -1;
+
+    if (!project_)
+    {
+        projectDirty_ = false;
+        return;
+    }
+
+    undoHistory_.push_back(captureUndoHistoryEntry(initialLabel.empty() ? "Initial" : initialLabel));
+    undoHistoryCurrentIndex_ = 0;
+    undoHistorySavedIndex_ = 0;
+    projectDirty_ = false;
+}
+
+int AppContext::getUndoHistoryCount() const
+{
+    return static_cast<int>(undoHistory_.size());
+}
+
+int AppContext::getUndoHistoryCurrentIndex() const
+{
+    return undoHistoryCurrentIndex_;
+}
+
+int AppContext::getUndoHistorySavedIndex() const
+{
+    return undoHistorySavedIndex_;
+}
+
+std::string AppContext::getUndoHistoryLabel(int index) const
+{
+    if (index < 0 || index >= static_cast<int>(undoHistory_.size())) return "";
+    return undoHistory_[static_cast<size_t>(index)].label;
+}
+
+void AppContext::jumpToUndoHistoryIndex(int index)
+{
+    if (index < 0 || index >= static_cast<int>(undoHistory_.size())) return;
+    if (index == undoHistoryCurrentIndex_) return;
+
+    undoHistoryCurrentIndex_ = index;
+    applyUndoHistoryEntry(undoHistory_[static_cast<size_t>(undoHistoryCurrentIndex_)]);
+    projectDirty_ = (undoHistoryCurrentIndex_ != undoHistorySavedIndex_);
+}
+
+int AppContext::getUndoHistoryMaxEntries() const
+{
+    return undoHistoryMaxEntries_;
+}
+
+void AppContext::setUndoHistoryMaxEntries(int maxEntries)
+{
+    undoHistoryMaxEntries_ = std::max(1, maxEntries);
+    trimUndoHistoryToLimit();
+    projectDirty_ = (undoHistoryCurrentIndex_ != undoHistorySavedIndex_);
+}
+
+AppContext::UndoHistoryEntry AppContext::captureUndoHistoryEntry(const std::string& label) const
+{
+    UndoHistoryEntry entry;
+    entry.label = label.empty() ? "Edit" : label;
+
+    if (project_) entry.projectSnapshot = std::make_shared<Project>(*project_);
+
+    entry.currentAnimationIndex = currentAnimationIndex_;
+    entry.currentFrameIndex = currentFrameIndex_;
+    entry.selectedFrameIndices = selectedFrameIndices_;
+    entry.frameGroups = frameGroups_;
+    entry.selectionCanvasWidth = pixelSelectionCanvasWidth_;
+    entry.selectionCanvasHeight = pixelSelectionCanvasHeight_;
+    entry.selectionMask = pixelSelectionMask_;
+    entry.selectionHasAny = pixelSelectionHasAny_;
+    return entry;
+}
+
+void AppContext::applyUndoHistoryEntry(const UndoHistoryEntry& entry)
+{
+    // 历史恢复的前提是当前上下文仍持有一个项目实例。
+    if (!project_ || !entry.projectSnapshot) return;
+
+    *project_ = *entry.projectSnapshot;
+    currentAnimationIndex_ = entry.currentAnimationIndex;
+    currentFrameIndex_ = entry.currentFrameIndex;
+    selectedFrameIndices_ = entry.selectedFrameIndices;
+    frameGroups_ = entry.frameGroups;
+    pixelSelectionCanvasWidth_ = entry.selectionCanvasWidth;
+    pixelSelectionCanvasHeight_ = entry.selectionCanvasHeight;
+    pixelSelectionMask_ = entry.selectionMask;
+    pixelSelectionHasAny_ = entry.selectionHasAny;
+
+    // 恢复后做一次统一校正，避免索引因历史差异越界。
+    sanitizeFrameSelection(project_->getFrameCount(), currentFrameIndex_);
+}
+
+bool AppContext::isEquivalentToCurrentState(const UndoHistoryEntry& entry) const
+{
+    if (!project_ || !entry.projectSnapshot) return false;
+    if (!areProjectsEquivalent(*project_, *entry.projectSnapshot)) return false;
+    if (currentAnimationIndex_ != entry.currentAnimationIndex) return false;
+    if (currentFrameIndex_ != entry.currentFrameIndex) return false;
+    if (selectedFrameIndices_ != entry.selectedFrameIndices) return false;
+    if (frameGroups_.size() != entry.frameGroups.size()) return false;
+    for (size_t i = 0; i < frameGroups_.size(); ++i)
+    {
+        const FrameGroup& lhs = frameGroups_[i];
+        const FrameGroup& rhs = entry.frameGroups[i];
+        if (lhs.name != rhs.name) return false;
+        if (lhs.frameIndices != rhs.frameIndices) return false;
+        if (lhs.colorRGBA != rhs.colorRGBA) return false;
+    }
+    if (pixelSelectionCanvasWidth_ != entry.selectionCanvasWidth) return false;
+    if (pixelSelectionCanvasHeight_ != entry.selectionCanvasHeight) return false;
+    if (pixelSelectionMask_ != entry.selectionMask) return false;
+    if (pixelSelectionHasAny_ != entry.selectionHasAny) return false;
+    return true;
+}
+
+void AppContext::trimUndoHistoryToLimit()
+{
+    if (undoHistoryMaxEntries_ <= 0) return;
+    while (static_cast<int>(undoHistory_.size()) > undoHistoryMaxEntries_)
+    {
+        undoHistory_.erase(undoHistory_.begin());
+        --undoHistoryCurrentIndex_;
+        --undoHistorySavedIndex_;
+    }
+    if (undoHistoryCurrentIndex_ < 0 && !undoHistory_.empty()) undoHistoryCurrentIndex_ = 0;
+    if (undoHistorySavedIndex_ < -1) undoHistorySavedIndex_ = -1;
 }

@@ -71,22 +71,6 @@ void ProjectWindow::renderRightPanel(Project* project)
         break;
     }
 
-    const int zoomLevels[] = {1, 2, 4, 8, 16, 32, 64, 128, 256};
-    const char* zoomLabels[] = {"1x", "2x", "4x", "8x", "16x", "32x", "64x", "128x", "256x"};
-    int zoomIndex = 0;
-    for (int i = 0; i < 9; ++i)
-    {
-        if (zoomLevels[i] == context->getCanvasZoom())
-        {
-            zoomIndex = i;
-            break;
-        }
-    }
-    if (ImGui::Combo("Canvas Zoom", &zoomIndex, zoomLabels, 9))
-    {
-        context->setCanvasZoom(zoomLevels[zoomIndex]);
-    }
-
     bool showGrid = context->isGridVisible();
     if (ImGui::Checkbox("Show Grid", &showGrid)) context->setGridVisible(showGrid);
 
@@ -111,6 +95,6 @@ void ProjectWindow::renderRightPanel(Project* project)
     if (ImGui::Button("Apply Size") && pendingCanvasWidth_ > 0 && pendingCanvasHeight_ > 0)
     {
         project->resizeCanvas(pendingCanvasWidth_, pendingCanvasHeight_, 0x00000000);
-        context->setProjectDirty(true);
+        context->setProjectDirty(true, "Resize Canvas");
     }
 }

@@ -9,6 +9,7 @@
 #pragma once
 
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -125,10 +126,7 @@ public:
     }
 
     // 标记项目已修改
-    void setProjectDirty(bool dirty = true) 
-    { 
-        projectDirty_ = dirty; 
-    }
+    void setProjectDirty(bool dirty = true, const std::string& actionLabel = "Edit");
 
     // 当前项目文件路径（未保存或新建时为空）
     const std::string& getProjectFilePath() const 
@@ -516,6 +514,57 @@ public:
     // 执行一次重做；内部调用 CommandStack::Redo()
     void redo();
 
+    /**
+     * @brief 重置撤销/重做历史，并以当前状态作为基线快照。
+     *
+     * 使用时机：
+     * - 新建项目后
+     * - 打开项目后
+     *
+     * @param initialLabel 基线历史项显示名称。
+     */
+    void resetUndoRedoHistory(const std::string& initialLabel = "Initial");
+
+    /**
+     * @brief 获取 Undo History 总条目数（包含基线项）。
+     */
+    int getUndoHistoryCount() const;
+
+    /**
+     * @brief 获取当前历史指针位置（0-based）。
+     */
+    int getUndoHistoryCurrentIndex() const;
+
+    /**
+     * @brief 获取“已保存状态”对应的历史指针位置（0-based）。
+     *
+     * 说明：
+     * - 当当前指针与已保存指针不一致时，项目视为 dirty。
+     */
+    int getUndoHistorySavedIndex() const;
+
+    /**
+     * @brief 获取指定历史条目的显示标签。
+     */
+    std::string getUndoHistoryLabel(int index) const;
+
+    /**
+     * @brief 跳转到指定历史条目（支持在 Undo History 面板中点击跳转）。
+     */
+    void jumpToUndoHistoryIndex(int index);
+
+    /**
+     * @brief 获取当前撤销历史最大条目数上限。
+     */
+    int getUndoHistoryMaxEntries() const;
+
+    /**
+     * @brief 设置撤销历史最大条目数上限。
+     *
+     * @param maxEntries 最大条目数（最小为 1）。
+     */
+    void setUndoHistoryMaxEntries(int maxEntries);
+
     // -------------------------------------------------------------------------
     // 视图/UI 状态（可选，供 View 菜单、面板显隐使用）
     // -------------------------------------------------------------------------
@@ -568,6 +617,32 @@ public:
     }
 
 private:
+    /**
+     * @brief 单条撤销历史记录。
+     *
+     * 采用“快照式”而非命令式：
+     * - 实现简单、覆盖面广（像素、帧、分组、选区可一次性回滚）；
+     * - 对 MVP 阶段非常稳妥，后续可替换为增量命令栈优化内存。
+     */
+    struct UndoHistoryEntry
+    {
+        std::string label;                       // 历史条目名称（例如 Paint / Resize Canvas）
+        std::shared_ptr<Project> projectSnapshot; // 项目快照（深拷贝）
+        int currentAnimationIndex = 0;           // 快照时动画索引
+        int currentFrameIndex = 0;               // 快照时当前帧索引
+        std::vector<int> selectedFrameIndices;   // 快照时帧多选状态
+        std::vector<FrameGroup> frameGroups;     // 快照时帧分组
+        int selectionCanvasWidth = 0;            // 像素选区掩码宽度
+        int selectionCanvasHeight = 0;           // 像素选区掩码高度
+        std::vector<uint8_t> selectionMask;      // 像素选区掩码数据
+        bool selectionHasAny = false;            // 快照时是否存在像素选区
+    };
+
+    UndoHistoryEntry captureUndoHistoryEntry(const std::string& label) const;
+    void applyUndoHistoryEntry(const UndoHistoryEntry& entry);
+    bool isEquivalentToCurrentState(const UndoHistoryEntry& entry) const;
+    void trimUndoHistoryToLimit();
+
     // 项目与文档
     Project* project_ = nullptr;
     bool projectDirty_ = false;
@@ -597,6 +672,12 @@ private:
 
     // 撤销/重做（不拥有所有权，由外部创建与释放）
     CommandStack* commandStack_ = nullptr;
+
+    // 快照式撤销历史（每个项目窗口上下文独立）
+    std::vector<UndoHistoryEntry> undoHistory_;
+    int undoHistoryCurrentIndex_ = -1;
+    int undoHistorySavedIndex_ = -1;
+    int undoHistoryMaxEntries_ = 200;
 
     // 视图选项
     bool gridVisible_ = false;

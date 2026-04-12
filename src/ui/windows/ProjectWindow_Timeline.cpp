@@ -151,7 +151,7 @@ void ProjectWindow::renderTimelinePanel(Project* project)
             // - 若当前帧属于某分组，新帧自动并入该分组并跟在当前帧后面。
             context->onFrameInserted(current + 1, current, project->getFrameCount());
             context->setSingleFrameSelection(current + 1, project->getFrameCount());
-            context->setProjectDirty(true);
+            context->setProjectDirty(true, "Insert Frame");
         }
         ImGui::SameLine();
         if (ImGui::Button("-", btnSize))
@@ -165,7 +165,7 @@ void ProjectWindow::renderTimelinePanel(Project* project)
                 // 删帧后同步分组索引，避免组成员索引错位。
                 context->onFrameRemoved(current, newCount);
                 context->setSingleFrameSelection(std::min(current, newCount - 1), newCount);
-                context->setProjectDirty(true);
+                context->setProjectDirty(true, "Delete Frame");
             }
         }
     }
@@ -232,7 +232,7 @@ void ProjectWindow::renderTimelinePanel(Project* project)
     {
         project->setTimelineFps(static_cast<int>(timelineState_.fps + 0.5f));
         timelineState_.fps = static_cast<float>(project->getTimelineFps());
-        context->setProjectDirty(true);
+        context->setProjectDirty(true, "Change FPS");
     }
 
     ImGui::Separator();
@@ -352,7 +352,7 @@ void ProjectWindow::renderTimelinePanel(Project* project)
                     {
                         project->moveFrame(fromIndex, toIndex);
                         context->onFrameMoved(fromIndex, toIndex, frameCount);
-                        context->setProjectDirty(true);
+                        context->setProjectDirty(true, "Reorder Frames");
                     }
                 }
             }
@@ -423,7 +423,7 @@ void ProjectWindow::renderTimelinePanel(Project* project)
     if (pendingDeleteGroupIndex >= 0)
     {
         context->removeFrameGroup(pendingDeleteGroupIndex);
-        context->setProjectDirty(true);
+        context->setProjectDirty(true, "Delete Group");
     }
 
     // 统一在帧区域末尾打开命名弹窗，避免与单元格循环中的 PushID 状态耦合。
@@ -455,6 +455,7 @@ void ProjectWindow::renderTimelinePanel(Project* project)
                                    timelineState_.pendingGroupFrames,
                                    frameCount,
                                    color);
+            context->setProjectDirty(true, "Create Group");
             timelineState_.pendingGroupFrames.clear();
             ImGui::CloseCurrentPopup();
         }
@@ -478,7 +479,7 @@ void ProjectWindow::renderTimelinePanel(Project* project)
         if (ImGui::Button("Apply", ImVec2(120.0f, 0.0f)))
         {
             context->renameFrameGroup(timelineState_.renameGroupIndex, timelineState_.renameGroupName);
-            context->setProjectDirty(true);
+            context->setProjectDirty(true, "Rename Group");
             timelineState_.renameGroupIndex = -1;
             ImGui::CloseCurrentPopup();
         }

@@ -8,21 +8,35 @@ Menu_Edit::Menu_Edit(Menu* menu, AppContext* context)
 
 void Menu_Edit::initialize() {
     MenuItem* undoItem = getMenu()->addItem("Undo", "Ctrl+Z");
-    undoItem->setCallback([this]() { if (context_) context_->undo(); });
+    undoItem->setCallback([this]() { if (context_ && context_->canUndo()) context_->undo(); });
 
     MenuItem* redoItem = getMenu()->addItem("Redo", "Ctrl+Y");
-    redoItem->setCallback([this]() { if (context_) context_->redo(); });
-    
-    // 添加 Undo History 子菜单
-    Menu* undoHistoryMenu = new Menu("Undo History");
-    getMenu()->addItem("Undo History", undoHistoryMenu);
+    redoItem->setCallback([this]() { if (context_ && context_->canRedo()) context_->redo(); });
+
+    // Undo History 使用独立弹窗展示，便于显示当前指针与已保存标记，并支持点击跳转。
+    MenuItem* undoHistoryItem = getMenu()->addItem("Undo History");
+    undoHistoryItem->setCallback([this]() {
+        if (onUndoHistoryRequested_) onUndoHistoryRequested_();
+    });
     
     getMenu()->addSeparator();
-    
-    getMenu()->addItem("Cut", "Ctrl+X");
-    getMenu()->addItem("Copy", "Ctrl+C");
+
+    MenuItem* cutItem = getMenu()->addItem("Cut", "Ctrl+X");
+    cutItem->setCallback([this]() {
+        if (onCutRequested_) onCutRequested_();
+    });
+
+    MenuItem* copyItem = getMenu()->addItem("Copy", "Ctrl+C");
+    copyItem->setCallback([this]() {
+        if (onCopyRequested_) onCopyRequested_();
+    });
+
     getMenu()->addItem("Copy Merged", "Ctrl+Shift+C");
-    getMenu()->addItem("Paste", "Ctrl+V");
+
+    MenuItem* pasteItem = getMenu()->addItem("Paste", "Ctrl+V");
+    pasteItem->setCallback([this]() {
+        if (onPasteRequested_) onPasteRequested_();
+    });
     
     // 添加 Paste Special 子菜单
     Menu* pasteSpecialMenu = new Menu("Paste Special");

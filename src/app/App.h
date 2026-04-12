@@ -11,6 +11,7 @@
 #pragma once
 
 #include "imgui.h"
+#include "commands/PixelClipboardCommands.h"
 #include <SDL3/SDL.h>
 #include <cstdint>
 #include <memory>
@@ -235,6 +236,12 @@ private:
     void refreshWindowLabels();                                         // 根据 dirty 状态更新窗口标题 *
     void handleProjectSwitchShortcut();                                 // Ctrl+Tab / Ctrl+Shift+Tab
     void handleFileMenuShortcuts();                                     // File 菜单全局快捷键
+    void handleEditMenuShortcuts();                                     // Edit 菜单全局快捷键
+    void handleToolShortcuts();                                         // 工具切换快捷键
+    void renderUndoHistoryPopup();                                      // Undo History 弹窗
+    bool executeCutSelection();                                         // Cut（有像素选区时生效）
+    bool executeCopySelection();                                        // Copy（有像素选区时生效）
+    bool executePasteSelection();                                       // Paste（有像素选区时生效）
 
     // ---------------- 平台与渲染状态 ----------------
     SDL_Window* window_ = nullptr;
@@ -334,4 +341,6 @@ private:
     bool importDialogSpriteSheetRowMajor_ = true;
     bool pendingDialogErrorReady_ = false;
     std::string pendingErrorMessage_;
+    bool undoHistoryPopupRequested_ = false;
+    commands::PixelClipboardData pixelClipboard_;
 };

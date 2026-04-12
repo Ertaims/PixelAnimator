@@ -68,6 +68,36 @@ ProjectWindow::~ProjectWindow()
     }
 }
 
+void ProjectWindow::beginPastePreview(const commands::PixelClipboardData& clipboard)
+{
+    if (!clipboard.isValid())
+    {
+        pastePreviewState_.active = false;
+        pastePreviewState_.clipboard.clear();
+        pastePreviewState_.originX = 0;
+        pastePreviewState_.originY = 0;
+        return;
+    }
+
+    pastePreviewState_.active = true;
+    pastePreviewState_.clipboard = clipboard;
+    pastePreviewState_.originX = 0;
+    pastePreviewState_.originY = 0;
+}
+
+bool ProjectWindow::isPastePreviewActive() const
+{
+    return pastePreviewState_.active;
+}
+
+void ProjectWindow::cancelPastePreview()
+{
+    pastePreviewState_.active = false;
+    pastePreviewState_.clipboard.clear();
+    pastePreviewState_.originX = 0;
+    pastePreviewState_.originY = 0;
+}
+
 /**
  * @brief 确保画布纹理已创建并具有指定的尺寸。
  * 

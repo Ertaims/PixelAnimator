@@ -5,6 +5,7 @@
 
 #include "app/App.h"
 
+#include "commands/PixelClipboardCommands.h"
 #include "core/AppContext.h"
 #include "core/Project.h"
 #include "io/ImageExporter.h"
@@ -331,6 +332,13 @@ void App::createMenuAndWindows()
     refreshRecentProjectsMenu();
 
     editMenu_ = menuFactory.createEditMenu(menuManager_, nullptr);
+    if (editMenu_)
+    {
+        editMenu_->setOnUndoHistoryRequested([this]() { undoHistoryPopupRequested_ = true; });
+        editMenu_->setOnCutRequested([this]() { executeCutSelection(); });
+        editMenu_->setOnCopyRequested([this]() { executeCopySelection(); });
+        editMenu_->setOnPasteRequested([this]() { executePasteSelection(); });
+    }
     menuFactory.createViewMenu(menuManager_);
     menuFactory.createHelpMenu(menuManager_);
 
@@ -404,7 +412,10 @@ void App::renderFrame()
     renderSpriteSheetExportPopup();
     renderSpriteSheetImportPopup();
     renderErrorPopup();
+    renderUndoHistoryPopup();
     handleFileMenuShortcuts();
+    handleEditMenuShortcuts();
+    handleToolShortcuts();
     handleProjectSwitchShortcut();
     refreshWindowLabels();
 
@@ -1131,6 +1142,215 @@ void App::handleFileMenuShortcuts()
     }
 }
 
+void App::handleEditMenuShortcuts()
+{
+    ImGuiIO& io = ImGui::GetIO();
+
+    // 文本输入时不处理全局编辑快捷键，避免和输入框冲突。
+    if (io.WantTextInput) return;
+    if (!io.KeyCtrl) return;
+    if (!activeContext_) return;
+
+    // 常见习惯：Ctrl+Shift+Z 作为 Redo（优先于 Ctrl+Z）。
+    if (io.KeyShift && ImGui::IsKeyPressed(ImGuiKey_Z, false))
+    {
+        if (activeContext_->canRedo()) activeContext_->redo();
+        return;
+    }
+
+    // Ctrl+Z：Undo
+    if (ImGui::IsKeyPressed(ImGuiKey_Z, false))
+    {
+        if (activeContext_->canUndo()) activeContext_->undo();
+        return;
+    }
+
+    // Ctrl+Y：Redo
+    if (ImGui::IsKeyPressed(ImGuiKey_Y, false))
+    {
+        if (activeContext_->canRedo()) activeContext_->redo();
+        return;
+    }
+
+    // Ctrl+X：Cut（仅在存在像素框选时生效）
+    if (ImGui::IsKeyPressed(ImGuiKey_X, false))
+    {
+        executeCutSelection();
+        return;
+    }
+
+    // Ctrl+C：Copy（仅在存在像素框选时生效）
+    if (ImGui::IsKeyPressed(ImGuiKey_C, false))
+    {
+        executeCopySelection();
+        return;
+    }
+
+    // Ctrl+V：Paste（仅在存在像素框选时生效）
+    if (ImGui::IsKeyPressed(ImGuiKey_V, false))
+    {
+        executePasteSelection();
+        return;
+    }
+}
+
+void App::handleToolShortcuts()
+{
+    if (!activeContext_) return;
+
+    ImGuiIO& io = ImGui::GetIO();
+    // 文本输入场景（例如命名弹窗输入框）不响应工具快捷键，避免误切换。
+    if (io.WantTextInput) return;
+
+    // Ctrl+D：仅在框选工具下用于清空当前像素选区。
+    if (io.KeyCtrl)
+    {
+        if (ImGui::IsKeyPressed(ImGuiKey_D, false)
+            && activeContext_->getTool() == ToolType::RectSelection)
+        {
+            activeContext_->clearPixelSelection();
+        }
+        return;
+    }
+
+    if (ImGui::IsKeyPressed(ImGuiKey_B, false))
+    {
+        activeContext_->setTool(ToolType::Brush);
+        return;
+    }
+    if (ImGui::IsKeyPressed(ImGuiKey_M, false))
+    {
+        activeContext_->setTool(ToolType::RectSelection);
+        return;
+    }
+    if (ImGui::IsKeyPressed(ImGuiKey_E, false))
+    {
+        activeContext_->setTool(ToolType::Eraser);
+        return;
+    }
+    if (ImGui::IsKeyPressed(ImGuiKey_L, false))
+    {
+        activeContext_->setTool(ToolType::Line);
+        return;
+    }
+    if (ImGui::IsKeyPressed(ImGuiKey_I, false))
+    {
+        activeContext_->setTool(ToolType::Eyedropper);
+        return;
+    }
+}
+
+bool App::executeCutSelection()
+{
+    if (!activeContext_) return false;
+
+    std::string error;
+    if (!commands::CutSelectionCommand::execute(*activeContext_, pixelClipboard_, &error))
+    {
+        if (!error.empty()) showError(error);
+        return false;
+    }
+
+    activeContext_->setProjectDirty(true, "Cut");
+    return true;
+}
+
+bool App::executeCopySelection()
+{
+    if (!activeContext_) return false;
+
+    std::string error;
+    if (!commands::CopySelectionCommand::execute(*activeContext_, pixelClipboard_, &error))
+    {
+        if (!error.empty()) showError(error);
+        return false;
+    }
+
+    return true;
+}
+
+bool App::executePasteSelection()
+{
+    if (!activeContext_) return false;
+    if (!pixelClipboard_.isValid())
+    {
+        showError("Clipboard is empty.");
+        return false;
+    }
+    const int sessionIndex = findSessionIndexByContext(activeContext_);
+    if (sessionIndex < 0) return false;
+
+    ProjectSession& session = projectSessions_[static_cast<size_t>(sessionIndex)];
+    if (!session.window) return false;
+
+    // Paste 进入预览模式：由画布内鼠标定位，左键确认后再真正写入像素并生成历史。
+    session.window->beginPastePreview(pixelClipboard_);
+    return true;
+}
+
+void App::renderUndoHistoryPopup()
+{
+    if (undoHistoryPopupRequested_)
+    {
+        ImGui::OpenPopup("Undo History");
+        undoHistoryPopupRequested_ = false;
+    }
+
+    if (!ImGui::BeginPopup("Undo History")) return;
+
+    if (!activeContext_ || !activeContext_->hasProject())
+    {
+        ImGui::TextUnformatted("No active project.");
+        ImGui::EndPopup();
+        return;
+    }
+
+    const int count = activeContext_->getUndoHistoryCount();
+    const int current = activeContext_->getUndoHistoryCurrentIndex();
+    const int saved = activeContext_->getUndoHistorySavedIndex();
+    int maxEntries = activeContext_->getUndoHistoryMaxEntries();
+
+    if (count <= 0)
+    {
+        ImGui::TextUnformatted("History is empty.");
+        ImGui::EndPopup();
+        return;
+    }
+
+    ImGui::Text("Entries: %d", count);
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(90.0f);
+    if (ImGui::InputInt("Max", &maxEntries, 10, 50))
+    {
+        if (maxEntries < 1) maxEntries = 1;
+        activeContext_->setUndoHistoryMaxEntries(maxEntries);
+    }
+    ImGui::Separator();
+
+    // 从新到旧显示，便于快速定位最近操作。
+    for (int i = count - 1; i >= 0; --i)
+    {
+        std::string label = activeContext_->getUndoHistoryLabel(i);
+        if (label.empty()) label = "Edit";
+
+        std::string displayLabel = label;
+        if (i == current) displayLabel += "  [Current]";
+        if (i == saved) displayLabel += "  [Saved]";
+
+        ImGui::PushID(i);
+        if (ImGui::Selectable(displayLabel.c_str(), i == current))
+        {
+            activeContext_->jumpToUndoHistoryIndex(i);
+        }
+        ImGui::PopID();
+    }
+
+    ImGui::Separator();
+    if (ImGui::MenuItem("Undo", "Ctrl+Z", false, activeContext_->canUndo())) activeContext_->undo();
+    if (ImGui::MenuItem("Redo", "Ctrl+Y / Ctrl+Shift+Z", false, activeContext_->canRedo())) activeContext_->redo();
+    ImGui::EndPopup();
+}
+
 bool App::saveProjectAs(AppContext* context, const std::string& path, ProjectFileFormat preferredFormat)
 {
     if (!context || !context->hasProject())
@@ -1320,7 +1540,7 @@ bool App::importFromPath(const std::string& path, ImportKind kind, bool spriteSh
             showError(error.empty() ? "Failed to import current frame." : error);
             return false;
         }
-        activeContext_->setProjectDirty(true);
+        activeContext_->setProjectDirty(true, "Import Frame");
         return true;
     }
 
@@ -1823,7 +2043,7 @@ void App::renderSpriteSheetImportPopup()
                 }
 
                 targetContext->setSingleFrameSelection(firstImportedIndex, targetProject->getFrameCount());
-                targetContext->setProjectDirty(true);
+                targetContext->setProjectDirty(true, "Import Sprite Sheet");
                 spriteSheetImportPendingPath_.clear();
                 ImGui::CloseCurrentPopup();
             }
@@ -2247,6 +2467,8 @@ void App::createSessionFromProject(std::unique_ptr<Project> project, const std::
     session.context->setCanvasPan(0.0f, 0.0f);
     session.context->setCanvasZoom(4);
     session.context->setCheckerboardBackgroundEnabled(true);
+    // 打开项目后，以当前状态作为撤销基线。
+    session.context->resetUndoRedoHistory("Open Project");
 
     session.projectId = nextProjectId_++;
     session.windowBaseTitle = session.project && !session.project->getName().empty()
@@ -2368,6 +2590,8 @@ void App::createNewProject(int width, int height, int frameCount, uint32_t fillC
     session.context->setCanvasPan(0.0f, 0.0f);
     session.context->setCanvasZoom(4);
     session.context->setCheckerboardBackgroundEnabled(checkerboardBackground);
+    // 新建项目后，以当前空白状态作为撤销基线。
+    session.context->resetUndoRedoHistory("New Project");
 
     // 生成唯一窗口标题/ID
     session.projectId = nextProjectId_++;
