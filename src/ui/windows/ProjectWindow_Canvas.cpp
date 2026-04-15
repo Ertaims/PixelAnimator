@@ -1,4 +1,4 @@
-﻿#include "ProjectWindow.h"
+#include "ProjectWindow.h"
 
 #include "commands/PixelClipboardCommands.h"
 #include "core/AppContext.h"
@@ -326,6 +326,112 @@ void ProjectWindow::renderCanvasPanel(Project* project)
     else
     {
         drawList->AddRectFilled(imageMin, imageMax, IM_COL32(255, 255, 255, 255));
+    }
+
+    // 洋葱皮功能：渲染前后帧的半透明预览
+    if (context->isOnionSkinEnabled() && frameCount > 1)
+    {
+        // 获取洋葱皮设置
+        const int previousFrames = context->getOnionSkinPreviousFrames();
+        const int nextFrames = context->getOnionSkinNextFrames();
+        const int basePreviousAlpha = context->getOnionSkinPreviousAlpha();
+        const int baseNextAlpha = context->getOnionSkinNextAlpha();
+        const uint32_t previousColor = context->getOnionSkinPreviousColor();
+        const uint32_t nextColor = context->getOnionSkinNextColor();
+
+        // 提取前帧颜色通道
+        const int prevR = static_cast<int>(previousColor & 0xFFu);
+        const int prevG = static_cast<int>((previousColor >> 8) & 0xFFu);
+        const int prevB = static_cast<int>((previousColor >> 16) & 0xFFu);
+
+        // 提取后帧颜色通道
+        const int nextR = static_cast<int>(nextColor & 0xFFu);
+        const int nextG = static_cast<int>((nextColor >> 8) & 0xFFu);
+        const int nextB = static_cast<int>((nextColor >> 16) & 0xFFu);
+
+        // 渲染之前的帧
+        for (int i = 1; i <= previousFrames; ++i)
+        {
+            const int prevFrameIndex = frameIndex - i;
+            if (prevFrameIndex < 0) break;
+
+            const Project::Frame& prevFrame = project->getFrame(prevFrameIndex);
+            // 透明度渐变：离当前帧越远，透明度越低
+            const float alphaFactor = static_cast<float>(previousFrames - i + 1) / static_cast<float>(previousFrames + 1);
+            const int alpha = static_cast<int>(basePreviousAlpha * alphaFactor);
+
+            // 渲染前帧的半透明像素
+            for (int y = 0; y < height; ++y)
+            {
+                for (int x = 0; x < width; ++x)
+                {
+                    const size_t index = static_cast<size_t>(y) * static_cast<size_t>(width) + static_cast<size_t>(x);
+                    const uint32_t pixel = prevFrame.pixels[index];
+                    if (pixel == 0) continue; // 跳过透明像素
+
+                    // 提取像素颜色并与前帧颜色混合
+                    const int r = static_cast<int>(pixel & 0xFFu);
+                    const int g = static_cast<int>((pixel >> 8) & 0xFFu);
+                    const int b = static_cast<int>((pixel >> 16) & 0xFFu);
+
+                    // 颜色混合：使用前帧颜色作为滤镜
+                    const int mixedR = (r + prevR) / 2;
+                    const int mixedG = (g + prevG) / 2;
+                    const int mixedB = (b + prevB) / 2;
+                    const ImU32 color = IM_COL32(mixedR, mixedG, mixedB, alpha);
+
+                    const ImVec2 p0(
+                        imagePos.x + static_cast<float>(x * zoom),
+                        imagePos.y + static_cast<float>(y * zoom));
+                    const ImVec2 p1(
+                        imagePos.x + static_cast<float>((x + 1) * zoom),
+                        imagePos.y + static_cast<float>((y + 1) * zoom));
+                    drawList->AddRectFilled(p0, p1, color);
+                }
+            }
+        }
+
+        // 渲染之后的帧
+        for (int i = 1; i <= nextFrames; ++i)
+        {
+            const int nextFrameIndex = frameIndex + i;
+            if (nextFrameIndex >= frameCount) break;
+
+            const Project::Frame& nextFrame = project->getFrame(nextFrameIndex);
+            // 透明度渐变：离当前帧越远，透明度越低
+            const float alphaFactor = static_cast<float>(nextFrames - i + 1) / static_cast<float>(nextFrames + 1);
+            const int alpha = static_cast<int>(baseNextAlpha * alphaFactor);
+
+            // 渲染后帧的半透明像素
+            for (int y = 0; y < height; ++y)
+            {
+                for (int x = 0; x < width; ++x)
+                {
+                    const size_t index = static_cast<size_t>(y) * static_cast<size_t>(width) + static_cast<size_t>(x);
+                    const uint32_t pixel = nextFrame.pixels[index];
+                    if (pixel == 0) continue; // 跳过透明像素
+
+                    // 提取像素颜色并与后帧颜色混合
+                    const int r = static_cast<int>(pixel & 0xFFu);
+                    const int g = static_cast<int>((pixel >> 8) & 0xFFu);
+                    const int b = static_cast<int>((pixel >> 16) & 0xFFu);
+
+                    // 颜色混合：使用后帧颜色作为滤镜
+                    const int mixedR = (r + nextR) / 2;
+                    const int mixedG = (g + nextG) / 2;
+                    const int mixedB = (b + nextB) / 2;
+                    const ImU32 color = IM_COL32(mixedR, mixedG, mixedB, alpha);
+
+                    const ImVec2 p0(
+                        imagePos.x + static_cast<float>(x * zoom),
+                        imagePos.y + static_cast<float>(y * zoom));
+                    const ImVec2 p1(
+                        imagePos.x + static_cast<float>((x + 1) * zoom),
+                        imagePos.y + static_cast<float>((y + 1) * zoom));
+                    drawList->AddRectFilled(p0, p1, color);
+                }
+            }
+        }
     }
 
     drawList->AddImage(

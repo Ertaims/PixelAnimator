@@ -583,14 +583,86 @@ public:
 
     // 是否开启洋葱皮
     bool isOnionSkinEnabled() const 
-    { 
-        return onionSkinEnabled_; 
+    {
+        return onionSkinEnabled_;
     }
 
     // 设置洋葱皮开关
     void setOnionSkinEnabled(bool enabled) 
-    { 
-        onionSkinEnabled_ = enabled; 
+    {
+        onionSkinEnabled_ = enabled;
+    }
+
+    // 洋葱皮前帧显示数量
+    int getOnionSkinPreviousFrames() const
+    {
+        return onionSkinPreviousFrames_;
+    }
+
+    // 设置洋葱皮前帧显示数量
+    void setOnionSkinPreviousFrames(int count)
+    {
+        onionSkinPreviousFrames_ = std::max(0, std::min(10, count));
+    }
+
+    // 洋葱皮后帧显示数量
+    int getOnionSkinNextFrames() const
+    {
+        return onionSkinNextFrames_;
+    }
+
+    // 设置洋葱皮后帧显示数量
+    void setOnionSkinNextFrames(int count)
+    {
+        onionSkinNextFrames_ = std::max(0, std::min(10, count));
+    }
+
+    // 洋葱皮前帧透明度
+    int getOnionSkinPreviousAlpha() const
+    {
+        return onionSkinPreviousAlpha_;
+    }
+
+    // 设置洋葱皮前帧透明度
+    void setOnionSkinPreviousAlpha(int alpha)
+    {
+        onionSkinPreviousAlpha_ = std::max(0, std::min(255, alpha));
+    }
+
+    // 洋葱皮后帧透明度
+    int getOnionSkinNextAlpha() const
+    {
+        return onionSkinNextAlpha_;
+    }
+
+    // 设置洋葱皮后帧透明度
+    void setOnionSkinNextAlpha(int alpha)
+    {
+        onionSkinNextAlpha_ = std::max(0, std::min(255, alpha));
+    }
+
+    // 洋葱皮前帧颜色
+    uint32_t getOnionSkinPreviousColor() const
+    {
+        return onionSkinPreviousColor_;
+    }
+
+    // 设置洋葱皮前帧颜色
+    void setOnionSkinPreviousColor(uint32_t color)
+    {
+        onionSkinPreviousColor_ = color;
+    }
+
+    // 洋葱皮后帧颜色
+    uint32_t getOnionSkinNextColor() const
+    {
+        return onionSkinNextColor_;
+    }
+
+    // 设置洋葱皮后帧颜色
+    void setOnionSkinNextColor(uint32_t color)
+    {
+        onionSkinNextColor_ = color;
     }
 
     // 是否显示时间线面板
@@ -682,6 +754,12 @@ private:
     // 视图选项
     bool gridVisible_ = false;
     bool onionSkinEnabled_ = false;
+    int onionSkinPreviousFrames_ = 3;
+    int onionSkinNextFrames_ = 3;
+    int onionSkinPreviousAlpha_ = 50;
+    int onionSkinNextAlpha_ = 50;
+    uint32_t onionSkinPreviousColor_ = 0xFF0000FF; // 红色
+    uint32_t onionSkinNextColor_ = 0x0000FFFF; // 蓝色
     bool timelineVisible_ = true;
     bool checkerboardBackground_ = true;
 };

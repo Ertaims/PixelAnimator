@@ -77,6 +77,68 @@ void ProjectWindow::renderRightPanel(Project* project)
     bool onionSkin = context->isOnionSkinEnabled();
     if (ImGui::Checkbox("Onion Skin", &onionSkin)) context->setOnionSkinEnabled(onionSkin);
 
+    // 洋葱皮高级设置
+    if (onionSkin)
+    {
+        ImGui::Indent();
+        
+        // 前帧设置
+        ImGui::TextUnformatted("Previous Frames:");
+        int previousFrames = context->getOnionSkinPreviousFrames();
+        if (ImGui::SliderInt("Count", &previousFrames, 1, 10)) context->setOnionSkinPreviousFrames(previousFrames);
+        
+        int previousAlpha = context->getOnionSkinPreviousAlpha();
+        if (ImGui::SliderInt("Alpha", &previousAlpha, 10, 200)) context->setOnionSkinPreviousAlpha(previousAlpha);
+        
+        uint32_t previousColor = context->getOnionSkinPreviousColor();
+        // 转换为 ImGui 颜色格式
+        float previousColorF[3] = {
+            static_cast<float>((previousColor & 0xFFu)) / 255.0f,
+            static_cast<float>(((previousColor >> 8) & 0xFFu)) / 255.0f,
+            static_cast<float>(((previousColor >> 16) & 0xFFu)) / 255.0f
+        };
+        if (ImGui::ColorEdit3("Color", previousColorF))
+        {
+            // 转换回 RGBA 格式
+            uint32_t newColor = (
+                (static_cast<uint8_t>(previousColorF[0] * 255.0f) & 0xFFu) |
+                ((static_cast<uint8_t>(previousColorF[1] * 255.0f) & 0xFFu) << 8) |
+                ((static_cast<uint8_t>(previousColorF[2] * 255.0f) & 0xFFu) << 16) |
+                (0xFFu << 24)
+            );
+            context->setOnionSkinPreviousColor(newColor);
+        }
+        
+        // 后帧设置
+        ImGui::TextUnformatted("Next Frames:");
+        int nextFrames = context->getOnionSkinNextFrames();
+        if (ImGui::SliderInt("Count##Next", &nextFrames, 1, 10)) context->setOnionSkinNextFrames(nextFrames);
+        
+        int nextAlpha = context->getOnionSkinNextAlpha();
+        if (ImGui::SliderInt("Alpha##Next", &nextAlpha, 10, 200)) context->setOnionSkinNextAlpha(nextAlpha);
+        
+        uint32_t nextColor = context->getOnionSkinNextColor();
+        // 转换为 ImGui 颜色格式
+        float nextColorF[3] = {
+            static_cast<float>((nextColor & 0xFFu)) / 255.0f,
+            static_cast<float>(((nextColor >> 8) & 0xFFu)) / 255.0f,
+            static_cast<float>(((nextColor >> 16) & 0xFFu)) / 255.0f
+        };
+        if (ImGui::ColorEdit3("Color##Next", nextColorF))
+        {
+            // 转换回 RGBA 格式
+            uint32_t newColor = (
+                (static_cast<uint8_t>(nextColorF[0] * 255.0f) & 0xFFu) |
+                ((static_cast<uint8_t>(nextColorF[1] * 255.0f) & 0xFFu) << 8) |
+                ((static_cast<uint8_t>(nextColorF[2] * 255.0f) & 0xFFu) << 16) |
+                (0xFFu << 24)
+            );
+            context->setOnionSkinNextColor(newColor);
+        }
+        
+        ImGui::Unindent();
+    }
+
     ImGui::Separator();
     ImGui::TextUnformatted("Project");
     ImGui::Text("Name: %s", project->getName().c_str());
