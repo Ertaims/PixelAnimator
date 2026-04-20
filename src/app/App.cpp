@@ -6,6 +6,7 @@
 #include "app/App.h"
 
 #include "commands/PixelClipboardCommands.h"
+#include "commands/DeleteCommand.h"
 #include "core/AppContext.h"
 #include "core/Project.h"
 #include "io/ImageExporter.h"
@@ -338,6 +339,7 @@ void App::createMenuAndWindows()
         editMenu_->setOnCutRequested([this]() { executeCutSelection(); });
         editMenu_->setOnCopyRequested([this]() { executeCopySelection(); });
         editMenu_->setOnPasteRequested([this]() { executePasteSelection(); });
+        editMenu_->setOnDeleteRequested([this]() { executeDelete(); });
     }
     menuFactory.createViewMenu(menuManager_);
     menuFactory.createHelpMenu(menuManager_);
@@ -1146,6 +1148,13 @@ void App::handleEditMenuShortcuts()
 {
     ImGuiIO& io = ImGui::GetIO();
 
+    // Delete：Delete
+    if (ImGui::IsKeyPressed(ImGuiKey_Delete, false))
+    {
+        executeDelete();
+        return;
+    }
+
     // 文本输入时不处理全局编辑快捷键，避免和输入框冲突。
     if (io.WantTextInput) return;
     if (!io.KeyCtrl) return;
@@ -1261,6 +1270,20 @@ bool App::executeCopySelection()
 
     std::string error;
     if (!commands::CopySelectionCommand::execute(*activeContext_, pixelClipboard_, &error))
+    {
+        if (!error.empty()) showError(error);
+        return false;
+    }
+
+    return true;
+}
+
+bool App::executeDelete()
+{
+    if (!activeContext_) return false;
+
+    std::string error;
+    if (!commands::DeleteCommand::execute(*activeContext_, &error))
     {
         if (!error.empty()) showError(error);
         return false;

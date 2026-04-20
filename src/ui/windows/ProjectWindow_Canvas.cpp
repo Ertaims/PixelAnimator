@@ -5,6 +5,7 @@
 #include "core/Project.h"
 #include "imgui.h"
 #include "tools/BrushTool.h"
+#include "tools/CurveTool.h"
 #include "tools/EraserTool.h"
 #include "tools/EyedropperTool.h"
 #include "tools/FillTool.h"
@@ -462,7 +463,7 @@ void ProjectWindow::renderCanvasPanel(Project* project)
 
     const bool anyPopupOpen = ImGui::IsPopupOpen(nullptr, ImGuiPopupFlags_AnyPopupId);
     // 矩形模式切换弹窗是“非阻塞 popup”：打开时不应禁用窗口内其它功能。
-    const bool blockingPopupOpen = anyPopupOpen && !toolbarState_.rectModePopupVisible;
+    const bool blockingPopupOpen = anyPopupOpen && !toolbarState_.rectModePopupVisible && !toolbarState_.lineModePopupVisible;
     const bool hovered =
         mousePos.x >= imagePos.x &&
         mousePos.y >= imagePos.y &&
@@ -576,6 +577,32 @@ void ProjectWindow::renderCanvasPanel(Project* project)
         lineTool_.resetInteractionState(&frame);
     }
 
+    // 将曲线工具作为独立类处理输入与实时预览。
+    if (!blockNormalToolInput && context->getTool() == ToolType::Curve)
+    {
+        bool curvePixelsCommitted = false;
+        curveTool_.handleInteraction(
+            *context,
+            frame,
+            canvasHitboxHovered,
+            hovered,
+            blockingPopupOpen,
+            mousePixelX,
+            mousePixelY,
+            width,
+            height,
+            curvePixelsCommitted);
+        if (curvePixelsCommitted)
+        {
+            if (context->hasMultiFrameSelection()) context->setSingleFrameSelection(frameIndex, frameCount);
+            context->setProjectDirty(true, "Curve");
+        }
+    }
+    else
+    {
+        curveTool_.resetInteractionState(&frame);
+    }
+
     // 将矩形描边工具作为独立类处理输入与实时预览。
     if (!blockNormalToolInput && context->getTool() == ToolType::Rect)
     {
@@ -638,6 +665,7 @@ void ProjectWindow::renderCanvasPanel(Project* project)
         && ImGui::IsMouseDown(ImGuiMouseButton_Left)
         && context->getTool() != ToolType::RectSelection
         && context->getTool() != ToolType::Line
+        && context->getTool() != ToolType::Curve
         && context->getTool() != ToolType::Rect
         && context->getTool() != ToolType::RectFilled)
     {
@@ -779,7 +807,7 @@ void ProjectWindow::renderCanvasPanel(Project* project)
         // - 其他工具维持 1 像素高亮。
         int previewRadius = 0;
         const ToolType activeTool = context->getTool();
-        if (activeTool == ToolType::Brush || activeTool == ToolType::Eraser || activeTool == ToolType::Line) previewRadius = std::max(0, context->getBrushSize() - 1);
+        if (activeTool == ToolType::Brush || activeTool == ToolType::Eraser || activeTool == ToolType::Line || activeTool == ToolType::Curve) previewRadius = std::max(0, context->getBrushSize() - 1);
 
         const int minX = std::max(0, mousePixelX - previewRadius);
         const int maxX = std::min(width - 1, mousePixelX + previewRadius);

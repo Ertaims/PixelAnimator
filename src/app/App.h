@@ -242,6 +242,7 @@ private:
     bool executeCutSelection();                                         // Cut（有像素选区时生效）
     bool executeCopySelection();                                        // Copy（有像素选区时生效）
     bool executePasteSelection();                                       // Paste（有像素选区时生效）
+    bool executeDelete();                                               // Delete（有像素选区时生效，否则删除当前帧或选中的帧）
 
     // ---------------- 平台与渲染状态 ----------------
     SDL_Window* window_ = nullptr;

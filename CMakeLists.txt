@@ -30,14 +30,17 @@ set(SOURCES
     src/io/ImageExporter.cpp
     src/io/ImageImporter.cpp
     src/commands/PixelClipboardCommands.cpp
+    src/commands/DeleteCommand.cpp
     src/tools/BrushTool.cpp
     src/tools/EraserTool.cpp
     src/tools/EyedropperTool.cpp
     src/tools/FillTool.cpp
     src/tools/LineTool.cpp
+    src/tools/CurveTool.cpp
     src/tools/RectFilledTool.cpp
     src/tools/RectangleTool.cpp
     src/tools/RectSelectionTool.cpp
+    src/tools/MagicWandSelectionTool.cpp
     src/ui/menu/MenuBase.cpp
     src/ui/menu/MenuItem.cpp
     src/ui/menu/Menu.cpp

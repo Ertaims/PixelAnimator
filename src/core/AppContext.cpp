@@ -243,6 +243,78 @@ bool AppContext::applyRectPixelSelection(int x0,
     return pixelSelectionMask_ != beforeMask;
 }
 
+bool AppContext::applyEllipsePixelSelection(int x0,
+                                            int y0,
+                                            int x1,
+                                            int y1,
+                                            int canvasWidth,
+                                            int canvasHeight,
+                                            PixelSelectionOp op)
+{
+    ensurePixelSelectionCanvasSize(canvasWidth, canvasHeight);
+    if (pixelSelectionMask_.empty()) return false;
+
+    PixelRect rect;
+    rect.x = std::min(x0, x1);
+    rect.y = std::min(y0, y1);
+    rect.width = std::abs(x1 - x0) + 1;
+    rect.height = std::abs(y1 - y0) + 1;
+    if (!clampRectToCanvas(rect, canvasWidth, canvasHeight)) return false;
+
+    const std::vector<uint8_t> beforeMask = pixelSelectionMask_;
+    if (op == PixelSelectionOp::Replace) std::fill(pixelSelectionMask_.begin(), pixelSelectionMask_.end(), static_cast<uint8_t>(0));
+
+    const float cx = static_cast<float>(rect.x) + (static_cast<float>(rect.width) - 1.0f) * 0.5f;
+    const float cy = static_cast<float>(rect.y) + (static_cast<float>(rect.height) - 1.0f) * 0.5f;
+    const float rx = std::max(0.5f, (static_cast<float>(rect.width) - 1.0f) * 0.5f);
+    const float ry = std::max(0.5f, (static_cast<float>(rect.height) - 1.0f) * 0.5f);
+
+    for (int py = rect.y; py < rect.y + rect.height; ++py)
+    {
+        const size_t rowOffset = static_cast<size_t>(py) * static_cast<size_t>(canvasWidth);
+        for (int px = rect.x; px < rect.x + rect.width; ++px)
+        {
+            const float nx = (static_cast<float>(px) + 0.5f - cx) / rx;
+            const float ny = (static_cast<float>(py) + 0.5f - cy) / ry;
+            if ((nx * nx + ny * ny) > 1.0f) continue;
+
+            const size_t index = rowOffset + static_cast<size_t>(px);
+            if (op == PixelSelectionOp::Remove) pixelSelectionMask_[index] = 0;
+            else
+                pixelSelectionMask_[index] = 1;
+        }
+    }
+
+    pixelSelectionHasAny_ = containsSelectedPixel(pixelSelectionMask_);
+    return pixelSelectionMask_ != beforeMask;
+}
+
+bool AppContext::applyMaskPixelSelection(const std::vector<uint8_t>& inputMask,
+                                         int canvasWidth,
+                                         int canvasHeight,
+                                         PixelSelectionOp op)
+{
+    ensurePixelSelectionCanvasSize(canvasWidth, canvasHeight);
+    if (pixelSelectionMask_.empty()) return false;
+
+    const size_t expectedSize = static_cast<size_t>(canvasWidth) * static_cast<size_t>(canvasHeight);
+    if (inputMask.size() != expectedSize) return false;
+
+    const std::vector<uint8_t> beforeMask = pixelSelectionMask_;
+    if (op == PixelSelectionOp::Replace) std::fill(pixelSelectionMask_.begin(), pixelSelectionMask_.end(), static_cast<uint8_t>(0));
+
+    for (size_t i = 0; i < expectedSize; ++i)
+    {
+        if (inputMask[i] == 0) continue;
+        if (op == PixelSelectionOp::Remove) pixelSelectionMask_[i] = 0;
+        else
+            pixelSelectionMask_[i] = 1;
+    }
+
+    pixelSelectionHasAny_ = containsSelectedPixel(pixelSelectionMask_);
+    return pixelSelectionMask_ != beforeMask;
+}
+
 bool AppContext::getPixelSelectionBounds(PixelRect& outRect) const
 {
     if (pixelSelectionCanvasWidth_ <= 0 || pixelSelectionCanvasHeight_ <= 0 || pixelSelectionMask_.empty()) return false;

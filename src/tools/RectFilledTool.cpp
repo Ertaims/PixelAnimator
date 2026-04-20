@@ -9,6 +9,10 @@ namespace
 {
     /**
      * @brief 栅格化填充矩形（包含边界），并受选区约束。
+     * @param x0 左上角x坐标
+     * @param y0 左上角y坐标
+     * @param x1 右下角x坐标
+     * @param y1 右下角y坐标
      */
     void rasterizeFilledRectangle(std::vector<uint32_t>& pixels,
                                   int canvasWidth,
@@ -20,22 +24,22 @@ namespace
                                   uint32_t color,
                                   const AppContext& context)
     {
-        const int minX = std::max(0, std::min(x0, x1));
-        const int maxX = std::min(canvasWidth - 1, std::max(x0, x1));
-        const int minY = std::max(0, std::min(y0, y1));
-        const int maxY = std::min(canvasHeight - 1, std::max(y0, y1));
+        const int X_Left = std::max(0, std::min(x0, x1));
+        const int X_Right = std::min(canvasWidth - 1, std::max(x0, x1));
+        const int Y_Top = std::max(0, std::min(y0, y1));
+        const int Y_Bottom = std::min(canvasHeight - 1, std::max(y0, y1));
 
-        for (int y = minY; y <= maxY; ++y)
+        for (int y = Y_Top; y <= Y_Bottom; ++y)
         {
             const size_t rowOffset = static_cast<size_t>(y) * static_cast<size_t>(canvasWidth);
-            for (int x = minX; x <= maxX; ++x)
+            for (int x = X_Left; x <= X_Right; ++x)
             {
                 if (!context.canEditPixel(x, y, canvasWidth, canvasHeight)) continue;
                 pixels[rowOffset + static_cast<size_t>(x)] = color;
             }
         }
     }
-} // namespace
+}
 
 bool RectFilledTool::apply(Project::Frame& frame,
                            int canvasWidth,

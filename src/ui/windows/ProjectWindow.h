@@ -3,6 +3,7 @@
 
 #include "Window.h"
 #include "commands/PixelClipboardCommands.h"
+#include "tools/CurveTool.h"
 #include "tools/LineTool.h"
 #include "tools/RectFilledTool.h"
 #include "tools/RectangleTool.h"
@@ -115,9 +116,32 @@ private:
         unsigned int eyedropperIconTexture = 0;                     // 取色器图标纹理 ID
         unsigned int fillIconTexture = 0;                           // 填充工具图标纹理 ID
         unsigned int rectSelectIconTexture = 0;                     // 矩形框选图标纹理 ID
+        unsigned int circleSelectIconTexture = 0;                   // 圆形框选图标纹理 ID
+        unsigned int magicWandSelectIconTexture = 0;                // 魔棒框选图标纹理 ID
+        unsigned int lassoSelectIconTexture = 0;                    // 套索框选图标纹理 ID
+        unsigned int polygonLassoSelectIconTexture = 0;             // 多边形套索图标纹理 ID
         unsigned int lineIconTexture = 0;                           // 直线工具图标纹理 ID
+        unsigned int curveIconTexture = 0;                          // 曲线工具图标纹理 ID
         unsigned int rectIconTexture = 0;                           // 矩形绘制工具图标纹理 ID
         unsigned int rectFilledIconTexture = 0;                     // 填充矩形工具图标纹理 ID
+        bool selectionModePopupVisible = false;                     // 框选模式面板是否可见（长按触发，非阻塞）
+        RectSelectionTool::SelectionShape lastSelectionShape = RectSelectionTool::SelectionShape::Rectangle; // 记录上一次框选模式
+        bool selectionModeLongPressActive = false;                  // 当前是否处于框选按钮长按会话
+        double selectionModeLongPressStart = 0.0;                   // 长按开始时间戳（ImGui::GetTime）
+        float selectionModeLongPressThreshold = 0.22f;              // 触发模式面板的长按阈值（秒）
+        float selectionModePanelPosX = 0.0f;                        // 模式面板屏幕 X（锚定在按钮右侧）
+        float selectionModePanelPosY = 0.0f;                        // 模式面板屏幕 Y
+        bool selectionModePanelHasHover = false;                    // 当前帧是否悬停在某个模式图标上
+        RectSelectionTool::SelectionShape selectionModePanelHoverShape = RectSelectionTool::SelectionShape::Rectangle; // 当前悬停候选模式
+        bool lineModePopupVisible = false;                          // 线工具模式面板是否可见（长按触发，非阻塞）
+        ToolType lastLineMode = ToolType::Line;                     // 记录上一次线模式（Line / Curve）
+        bool lineModeLongPressActive = false;                       // 当前是否处于 Line 按钮长按会话
+        double lineModeLongPressStart = 0.0;                        // 长按开始时间戳
+        float lineModeLongPressThreshold = 0.22f;                   // 触发模式面板的长按阈值（秒）
+        float lineModePanelPosX = 0.0f;                             // 模式面板屏幕 X（锚定在按钮右侧）
+        float lineModePanelPosY = 0.0f;                             // 模式面板屏幕 Y
+        bool lineModePanelHasHover = false;                         // 当前帧是否悬停在线模式候选图标上
+        ToolType lineModePanelHoverMode = ToolType::Line;           // 当前悬停候选线模式
         bool rectModePopupVisible = false;                          // 矩形模式面板是否可见（长按触发，非阻塞）
         ToolType lastRectMode = ToolType::Rect;                     // 记录上一次矩形模式（Rect / RectFilled）
         bool rectModeLongPressActive = false;                       // 当前是否处于 Rectangle 按钮长按会话
@@ -189,6 +213,7 @@ private:
     ToolbarState toolbarState_;                     // 工具栏状态
     StrokeContinuityState strokeState_;             // 连续笔划状态（每个项目窗口独立）
     LineTool lineTool_;                             // 直线工具实例（每个项目窗口独立）
+    CurveTool curveTool_;                           // 曲线工具实例（每个项目窗口独立）
     RectangleTool rectangleTool_;                   // 矩形工具实例（每个项目窗口独立）
     RectFilledTool rectFilledTool_;                 // 填充矩形工具实例（每个项目窗口独立）
     RectSelectionTool rectSelectionTool_;           // 矩形框选工具实例（每个项目窗口独立）

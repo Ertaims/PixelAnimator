@@ -30,8 +30,13 @@ enum class ToolType : int
     Fill,          // 油漆桶（区域填充）
     RectSelection, // 矩形框选
     Line,          // 直线
+    Curve,         // 曲线（三次贝塞尔）
     Rect,          // 矩形
     RectFilled,    // 填充矩形
+    Circle,        // 圆形描边
+    CircleFilled,  // 圆形填充
+    Polygon,       // 多边形描边
+    PolygonFilled, // 多边形填充
     Count          // 工具数量，用于遍历与边界检查
 };
 
@@ -454,6 +459,35 @@ public:
                                  int y0,
                                  int x1,
                                  int y1,
+                                 int canvasWidth,
+                                 int canvasHeight,
+                                 PixelSelectionOp op);
+
+    /**
+     * @brief 使用拖拽椭圆更新选区（支持 Replace/Add/Remove）。
+     *
+     * 说明：
+     * - 外部通常通过“矩形框选工具的圆形模式”调用该接口；
+     * - 椭圆由拖拽矩形的外接框定义，内部像素会被纳入选区；
+     * - 与矩形选区一样，选区为空时会先清空旧选区再写入。
+     */
+    bool applyEllipsePixelSelection(int x0,
+                                    int y0,
+                                    int x1,
+                                    int y1,
+                                    int canvasWidth,
+                                    int canvasHeight,
+                                    PixelSelectionOp op);
+
+    /**
+     * @brief 使用“任意掩码”更新像素选区（支持 Replace/Add/Remove）。
+     *
+     * 说明：
+     * - 该接口用于魔棒等“非矩形/非椭圆”选择工具；
+     * - inputMask 尺寸必须与 canvasWidth*canvasHeight 一致；
+     * - 掩码中非 0 值视为“命中像素”。
+     */
+    bool applyMaskPixelSelection(const std::vector<uint8_t>& inputMask,
                                  int canvasWidth,
                                  int canvasHeight,
                                  PixelSelectionOp op);

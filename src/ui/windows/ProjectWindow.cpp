@@ -51,10 +51,35 @@ ProjectWindow::~ProjectWindow()
         glDeleteTextures(1, &toolbarState_.rectSelectIconTexture);
         toolbarState_.rectSelectIconTexture = 0;
     }
+    if (toolbarState_.circleSelectIconTexture != 0)
+    {
+        glDeleteTextures(1, &toolbarState_.circleSelectIconTexture);
+        toolbarState_.circleSelectIconTexture = 0;
+    }
+    if (toolbarState_.magicWandSelectIconTexture != 0)
+    {
+        glDeleteTextures(1, &toolbarState_.magicWandSelectIconTexture);
+        toolbarState_.magicWandSelectIconTexture = 0;
+    }
+    if (toolbarState_.lassoSelectIconTexture != 0)
+    {
+        glDeleteTextures(1, &toolbarState_.lassoSelectIconTexture);
+        toolbarState_.lassoSelectIconTexture = 0;
+    }
+    if (toolbarState_.polygonLassoSelectIconTexture != 0)
+    {
+        glDeleteTextures(1, &toolbarState_.polygonLassoSelectIconTexture);
+        toolbarState_.polygonLassoSelectIconTexture = 0;
+    }
     if (toolbarState_.lineIconTexture != 0)
     {
         glDeleteTextures(1, &toolbarState_.lineIconTexture);
         toolbarState_.lineIconTexture = 0;
+    }
+    if (toolbarState_.curveIconTexture != 0)
+    {
+        glDeleteTextures(1, &toolbarState_.curveIconTexture);
+        toolbarState_.curveIconTexture = 0;
     }
     if (toolbarState_.rectIconTexture != 0)
     {

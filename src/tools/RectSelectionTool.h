@@ -1,6 +1,7 @@
 ﻿#pragma once
 
 #include "Tool.h"
+#include "tools/MagicWandSelectionTool.h"
 #include "imgui.h"
 #include <vector>
 
@@ -12,11 +13,32 @@
  * - 由于框选是“交互型工具”（需要拖拽状态机 + 叠加渲染），
  *   因此除了 Tool::apply 之外，额外提供 handleInteraction / renderOverlay 接口；
  * - Tool::apply 在该工具中不直接修改像素，返回 false。
- */
+ **/
 class RectSelectionTool final : public Tool
 {
 public:
+    /**
+     * @brief 框选形状模式。
+     *
+     * Rectangle：矩形框选。
+     * Ellipse：圆形/椭圆框选。
+     * MagicWand：魔棒连通域框选。
+     * Lasso：套索自由框选（任意闭合形状）。
+     * PolygonLasso：多边形套索（点击加点，点击起点闭合）。
+     */
+    enum class SelectionShape : int
+    {
+        Rectangle = 0,
+        Ellipse,
+        MagicWand,
+        Lasso,
+        PolygonLasso
+    };
+
     ToolType type() const override { return ToolType::RectSelection; }
+
+    SelectionShape getSelectionShape() const { return selectionShape_; }
+    void setSelectionShape(SelectionShape shape) { selectionShape_ = shape; }
 
     /**
      * @brief 与 Tool 接口保持一致；矩形框选不通过该入口改像素，因此固定返回 false。
@@ -79,6 +101,8 @@ private:
         {
             None = 0,      // 空闲
             BoxSelecting,  // 拖拽框选
+            LassoSelecting,// 套索自由框选
+            PolygonLassoSelecting, // 多边形套索
             Moving,        // 拖拽平移
             Resizing       // 拖拽手柄缩放
         };
@@ -96,6 +120,9 @@ private:
         bool previewBoundsValid = false;
         bool previewFlipX = false; // 当前预览是否发生 X 方向翻转
         bool previewFlipY = false; // 当前预览是否发生 Y 方向翻转
+        std::vector<ImVec2> lassoPathPixels; // 套索路径采样点（画布像素坐标）
+        int hoverMouseX = 0; // 多边形套索预览线的当前鼠标 X
+        int hoverMouseY = 0; // 多边形套索预览线的当前鼠标 Y
     };
 
     InteractionState state_;
@@ -106,4 +133,6 @@ private:
     AppContext::PixelRect sourceBounds_;            // 基准选区外接框
     AppContext::PixelRect lastCommittedBounds_;     // 上一次提交后的选区外接框（用于判断缓存是否仍可复用）
     bool sourceCacheValid_ = false;
+    SelectionShape selectionShape_ = SelectionShape::Rectangle;
+    MagicWandSelectionTool magicWandTool_; // 魔棒选区模块（独立类，负责连通域拾取）
 };

@@ -33,12 +33,40 @@ void ProjectWindow::renderRightPanel(Project* project)
         ImGui::TextWrapped("Click a pixel on canvas to flood-fill connected area.");
         break;
     case ToolType::RectSelection:
-        ImGui::TextUnformatted("Current: Rect Selection");
-        ImGui::BulletText("Left Drag: Replace selection");
-        ImGui::BulletText("Ctrl + Left Drag: Add to selection");
-        ImGui::BulletText("Right Drag: Remove from selection");
-        ImGui::BulletText("Drag inside selection: Move");
-        ImGui::BulletText("Drag 8 handles: Resize (Ctrl = keep ratio)");
+        ImGui::TextUnformatted("Current: Selection");
+        if (rectSelectionTool_.getSelectionShape() == RectSelectionTool::SelectionShape::MagicWand)
+        {
+            ImGui::BulletText("Left Click: Pick connected region (Replace)");
+            ImGui::BulletText("Ctrl + Left Click: Add connected region");
+            ImGui::BulletText("Right Click: Remove connected region");
+            ImGui::BulletText("Drag inside selection: Move");
+            ImGui::BulletText("Drag 8 handles: Resize (Ctrl = keep ratio)");
+        }
+        else if (rectSelectionTool_.getSelectionShape() == RectSelectionTool::SelectionShape::Lasso)
+        {
+            ImGui::BulletText("Left Drag: Free-form selection (Replace)");
+            ImGui::BulletText("Ctrl + Left Drag: Add free-form selection");
+            ImGui::BulletText("Right Drag: Remove free-form selection");
+            ImGui::BulletText("Drag inside selection: Move");
+            ImGui::BulletText("Drag 8 handles: Resize (Ctrl = keep ratio)");
+        }
+        else if (rectSelectionTool_.getSelectionShape() == RectSelectionTool::SelectionShape::PolygonLasso)
+        {
+            ImGui::BulletText("Left Click: Add polygon point (Replace/Ctrl=Add)");
+            ImGui::BulletText("Right Click: Add polygon point in Remove mode");
+            ImGui::BulletText("Click first point: Close and commit polygon");
+            ImGui::BulletText("Right click while left polygon active: Cancel");
+            ImGui::BulletText("Drag inside selection: Move");
+            ImGui::BulletText("Drag 8 handles: Resize (Ctrl = keep ratio)");
+        }
+        else
+        {
+            ImGui::BulletText("Left Drag: Replace selection");
+            ImGui::BulletText("Ctrl + Left Drag: Add to selection");
+            ImGui::BulletText("Right Drag: Remove from selection");
+            ImGui::BulletText("Drag inside selection: Move");
+            ImGui::BulletText("Drag 8 handles: Resize (Ctrl = keep ratio)");
+        }
         if (context->hasPixelSelection())
         {
             if (ImGui::Button("Clear Selection")) context->clearPixelSelection();
@@ -50,6 +78,17 @@ void ProjectWindow::renderRightPanel(Project* project)
         ImGui::TextWrapped("Left drag on canvas to preview and draw a line.");
         int brushSize = context->getBrushSize();
         if (ImGui::SliderInt("Line Width", &brushSize, 1, 32)) context->setBrushSize(brushSize);
+        break;
+    }
+    case ToolType::Curve:
+    {
+        ImGui::TextUnformatted("Current: Curve");
+        ImGui::TextWrapped("Step1: Left drag to define start/end.");
+        ImGui::TextWrapped("Step2: move mouse and left click to set Control Point 1.");
+        ImGui::TextWrapped("Step3: move mouse and left click to set Control Point 2 and commit.");
+        ImGui::TextWrapped("Right click: cancel current curve.");
+        int brushSize = context->getBrushSize();
+        if (ImGui::SliderInt("Curve Width", &brushSize, 1, 32)) context->setBrushSize(brushSize);
         break;
     }
     case ToolType::Rect:

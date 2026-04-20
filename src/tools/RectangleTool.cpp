@@ -9,11 +9,19 @@
 namespace
 {
     /**
-     * @brief 在指定像素位置盖一个“方形笔刷印章”。
+     * @brief 在指定像素位置盖一个“方形笔刷印章”
      *
      * 说明：
      * - 复用 brushSize 语义，使矩形描边粗细与 Brush/Line 一致；
-     * - 受像素选区约束，选区外不会被修改。
+     * - 受像素选区约束，选区外不会被修改
+     * @param pixels 缓冲区
+     * @param canvasWidth 缓冲区宽
+     * @param canvasHeight 缓冲区高
+     * @param cx 绘制位置 X 坐标
+     * @param cy 绘制位置 Y 坐标
+     * @param brushSize 笔刷大小
+     * @param color 绘制颜色
+     * @param context 应用上下文
      */
     void stampBrushSquare(std::vector<uint32_t>& pixels,
                           int canvasWidth,
@@ -24,16 +32,16 @@ namespace
                           uint32_t color,
                           const AppContext& context)
     {
-        const int radius = std::max(0, brushSize - 1);
-        const int minX = std::max(0, cx - radius);
-        const int maxX = std::min(canvasWidth - 1, cx + radius);
-        const int minY = std::max(0, cy - radius);
-        const int maxY = std::min(canvasHeight - 1, cy + radius);
+        const int radius = std::max(0, brushSize - 1);              // 笔刷半径
+        const int X_Left = std::max(0, cx - radius);                  // 绘制区域最小 X 坐标
+        const int X_Right = std::min(canvasWidth - 1, cx + radius);    // 绘制区域最大 X 坐标
+        const int Y_Top = std::max(0, cy - radius);                  // 绘制区域最小 Y 坐标
+        const int Y_Bottom = std::min(canvasHeight - 1, cy + radius);   // 绘制区域最大 Y 坐标
 
-        for (int y = minY; y <= maxY; ++y)
+        for (int y = Y_Top; y <= Y_Bottom; ++y)
         {
             const size_t rowOffset = static_cast<size_t>(y) * static_cast<size_t>(canvasWidth);
-            for (int x = minX; x <= maxX; ++x)
+            for (int x = X_Left; x <= X_Right; ++x)
             {
                 if (!context.canEditPixel(x, y, canvasWidth, canvasHeight)) continue;
                 pixels[rowOffset + static_cast<size_t>(x)] = color;
@@ -42,7 +50,12 @@ namespace
     }
 
     /**
-     * @brief Bresenham 线段栅格化，用于矩形四条边绘制。
+     * @brief Bresenham 线段栅格化，用于矩形四条边绘制
+     * @pram pixels 缓冲区
+     * @param x0 线段起点 X 坐标
+     * @param y0 线段起点 Y 坐标
+     * @param x1 线段终点 X 坐标
+     * @param y1 线段终点 Y 坐标
      */
     void rasterizeLine(std::vector<uint32_t>& pixels,
                        int canvasWidth,
@@ -82,13 +95,18 @@ namespace
     }
 
     /**
-     * @brief 在像素缓冲中绘制“描边矩形”。
+     * @brief 在像素缓冲中绘制“描边矩形”
      *
      * 说明：
      * - 输入为任意两个对角点，会先归一化成 min/max；
      * - 采用四边线段绘制，保证与 Line 工具风格一致；
-     * - 单点或单行/单列退化情形由 Bresenham 自动处理。
-     */
+     * - 单点或单行/单列退化情形由 Bresenham 自动处理
+     * 
+     * @param x0 矩形左上角 X 坐标
+     * @param y0 矩形左上角 Y 坐标
+     * @param x1 矩形右下角 X 坐标
+     * @param y1 矩形右下角 Y 坐标
+     **/
     void rasterizeRectangleOutline(std::vector<uint32_t>& pixels,
                                    int canvasWidth,
                                    int canvasHeight,
@@ -100,18 +118,18 @@ namespace
                                    uint32_t color,
                                    const AppContext& context)
     {
-        const int minX = std::min(x0, x1);
-        const int maxX = std::max(x0, x1);
-        const int minY = std::min(y0, y1);
-        const int maxY = std::max(y0, y1);
+        const int X_Left = std::min(x0, x1);
+        const int X_Right = std::max(x0, x1);
+        const int Y_Top = std::min(y0, y1);
+        const int Y_Bottom = std::max(y0, y1);
 
         // 上边 + 下边
-        rasterizeLine(pixels, canvasWidth, canvasHeight, minX, minY, maxX, minY, brushSize, color, context);
-        if (maxY != minY) rasterizeLine(pixels, canvasWidth, canvasHeight, minX, maxY, maxX, maxY, brushSize, color, context);
+        rasterizeLine(pixels, canvasWidth, canvasHeight, X_Left, Y_Top, X_Right, Y_Top, brushSize, color, context);
+        if (Y_Bottom != Y_Top) rasterizeLine(pixels, canvasWidth, canvasHeight, X_Left, Y_Bottom, X_Right, Y_Bottom, brushSize, color, context);
 
         // 左边 + 右边
-        rasterizeLine(pixels, canvasWidth, canvasHeight, minX, minY, minX, maxY, brushSize, color, context);
-        if (maxX != minX) rasterizeLine(pixels, canvasWidth, canvasHeight, maxX, minY, maxX, maxY, brushSize, color, context);
+        rasterizeLine(pixels, canvasWidth, canvasHeight, X_Left, Y_Top, X_Left, Y_Bottom, brushSize, color, context);
+        if (X_Right != X_Left) rasterizeLine(pixels, canvasWidth, canvasHeight, X_Right, Y_Top, X_Right, Y_Bottom, brushSize, color, context);
     }
 } // namespace
 
@@ -152,7 +170,7 @@ void RectangleTool::handleInteraction(AppContext& context,
         return;
     }
 
-    // 开始新矩形拖拽。
+    // 开始新矩形拖拽
     if (canvasHitboxHovered && hoveredOnImage && ImGui::IsMouseClicked(ImGuiMouseButton_Left))
     {
         state_.drawing = true;
@@ -166,7 +184,7 @@ void RectangleTool::handleInteraction(AppContext& context,
 
     if (!state_.drawing || !state_.hasBasePixels) return;
 
-    // 拖拽实时预览：每帧都从快照重算矩形，避免重复叠加。
+    // 拖拽实时预览：每帧都从快照重算矩形，避免重复叠加
     state_.endX = mousePixelX;
     state_.endY = mousePixelY;
 
@@ -183,7 +201,7 @@ void RectangleTool::handleInteraction(AppContext& context,
                               context);
     frame.pixels.swap(previewPixels);
 
-    // 抬起提交。
+    // 抬起提交
     if (!ImGui::IsMouseDown(ImGuiMouseButton_Left))
     {
         outPixelsCommitted = (frame.pixels != state_.basePixels);
@@ -202,7 +220,7 @@ void RectangleTool::renderOverlay(const AppContext& context,
     (void)imagePos;
     (void)zoom;
     (void)anyPopupOpen;
-    // 当前版本不额外绘制叠加层，实时预览直接体现在像素缓冲中。
+    // 当前版本不额外绘制叠加层，实时预览直接体现在像素缓冲中
 }
 
 void RectangleTool::resetInteractionState(Project::Frame* frame)

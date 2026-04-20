@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "MenuOptionBase.h"
 #include <functional>
@@ -17,6 +17,7 @@ public:
     void setOnCutRequested(const std::function<void()>& callback) { onCutRequested_ = callback; }
     void setOnCopyRequested(const std::function<void()>& callback) { onCopyRequested_ = callback; }
     void setOnPasteRequested(const std::function<void()>& callback) { onPasteRequested_ = callback; }
+    void setOnDeleteRequested(const std::function<void()>& callback) { onDeleteRequested_ = callback; }
 
 private:
     AppContext* context_ = nullptr;
@@ -24,4 +25,5 @@ private:
     std::function<void()> onCutRequested_;
     std::function<void()> onCopyRequested_;
     std::function<void()> onPasteRequested_;
+    std::function<void()> onDeleteRequested_;
 };

@@ -1,4 +1,4 @@
-﻿#include "Menu_Edit.h"
+#include "Menu_Edit.h"
 #include "ui/menu/Menu.h"
 #include "ui/menu/MenuItem.h"
 #include "core/AppContext.h"
@@ -44,7 +44,10 @@ void Menu_Edit::initialize() {
     
     getMenu()->addSeparator();
     
-    getMenu()->addItem("Delete", "Del");
+    MenuItem* deleteItem = getMenu()->addItem("Delete", "Del");
+    deleteItem->setCallback([this]() {
+        if (onDeleteRequested_) onDeleteRequested_();
+    });
     
     getMenu()->addSeparator();
     
