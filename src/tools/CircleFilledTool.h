@@ -5,18 +5,21 @@
 #include <vector>
 
 /**
- * @brief 圆形描边工具（独立工具类，支持实时预览）。
+ * @brief 填充圆形工具（独立工具类，支持实时预览）。
  *
  * 交互：
  * - 左键按下记录起点并缓存快照；
- * - 拖拽时按外接矩形实时预览圆形轮廓；
+ * - 拖拽时每帧基于快照重算填充圆形预览；
  * - 松开左键提交。
  */
-class CircleTool final : public Tool 
+class CircleFilledTool final : public Tool
 {
 public:
-    ToolType type() const override { return ToolType::Circle; };
+    ToolType type() const override { return ToolType::CircleFilled; }
 
+    /**
+     * @brief 与 Tool 接口保持一致；核心交互在 handleInteraction(...) 中完成。
+     */
     bool apply(Project::Frame& frame,
                int canvasWidth,
                int canvasHeight,
@@ -24,17 +27,10 @@ public:
                int y,
                AppContext& context,
                bool isMouseClicked) const override;
-    
+
     /**
-     * @brief 处理工具交互。
-     *
-     * @param context 应用程序上下文。
-     * @param frame 当前帧。
-     * @param canvasHitboxHovered 画布是否被鼠标悬停。
-     * @param hoveredOnImage 鼠标是否悬停在图像上。
-     * @param anyPopupOpen 是否有任何弹出窗口打开。
-     * @param mousePixelX 鼠标在画布中的 X 坐标。
-     **/
+     * @brief 处理填充圆形工具输入与实时预览。
+     */
     void handleInteraction(AppContext& context,
                            Project::Frame& frame,
                            bool canvasHitboxHovered,
@@ -47,7 +43,7 @@ public:
                            bool& outPixelsCommitted);
 
     /**
-     * @brief 可选叠加层（当前版本无需额外叠加，保留接口以便后续扩展）。
+     * @brief 当前版本无需额外叠加层，预留接口。
      */
     void renderOverlay(const AppContext& context,
                        ImDrawList* drawList,
@@ -56,7 +52,7 @@ public:
                        bool anyPopupOpen) const;
 
     /**
-     * @brief 重置交互状态；若传入 frame 且当前在预览中，会恢复到拖拽前快照。
+     * @brief 重置交互状态；若存在预览中快照，恢复到快照像素。
      */
     void resetInteractionState(Project::Frame* frame = nullptr);
 
@@ -72,5 +68,5 @@ private:
         bool hasBasePixels = false;
     };
 
-    InteractionState m_interactionState;
+    InteractionState state_;
 };

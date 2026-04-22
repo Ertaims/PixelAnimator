@@ -1,4 +1,4 @@
-﻿#include "ProjectWindow.h"
+#include "ProjectWindow.h"
 
 #include "core/AppContext.h"
 #include "imgui.h"
@@ -54,6 +54,8 @@ namespace
      * @param lineIcon 直线工具图标纹理输出
      * @param rectIcon 矩形描边图标纹理输出
      * @param rectFilledIcon 矩形填充图标纹理输出
+     * @param circleIcon 圆形描边图标纹理输出
+     * @param circleFilledIcon 圆形填充图标纹理输出
      * @param loaded 图标是否已加载完成
      */
     void ensureToolbarIconTextures(GLuint& brushIcon,
@@ -69,6 +71,8 @@ namespace
                                    GLuint& curveIcon,
                                    GLuint& rectIcon,
                                    GLuint& rectFilledIcon,
+                                   GLuint& circleIcon,
+                                   GLuint& circleFilledIcon,
                                    bool& loaded)
     {
         if (loaded) return;
@@ -86,6 +90,8 @@ namespace
         const char* curveIconPath               =   { "../src/assets/curveTool.png" };
         const char* rectIconPath                =   { "../src/assets/rectangleTool.png" };
         const char* rectFilledIconPath          =   { "../src/assets/rectangleTool_Filled.png" };
+        const char* circleIconPath              =   { "../src/assets/CircleTool.png" };
+        const char* circleFilledIconPath        =   { "../src/assets/CircleTool_Filled.png" };
 
         brushIcon = loadTextureFromFile(brushIconPath);
         eraserIcon = loadTextureFromFile(eraserIconPath);
@@ -100,6 +106,8 @@ namespace
         curveIcon = loadTextureFromFile(curveIconPath);
         rectIcon = loadTextureFromFile(rectIconPath);
         rectFilledIcon = loadTextureFromFile(rectFilledIconPath);
+        circleIcon = loadTextureFromFile(circleIconPath);
+        circleFilledIcon = loadTextureFromFile(circleFilledIconPath);
 
         loaded = true;
     }
@@ -134,13 +142,16 @@ void ProjectWindow::renderToolbarPanel()
         toolbarState_.curveIconTexture,
         toolbarState_.rectIconTexture,
         toolbarState_.rectFilledIconTexture,
+        toolbarState_.circleIconTexture,
+        toolbarState_.circleFilledIconTexture,
         toolbarState_.iconsLoaded);
 
     ImGui::TextUnformatted("Tools");
     ImGui::Separator();
 
     // 同步工具模式状态：确保切走其他工具后再回来时，能记住用户最近的选择
-    if (context->getTool() == ToolType::Rect || context->getTool() == ToolType::RectFilled) {
+    if (context->getTool() == ToolType::Rect || context->getTool() == ToolType::RectFilled || 
+        context->getTool() == ToolType::Circle || context->getTool() == ToolType::CircleFilled) {
         toolbarState_.lastRectMode = context->getTool();
     }
     if (context->getTool() == ToolType::Line || context->getTool() == ToolType::Curve) {
@@ -151,12 +162,23 @@ void ProjectWindow::renderToolbarPanel()
     }
     
     // ===== 矩形工具组状态 =====
-    const bool rectModeActive = (context->getTool() == ToolType::Rect || context->getTool() == ToolType::RectFilled);
-    const bool rectFilledMode = (toolbarState_.lastRectMode == ToolType::RectFilled);
-    const unsigned int currentRectModeIcon = rectFilledMode && toolbarState_.rectFilledIconTexture != 0
-        ? toolbarState_.rectFilledIconTexture
-        : toolbarState_.rectIconTexture;
-    const char* currentRectModeLabel = rectFilledMode ? "Rectangle (Filled)" : "Rectangle (Outline)";
+    const bool rectModeActive = (context->getTool() == ToolType::Rect || context->getTool() == ToolType::RectFilled || 
+                               context->getTool() == ToolType::Circle || context->getTool() == ToolType::CircleFilled);
+    
+    // 确定当前工具图标和标签
+    unsigned int currentRectModeIcon = toolbarState_.rectIconTexture;
+    const char* currentRectModeLabel = "Rectangle (Outline)";
+    
+    if (toolbarState_.lastRectMode == ToolType::RectFilled) {
+        currentRectModeIcon = toolbarState_.rectFilledIconTexture;
+        currentRectModeLabel = "Rectangle (Filled)";
+    } else if (toolbarState_.lastRectMode == ToolType::Circle) {
+        currentRectModeIcon = toolbarState_.circleIconTexture;
+        currentRectModeLabel = "Circle (Outline)";
+    } else if (toolbarState_.lastRectMode == ToolType::CircleFilled) {
+        currentRectModeIcon = toolbarState_.circleFilledIconTexture;
+        currentRectModeLabel = "Circle (Filled)";
+    }
     
     // ===== 线条工具组状态 =====
     const bool lineModeActive = (context->getTool() == ToolType::Line || context->getTool() == ToolType::Curve);
@@ -696,15 +718,18 @@ void ProjectWindow::renderToolbarPanel()
                         "##RectModePanel_" + std::to_string(reinterpret_cast<uintptr_t>(this));
                     if (ImGui::Begin(panelWindowName.c_str(), nullptr, panelFlags))
                     {
-                        // 面板内两个候选模式。lastRectMode 决定默认高亮。
+                        // 面板内四个候选模式。lastRectMode 决定默认高亮。
                         const bool modeRect = (toolbarState_.lastRectMode == ToolType::Rect);
                         const bool modeRectFilled = (toolbarState_.lastRectMode == ToolType::RectFilled);
+                        const bool modeCircle = (toolbarState_.lastRectMode == ToolType::Circle);
+                        const bool modeCircleFilled = (toolbarState_.lastRectMode == ToolType::CircleFilled);
                         const ImVec2 modeIconSize(24.0f, 24.0f);
                         const ImVec2 modeFramePad(3.0f, 3.0f);
 
                         ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, modeFramePad);
                         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(4.0f, 4.0f));
 
+                        // 矩形（描边）
                         if (modeRect) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.24f, 0.52f, 0.86f, 1.0f));
                         if (toolbarState_.rectIconTexture != 0)
                         {
@@ -720,8 +745,6 @@ void ProjectWindow::renderToolbarPanel()
                         if (modeRect) ImGui::PopStyleColor();
                         const ImVec2 outlineMin = ImGui::GetItemRectMin();
                         const ImVec2 outlineMax = ImGui::GetItemRectMax();
-                        // 不依赖 IsItemHovered：
-                        // 长按时按钮 ActiveId 可能影响 hovered 判定，直接用屏幕矩形命中更稳定。
                         const bool outlineHovered =
                             mousePos.x >= outlineMin.x && mousePos.y >= outlineMin.y &&
                             mousePos.x < outlineMax.x && mousePos.y < outlineMax.y;
@@ -730,7 +753,6 @@ void ProjectWindow::renderToolbarPanel()
                             toolbarState_.rectModePanelHasHover = true;
                             toolbarState_.rectModePanelHoverMode = ToolType::Rect;
                             ImGui::SetTooltip("%s", "Outline Rectangle");
-                            // 悬停高亮：黄边，给“松开将选择”的视觉反馈。
                             ImGui::GetWindowDrawList()->AddRect(
                                 outlineMin,
                                 outlineMax,
@@ -742,6 +764,7 @@ void ProjectWindow::renderToolbarPanel()
 
                         ImGui::SameLine();
 
+                        // 矩形（填充）
                         if (modeRectFilled) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.24f, 0.52f, 0.86f, 1.0f));
                         if (toolbarState_.rectFilledIconTexture != 0)
                         {
@@ -757,7 +780,6 @@ void ProjectWindow::renderToolbarPanel()
                         if (modeRectFilled) ImGui::PopStyleColor();
                         const ImVec2 filledMin = ImGui::GetItemRectMin();
                         const ImVec2 filledMax = ImGui::GetItemRectMax();
-                        // 同样采用屏幕矩形命中，保证 Filled 项在长按链路下可稳定识别。
                         const bool filledHovered =
                             mousePos.x >= filledMin.x && mousePos.y >= filledMin.y &&
                             mousePos.x < filledMax.x && mousePos.y < filledMax.y;
@@ -769,6 +791,76 @@ void ProjectWindow::renderToolbarPanel()
                             ImGui::GetWindowDrawList()->AddRect(
                                 filledMin,
                                 filledMax,
+                                IM_COL32(255, 220, 40, 255),
+                                3.0f,
+                                0,
+                                2.0f);
+                        }
+
+                        ImGui::SameLine();
+
+                        // 圆形（描边）
+                        if (modeCircle) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.24f, 0.52f, 0.86f, 1.0f));
+                        if (toolbarState_.circleIconTexture != 0)
+                        {
+                            ImGui::ImageButton(
+                                "##circle_mode_outline_panel",
+                                reinterpret_cast<ImTextureID>(static_cast<uintptr_t>(toolbarState_.circleIconTexture)),
+                                modeIconSize);
+                        }
+                        else
+                        {
+                            ImGui::Button("OC", modeIconSize);
+                        }
+                        if (modeCircle) ImGui::PopStyleColor();
+                        const ImVec2 circleOutlineMin = ImGui::GetItemRectMin();
+                        const ImVec2 circleOutlineMax = ImGui::GetItemRectMax();
+                        const bool circleOutlineHovered =
+                            mousePos.x >= circleOutlineMin.x && mousePos.y >= circleOutlineMin.y &&
+                            mousePos.x < circleOutlineMax.x && mousePos.y < circleOutlineMax.y;
+                        if (circleOutlineHovered)
+                        {
+                            toolbarState_.rectModePanelHasHover = true;
+                            toolbarState_.rectModePanelHoverMode = ToolType::Circle;
+                            ImGui::SetTooltip("%s", "Outline Circle");
+                            ImGui::GetWindowDrawList()->AddRect(
+                                circleOutlineMin,
+                                circleOutlineMax,
+                                IM_COL32(255, 220, 40, 255),
+                                3.0f,
+                                0,
+                                2.0f);
+                        }
+
+                        ImGui::SameLine();
+
+                        // 圆形（填充）
+                        if (modeCircleFilled) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.24f, 0.52f, 0.86f, 1.0f));
+                        if (toolbarState_.circleFilledIconTexture != 0)
+                        {
+                            ImGui::ImageButton(
+                                "##circle_mode_filled_panel",
+                                reinterpret_cast<ImTextureID>(static_cast<uintptr_t>(toolbarState_.circleFilledIconTexture)),
+                                modeIconSize);
+                        }
+                        else
+                        {
+                            ImGui::Button("FC", modeIconSize);
+                        }
+                        if (modeCircleFilled) ImGui::PopStyleColor();
+                        const ImVec2 circleFilledMin = ImGui::GetItemRectMin();
+                        const ImVec2 circleFilledMax = ImGui::GetItemRectMax();
+                        const bool circleFilledHovered =
+                            mousePos.x >= circleFilledMin.x && mousePos.y >= circleFilledMin.y &&
+                            mousePos.x < circleFilledMax.x && mousePos.y < circleFilledMax.y;
+                        if (circleFilledHovered)
+                        {
+                            toolbarState_.rectModePanelHasHover = true;
+                            toolbarState_.rectModePanelHoverMode = ToolType::CircleFilled;
+                            ImGui::SetTooltip("%s", "Filled Circle");
+                            ImGui::GetWindowDrawList()->AddRect(
+                                circleFilledMin,
+                                circleFilledMax,
                                 IM_COL32(255, 220, 40, 255),
                                 3.0f,
                                 0,

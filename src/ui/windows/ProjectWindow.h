@@ -1,8 +1,10 @@
-﻿#ifndef PROJECTWINDOW_H
+#ifndef PROJECTWINDOW_H
 #define PROJECTWINDOW_H
 
 #include "Window.h"
 #include "commands/PixelClipboardCommands.h"
+#include "tools/CircleTool.h"
+#include "tools/CircleFilledTool.h"
 #include "tools/CurveTool.h"
 #include "tools/LineTool.h"
 #include "tools/RectFilledTool.h"
@@ -124,6 +126,8 @@ private:
         unsigned int curveIconTexture = 0;                          // 曲线工具图标纹理 ID
         unsigned int rectIconTexture = 0;                           // 矩形绘制工具图标纹理 ID
         unsigned int rectFilledIconTexture = 0;                     // 填充矩形工具图标纹理 ID
+        unsigned int circleIconTexture = 0;                         // 圆形绘制工具图标纹理 ID
+        unsigned int circleFilledIconTexture = 0;                   // 填充圆形工具图标纹理 ID
         bool selectionModePopupVisible = false;                     // 框选模式面板是否可见（长按触发，非阻塞）
         RectSelectionTool::SelectionShape lastSelectionShape = RectSelectionTool::SelectionShape::Rectangle; // 记录上一次框选模式
         bool selectionModeLongPressActive = false;                  // 当前是否处于框选按钮长按会话
@@ -143,7 +147,7 @@ private:
         bool lineModePanelHasHover = false;                         // 当前帧是否悬停在线模式候选图标上
         ToolType lineModePanelHoverMode = ToolType::Line;           // 当前悬停候选线模式
         bool rectModePopupVisible = false;                          // 矩形模式面板是否可见（长按触发，非阻塞）
-        ToolType lastRectMode = ToolType::Rect;                     // 记录上一次矩形模式（Rect / RectFilled）
+        ToolType lastRectMode = ToolType::Rect;                     // 记录上一次矩形模式（Rect / RectFilled / Circle / CircleFilled）
         bool rectModeLongPressActive = false;                       // 当前是否处于 Rectangle 按钮长按会话
         double rectModeLongPressStart = 0.0;                        // 长按开始时间戳（ImGui::GetTime）
         float rectModeLongPressThreshold = 0.22f;                   // 触发模式面板的长按阈值（秒）
@@ -216,6 +220,8 @@ private:
     CurveTool curveTool_;                           // 曲线工具实例（每个项目窗口独立）
     RectangleTool rectangleTool_;                   // 矩形工具实例（每个项目窗口独立）
     RectFilledTool rectFilledTool_;                 // 填充矩形工具实例（每个项目窗口独立）
+    CircleTool circleTool_;                         // 圆形工具实例（每个项目窗口独立）
+    CircleFilledTool circleFilledTool_;             // 填充圆形工具实例（每个项目窗口独立）
     RectSelectionTool rectSelectionTool_;           // 矩形框选工具实例（每个项目窗口独立）
     PastePreviewState pastePreviewState_;           // 粘贴预览状态（每个项目窗口独立）
     int lastCanvasWidth_ = 0;                       // 上一帧渲染时的画布宽度（用于自动适配缩放）

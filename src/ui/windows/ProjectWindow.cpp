@@ -1,4 +1,4 @@
-﻿#include "ProjectWindow.h"
+#include "ProjectWindow.h"
 
 #include "core/AppContext.h"
 #include "core/Project.h"
@@ -90,6 +90,16 @@ ProjectWindow::~ProjectWindow()
     {
         glDeleteTextures(1, &toolbarState_.rectFilledIconTexture);
         toolbarState_.rectFilledIconTexture = 0;
+    }
+    if (toolbarState_.circleIconTexture != 0)
+    {
+        glDeleteTextures(1, &toolbarState_.circleIconTexture);
+        toolbarState_.circleIconTexture = 0;
+    }
+    if (toolbarState_.circleFilledIconTexture != 0)
+    {
+        glDeleteTextures(1, &toolbarState_.circleFilledIconTexture);
+        toolbarState_.circleFilledIconTexture = 0;
     }
 }
 

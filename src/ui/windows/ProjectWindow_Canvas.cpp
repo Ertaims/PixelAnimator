@@ -655,6 +655,60 @@ void ProjectWindow::renderCanvasPanel(Project* project)
         rectFilledTool_.resetInteractionState(&frame);
     }
 
+    // 将圆形描边工具作为独立类处理输入与实时预览。
+    if (!blockNormalToolInput && context->getTool() == ToolType::Circle)
+    {
+        bool circlePixelsCommitted = false;
+        circleTool_.handleInteraction(
+            *context,
+            frame,
+            canvasHitboxHovered,
+            hovered,
+            anyPopupOpen,
+            mousePixelX,
+            mousePixelY,
+            width,
+            height,
+            circlePixelsCommitted);
+        if (circlePixelsCommitted)
+        {
+            if (context->hasMultiFrameSelection()) context->setSingleFrameSelection(frameIndex, frameCount);
+            context->setProjectDirty(true, "Circle");
+        }
+    }
+    else
+    {
+        // 切换到其它工具时，清理圆形工具预览状态并恢复快照（若有）。
+        circleTool_.resetInteractionState(&frame);
+    }
+
+    // 将填充圆形工具作为独立类处理输入与实时预览。
+    if (!blockNormalToolInput && context->getTool() == ToolType::CircleFilled)
+    {
+        bool circleFilledPixelsCommitted = false;
+        circleFilledTool_.handleInteraction(
+            *context,
+            frame,
+            canvasHitboxHovered,
+            hovered,
+            anyPopupOpen,
+            mousePixelX,
+            mousePixelY,
+            width,
+            height,
+            circleFilledPixelsCommitted);
+        if (circleFilledPixelsCommitted)
+        {
+            if (context->hasMultiFrameSelection()) context->setSingleFrameSelection(frameIndex, frameCount);
+            context->setProjectDirty(true, "Filled Circle");
+        }
+    }
+    else
+    {
+        // 切换到其它工具时，清理填充圆形工具预览状态并恢复快照（若有）。
+        circleFilledTool_.resetInteractionState(&frame);
+    }
+
     // 常规像素编辑工具仅在非 RectSelection 下处理。
     const ToolType activeTool = context->getTool();
     const bool isBrushLikeTool = (activeTool == ToolType::Brush || activeTool == ToolType::Eraser);
@@ -667,7 +721,9 @@ void ProjectWindow::renderCanvasPanel(Project* project)
         && context->getTool() != ToolType::Line
         && context->getTool() != ToolType::Curve
         && context->getTool() != ToolType::Rect
-        && context->getTool() != ToolType::RectFilled)
+        && context->getTool() != ToolType::RectFilled
+        && context->getTool() != ToolType::Circle
+        && context->getTool() != ToolType::CircleFilled)
     {
         const Tool* tool = resolveTool(context->getTool());
         if (tool)

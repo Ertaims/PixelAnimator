@@ -41,6 +41,8 @@ set(SOURCES
     src/tools/RectangleTool.cpp
     src/tools/RectSelectionTool.cpp
     src/tools/MagicWandSelectionTool.cpp
+    src/tools/CircleTool.cpp
+    src/tools/CircleFilledTool.cpp
     src/ui/menu/MenuBase.cpp
     src/ui/menu/MenuItem.cpp
     src/ui/menu/Menu.cpp
