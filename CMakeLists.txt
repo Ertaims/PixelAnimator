@@ -31,6 +31,8 @@ set(SOURCES
     src/io/ImageImporter.cpp
     src/commands/PixelClipboardCommands.cpp
     src/commands/DeleteCommand.cpp
+    src/commands/FlipCommand.cpp
+    src/commands/RotateCommand.cpp
     src/tools/BrushTool.cpp
     src/tools/EraserTool.cpp
     src/tools/EyedropperTool.cpp

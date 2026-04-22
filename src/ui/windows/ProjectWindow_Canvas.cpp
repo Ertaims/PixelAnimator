@@ -17,6 +17,8 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <utility>
+#include <vector>
 
 namespace
 {
@@ -120,6 +122,127 @@ namespace
     }
 
     /**
+     * @brief 根据当前对称开关生成“原始点 + 镜像点”列表。
+     *
+     * 说明：
+     * - 对称是全局绘制开关，不再占用 ToolType；
+     * - 左右对称会生成 x 镜像点；
+     * - 上下对称会生成 y 镜像点；
+     * - 两个开关同时开启时，还会生成斜对角镜像点；
+     * - 最后去重，避免中心轴上的像素重复落笔。
+     */
+    std::vector<std::pair<int, int>> collectSymmetryPoints(int x,
+                                                           int y,
+                                                           int canvasWidth,
+                                                           int canvasHeight,
+                                                           const AppContext& context)
+    {
+        std::vector<std::pair<int, int>> points;
+        auto addPoint = [&](int px, int py) {
+            if (px < 0 || px >= canvasWidth || py < 0 || py >= canvasHeight) return;
+            const std::pair<int, int> point(px, py);
+            if (std::find(points.begin(), points.end(), point) == points.end()) points.push_back(point);
+        };
+
+        addPoint(x, y);
+
+        const bool mirrorLeftRight = context.isLeftRightSymmetryEnabled();
+        const bool mirrorUpDown = context.isUpDownSymmetryEnabled();
+        if (mirrorLeftRight) addPoint(canvasWidth - 1 - x, y);
+        if (mirrorUpDown) addPoint(x, canvasHeight - 1 - y);
+        if (mirrorLeftRight && mirrorUpDown) addPoint(canvasWidth - 1 - x, canvasHeight - 1 - y);
+
+        return points;
+    }
+
+    /**
+     * @brief 在原始点及其对称镜像点上执行同一个工具。
+     *
+     * 用途：
+     * - Brush/Eraser/Fill 等单点工具可以立即复用对称开关；
+     * - 如果原始点没有产生变化，但镜像点需要变化，也能正确落笔。
+     */
+    bool applyToolWithSymmetry(const Tool& tool,
+                               Project::Frame& frame,
+                               int canvasWidth,
+                               int canvasHeight,
+                               int x,
+                               int y,
+                               AppContext& context,
+                               bool isMouseClicked)
+    {
+        bool changed = false;
+        const std::vector<std::pair<int, int>> points = collectSymmetryPoints(x, y, canvasWidth, canvasHeight, context);
+        for (size_t i = 0; i < points.size(); ++i)
+        {
+            // Fill 也应该在镜像点触发一次；其它一次性工具只保留第一个点的点击语义。
+            const bool clickedForPoint = (tool.type() == ToolType::Fill)
+                ? isMouseClicked
+                : ((i == 0) ? isMouseClicked : false);
+            if (tool.apply(frame,
+                           canvasWidth,
+                           canvasHeight,
+                           points[i].first,
+                           points[i].second,
+                           context,
+                           clickedForPoint))
+            {
+                changed = true;
+            }
+        }
+        return changed;
+    }
+
+    /**
+     * @brief 把“相对基线发生变化的像素”镜像到对称位置。
+     *
+     * 用途：
+     * - Line/Rectangle/Circle 等拖拽预览工具内部会从自己的快照重算像素；
+     * - 画布层无法直接让这些工具多实例同步预览，因此在工具绘制后比较基线差异，
+     *   再把差异像素复制到镜像位置。
+     */
+    bool mirrorPixelDiffsFromBase(const std::vector<uint32_t>& basePixels,
+                                  Project::Frame& frame,
+                                  int canvasWidth,
+                                  int canvasHeight,
+                                  AppContext& context)
+    {
+        const size_t expectedSize = static_cast<size_t>(canvasWidth) * static_cast<size_t>(canvasHeight);
+        if (basePixels.size() != expectedSize || frame.pixels.size() != expectedSize) return false;
+        if (!context.isAnySymmetryEnabled()) return false;
+
+        std::vector<std::pair<size_t, uint32_t>> writes;
+        for (int y = 0; y < canvasHeight; ++y)
+        {
+            for (int x = 0; x < canvasWidth; ++x)
+            {
+                const size_t index = static_cast<size_t>(y) * static_cast<size_t>(canvasWidth) + static_cast<size_t>(x);
+                if (frame.pixels[index] == basePixels[index]) continue;
+
+                const std::vector<std::pair<int, int>> points = collectSymmetryPoints(x, y, canvasWidth, canvasHeight, context);
+                for (const auto& point : points)
+                {
+                    if (!context.canEditPixel(point.first, point.second, canvasWidth, canvasHeight)) continue;
+                    const size_t mirrorIndex =
+                        static_cast<size_t>(point.second) * static_cast<size_t>(canvasWidth) +
+                        static_cast<size_t>(point.first);
+                    if (mirrorIndex == index) continue;
+                    writes.emplace_back(mirrorIndex, frame.pixels[index]);
+                }
+            }
+        }
+
+        bool changed = false;
+        for (const auto& write : writes)
+        {
+            if (frame.pixels[write.first] == write.second) continue;
+            frame.pixels[write.first] = write.second;
+            changed = true;
+        }
+        return changed;
+    }
+
+    /**
      * @brief 在两点间做离散插值，并调用工具逐点落笔。
      *
      * 设计目的：
@@ -144,13 +267,14 @@ namespace
         // 退化情况：起点终点相同，直接单点落笔。
         if (steps <= 0)
         {
-            return tool.apply(frame,
-                              canvasWidth,
-                              canvasHeight,
-                              toX,
-                              toY,
-                              context,
-                              isMouseClicked);
+            return applyToolWithSymmetry(tool,
+                                         frame,
+                                         canvasWidth,
+                                         canvasHeight,
+                                         toX,
+                                         toY,
+                                         context,
+                                         isMouseClicked);
         }
 
         bool changed = false;
@@ -163,13 +287,14 @@ namespace
             // 仅第一步保留“点击瞬间”语义（给 Fill/Eyedropper 等一次性工具用），
             // 后续补点统一按拖拽连续输入处理。
             const bool stepClicked = (i == 0) ? isMouseClicked : false;
-            if (tool.apply(frame,
-                           canvasWidth,
-                           canvasHeight,
-                           px,
-                           py,
-                           context,
-                           stepClicked))
+            if (applyToolWithSymmetry(tool,
+                                      frame,
+                                      canvasWidth,
+                                      canvasHeight,
+                                      px,
+                                      py,
+                                      context,
+                                      stepClicked))
             {
                 changed = true;
             }
@@ -520,6 +645,26 @@ void ProjectWindow::renderCanvasPanel(Project* project)
         }
     }
 
+    const ToolType symmetryActiveTool = context->getTool();
+    const bool symmetryShouldTrackEdit =
+        context->isAnySymmetryEnabled() &&
+        !blockNormalToolInput &&
+        !blockingPopupOpen &&
+        symmetryActiveTool != ToolType::RectSelection &&
+        canvasHitboxHovered &&
+        hovered;
+
+    if (symmetryShouldTrackEdit && ImGui::IsMouseClicked(ImGuiMouseButton_Left))
+    {
+        symmetryEditState_.active = true;
+        symmetryEditState_.basePixels = frame.pixels;
+    }
+    if (!context->isAnySymmetryEnabled())
+    {
+        symmetryEditState_.active = false;
+        symmetryEditState_.basePixels.clear();
+    }
+
     // 将矩形框选工具作为独立类处理输入与叠加渲染。
     if (!blockNormalToolInput && context->getTool() == ToolType::RectSelection)
     {
@@ -765,8 +910,9 @@ void ProjectWindow::renderCanvasPanel(Project* project)
             }
             else
             {
-                // 非连续笔划工具维持原有单点输入逻辑。
-                changed = tool->apply(
+                // 非连续笔划工具也通过对称包装执行，使 Fill 等工具可以复用对称开关。
+                changed = applyToolWithSymmetry(
+                    *tool,
                     frame,
                     width,
                     height,
@@ -787,7 +933,7 @@ void ProjectWindow::renderCanvasPanel(Project* project)
     }
     else
     {
-        // 鼠标抬起时，把本次 Brush/Eraser 连续拖拽作为一个原子操作提交历史。
+        // 鼠标抬起时，把本次连续拖拽作为一个原子操作提交历史。
         if (!ImGui::IsMouseDown(ImGuiMouseButton_Left) && strokeState_.active && strokeState_.changedDuringStroke)
         {
             const char* actionLabel = (strokeState_.tool == ToolType::Eraser) ? "Eraser Stroke" : "Brush Stroke";
@@ -799,6 +945,16 @@ void ProjectWindow::renderCanvasPanel(Project* project)
         {
             strokeState_.active = false;
             strokeState_.changedDuringStroke = false;
+        }
+    }
+
+    if (symmetryEditState_.active)
+    {
+        mirrorPixelDiffsFromBase(symmetryEditState_.basePixels, frame, width, height, *context);
+        if (!ImGui::IsMouseDown(ImGuiMouseButton_Left))
+        {
+            symmetryEditState_.active = false;
+            symmetryEditState_.basePixels.clear();
         }
     }
 
@@ -863,7 +1019,13 @@ void ProjectWindow::renderCanvasPanel(Project* project)
         // - 其他工具维持 1 像素高亮。
         int previewRadius = 0;
         const ToolType activeTool = context->getTool();
-        if (activeTool == ToolType::Brush || activeTool == ToolType::Eraser || activeTool == ToolType::Line || activeTool == ToolType::Curve) previewRadius = std::max(0, context->getBrushSize() - 1);
+        if (activeTool == ToolType::Brush ||
+            activeTool == ToolType::Eraser ||
+            activeTool == ToolType::Line ||
+            activeTool == ToolType::Curve)
+        {
+            previewRadius = std::max(0, context->getBrushSize() - 1);
+        }
 
         const int minX = std::max(0, mousePixelX - previewRadius);
         const int maxX = std::min(width - 1, mousePixelX + previewRadius);
@@ -889,5 +1051,3 @@ void ProjectWindow::renderCanvasPanel(Project* project)
         drawList->PopClipRect();
     }
 }
-
-

@@ -73,6 +73,8 @@ namespace
                                    GLuint& rectFilledIcon,
                                    GLuint& circleIcon,
                                    GLuint& circleFilledIcon,
+                                   GLuint& symmetryLeftRightIcon,
+                                   GLuint& symmetryUpDownIcon,
                                    bool& loaded)
     {
         if (loaded) return;
@@ -92,6 +94,8 @@ namespace
         const char* rectFilledIconPath          =   { "../src/assets/rectangleTool_Filled.png" };
         const char* circleIconPath              =   { "../src/assets/CircleTool.png" };
         const char* circleFilledIconPath        =   { "../src/assets/CircleTool_Filled.png" };
+        const char* symmetryLeftRightIconPath   =   { "../src/assets/Symmetry_Right&Left.png" };
+        const char* symmetryUpDownIconPath      =   { "../src/assets/Symmetry_Up&Down.png" };
 
         brushIcon = loadTextureFromFile(brushIconPath);
         eraserIcon = loadTextureFromFile(eraserIconPath);
@@ -108,6 +112,8 @@ namespace
         rectFilledIcon = loadTextureFromFile(rectFilledIconPath);
         circleIcon = loadTextureFromFile(circleIconPath);
         circleFilledIcon = loadTextureFromFile(circleFilledIconPath);
+        symmetryLeftRightIcon = loadTextureFromFile(symmetryLeftRightIconPath);
+        symmetryUpDownIcon = loadTextureFromFile(symmetryUpDownIconPath);
 
         loaded = true;
     }
@@ -144,6 +150,8 @@ void ProjectWindow::renderToolbarPanel()
         toolbarState_.rectFilledIconTexture,
         toolbarState_.circleIconTexture,
         toolbarState_.circleFilledIconTexture,
+        toolbarState_.symmetryLeftRightIconTexture,
+        toolbarState_.symmetryUpDownIconTexture,
         toolbarState_.iconsLoaded);
 
     ImGui::TextUnformatted("Tools");
@@ -891,4 +899,5 @@ void ProjectWindow::renderToolbarPanel()
 
         ImGui::PopID();
     }
+
 }

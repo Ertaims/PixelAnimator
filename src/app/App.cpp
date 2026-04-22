@@ -7,6 +7,8 @@
 
 #include "commands/PixelClipboardCommands.h"
 #include "commands/DeleteCommand.h"
+#include "commands/FlipCommand.h"
+#include "commands/RotateCommand.h"
 #include "core/AppContext.h"
 #include "core/Project.h"
 #include "io/ImageExporter.h"
@@ -340,6 +342,8 @@ void App::createMenuAndWindows()
         editMenu_->setOnCopyRequested([this]() { executeCopySelection(); });
         editMenu_->setOnPasteRequested([this]() { executePasteSelection(); });
         editMenu_->setOnDeleteRequested([this]() { executeDelete(); });
+        editMenu_->setOnRotateRequested([this](commands::RotationAngle angle) { executeRotate(angle); });
+        editMenu_->setOnFlipRequested([this](commands::FlipDirection direction) { executeFlip(direction); });
     }
     menuFactory.createViewMenu(menuManager_);
     menuFactory.createHelpMenu(menuManager_);
@@ -1157,6 +1161,20 @@ void App::handleEditMenuShortcuts()
 
     // 文本输入时不处理全局编辑快捷键，避免和输入框冲突。
     if (io.WantTextInput) return;
+
+    // Shift+H / Shift+V：翻转当前帧或时间轴多选帧。
+    // 注意：这里不要求 Ctrl，与 Edit 菜单中的快捷键标注保持一致。
+    if (io.KeyShift && !io.KeyCtrl && !io.KeyAlt && ImGui::IsKeyPressed(ImGuiKey_H, false))
+    {
+        executeFlip(commands::FlipDirection::Horizontal);
+        return;
+    }
+    if (io.KeyShift && !io.KeyCtrl && !io.KeyAlt && ImGui::IsKeyPressed(ImGuiKey_V, false))
+    {
+        executeFlip(commands::FlipDirection::Vertical);
+        return;
+    }
+
     if (!io.KeyCtrl) return;
     if (!activeContext_) return;
 
@@ -1284,6 +1302,34 @@ bool App::executeDelete()
 
     std::string error;
     if (!commands::DeleteCommand::execute(*activeContext_, &error))
+    {
+        if (!error.empty()) showError(error);
+        return false;
+    }
+
+    return true;
+}
+
+bool App::executeRotate(commands::RotationAngle angle)
+{
+    if (!activeContext_) return false;
+
+    std::string error;
+    if (!commands::RotateCommand::execute(*activeContext_, angle, &error))
+    {
+        if (!error.empty()) showError(error);
+        return false;
+    }
+
+    return true;
+}
+
+bool App::executeFlip(commands::FlipDirection direction)
+{
+    if (!activeContext_) return false;
+
+    std::string error;
+    if (!commands::FlipCommand::execute(*activeContext_, direction, &error))
     {
         if (!error.empty()) showError(error);
         return false;

@@ -128,6 +128,8 @@ private:
         unsigned int rectFilledIconTexture = 0;                     // 填充矩形工具图标纹理 ID
         unsigned int circleIconTexture = 0;                         // 圆形绘制工具图标纹理 ID
         unsigned int circleFilledIconTexture = 0;                   // 填充圆形工具图标纹理 ID
+        unsigned int symmetryLeftRightIconTexture = 0;              // 左右对称工具图标纹理 ID
+        unsigned int symmetryUpDownIconTexture = 0;                 // 上下对称工具图标纹理 ID
         bool selectionModePopupVisible = false;                     // 框选模式面板是否可见（长按触发，非阻塞）
         RectSelectionTool::SelectionShape lastSelectionShape = RectSelectionTool::SelectionShape::Rectangle; // 记录上一次框选模式
         bool selectionModeLongPressActive = false;                  // 当前是否处于框选按钮长按会话
@@ -173,6 +175,21 @@ private:
         ToolType tool = ToolType::Brush;            // 启动笔划时的工具类型（Brush/Eraser）
     };
 
+    /**
+     * @brief 对称绘制状态。
+     *
+     * 说明：
+     * - 对称现在是“开关”而不是独立工具；
+     * - 拖拽开始时缓存一份像素快照；
+     * - 每帧把本次编辑相对快照产生的差异镜像到另一侧，
+     *   因此线条、矩形、圆形等实时预览工具也能复用对称效果。
+     */
+    struct SymmetryEditState
+    {
+        bool active = false;
+        std::vector<uint32_t> basePixels;
+    };
+
     // 粘贴预览状态（每个项目窗口独立）。
     struct PastePreviewState
     {
@@ -216,6 +233,7 @@ private:
     TimelineState timelineState_;                   // 时间轴状态
     ToolbarState toolbarState_;                     // 工具栏状态
     StrokeContinuityState strokeState_;             // 连续笔划状态（每个项目窗口独立）
+    SymmetryEditState symmetryEditState_;           // 对称绘制状态（每个项目窗口独立）
     LineTool lineTool_;                             // 直线工具实例（每个项目窗口独立）
     CurveTool curveTool_;                           // 曲线工具实例（每个项目窗口独立）
     RectangleTool rectangleTool_;                   // 矩形工具实例（每个项目窗口独立）

@@ -8,13 +8,6 @@
 
 namespace
 {
-    /**
-     * @brief 在指定像素位置盖一个“方形笔刷印章”。
-     *
-     * 说明：
-     * - 复用 brushSize 语义，使圆形描边粗细与 Brush/Line 一致；
-     * - 受像素选区约束，选区外不会被修改。
-     */
     void stampBrushSquare(std::vector<uint32_t>& pixels,
                           int canvasWidth,
                           int canvasHeight,
@@ -41,6 +34,14 @@ namespace
         }
     }
 
+    /**
+     * @brief 在椭圆边界算法给出的坐标上安全落笔。
+     *
+     * 说明：
+     * - 先检查单个边界点是否位于画布内，避免算法采样到画布外导致越界；
+     * - 真正写入像素由 stampBrushSquare(...) 完成，因此这里仍支持 brushSize；
+     * - 选区限制也在 stampBrushSquare(...) 内通过 context.canEditPixel(...) 统一处理。
+     */
     void plotBrushPoint(std::vector<uint32_t>& pixels,
                         int canvasWidth,
                         int canvasHeight,
@@ -55,12 +56,20 @@ namespace
     }
 
     /**
+     * @brief 四舍五入取整。
+     */
+    int roundHalfUp(double value)
+    {
+        return static_cast<int>(std::floor(value + 0.5));
+    }
+
+    /**
      * @brief 按外接矩形绘制椭圆描边。
      *
      * 说明：
      * - 拖拽框不再被强制压成正方形，宽高不同即可得到椭圆；
-     * - 同时按 x/y 两个方向采样边界，避免小尺寸像素画布上出现断点；
-     * - 使用半像素圆心，让 16x16 这类偶数尺寸能对称贴住四边。
+     * - 分别按列/行采样上下、左右边界，减少 Bresenham 椭圆在大圆上产生的八边形感；
+     * - 每个边界点都用外接矩形镜像生成另一侧，保证偶数尺寸下仍然完全对称。
      */
     void rasterizeEllipseOutline(std::vector<uint32_t>& pixels,
                                  int canvasWidth,
@@ -103,15 +112,18 @@ namespace
 
         const double centerX = (static_cast<double>(minX) + static_cast<double>(maxX)) * 0.5;
         const double centerY = (static_cast<double>(minY) + static_cast<double>(maxY)) * 0.5;
-        const double radiusX = static_cast<double>(width - 1) * 0.5;
-        const double radiusY = static_cast<double>(height - 1) * 0.5;
+        // Aseprite-style pixel ellipses sit slightly inside the mathematical bounding box.
+        // This avoids over-long top/bottom spans that make large circles look octagonal.
+        const double radiusInset = 0.25;
+        const double radiusX = std::max(0.5, static_cast<double>(width - 1) * 0.5 - radiusInset);
+        const double radiusY = std::max(0.5, static_cast<double>(height - 1) * 0.5 - radiusInset);
 
         for (int x = minX; x <= maxX; ++x)
         {
             const double normalizedX = (static_cast<double>(x) - centerX) / radiusX;
             const double yOffset = radiusY * std::sqrt(std::max(0.0, 1.0 - normalizedX * normalizedX));
-            const int topY = static_cast<int>(std::lround(centerY - yOffset));
-            const int bottomY = static_cast<int>(std::lround(centerY + yOffset));
+            const int topY = roundHalfUp(centerY - yOffset);
+            const int bottomY = minY + maxY - topY;
             plotBrushPoint(pixels, canvasWidth, canvasHeight, x, topY, brushSize, color, context);
             plotBrushPoint(pixels, canvasWidth, canvasHeight, x, bottomY, brushSize, color, context);
         }
@@ -120,8 +132,8 @@ namespace
         {
             const double normalizedY = (static_cast<double>(y) - centerY) / radiusY;
             const double xOffset = radiusX * std::sqrt(std::max(0.0, 1.0 - normalizedY * normalizedY));
-            const int leftX = static_cast<int>(std::lround(centerX - xOffset));
-            const int rightX = static_cast<int>(std::lround(centerX + xOffset));
+            const int leftX = roundHalfUp(centerX - xOffset);
+            const int rightX = minX + maxX - leftX;
             plotBrushPoint(pixels, canvasWidth, canvasHeight, leftX, y, brushSize, color, context);
             plotBrushPoint(pixels, canvasWidth, canvasHeight, rightX, y, brushSize, color, context);
         }

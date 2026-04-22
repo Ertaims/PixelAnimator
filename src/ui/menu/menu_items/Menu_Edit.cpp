@@ -56,9 +56,35 @@ void Menu_Edit::initialize() {
     
     getMenu()->addSeparator();
     
-    getMenu()->addItem("Rotate");
-    getMenu()->addItem("Flip Horizontal", "Shift+H");
-    getMenu()->addItem("Flip Vertical", "Shift+V");
+    // Rotate 使用子菜单暴露常用角度；实际像素处理交给 commands::RotateCommand，
+    // 这里仅负责把用户选择的旋转方向传给 App 层。
+    Menu* rotateMenu = new Menu("Rotate");
+    getMenu()->addItem("Rotate", rotateMenu);
+
+    MenuItem* rotate90CwItem = rotateMenu->addItem("90 CW");
+    rotate90CwItem->setCallback([this]() {
+        if (onRotateRequested_) onRotateRequested_(commands::RotationAngle::Clockwise90);
+    });
+
+    MenuItem* rotate90CcwItem = rotateMenu->addItem("90 CCW");
+    rotate90CcwItem->setCallback([this]() {
+        if (onRotateRequested_) onRotateRequested_(commands::RotationAngle::CounterClockwise90);
+    });
+
+    MenuItem* rotate180Item = rotateMenu->addItem("180");
+    rotate180Item->setCallback([this]() {
+        if (onRotateRequested_) onRotateRequested_(commands::RotationAngle::Rotate180);
+    });
+
+    MenuItem* flipHorizontalItem = getMenu()->addItem("Flip Horizontal", "Shift+H");
+    flipHorizontalItem->setCallback([this]() {
+        if (onFlipRequested_) onFlipRequested_(commands::FlipDirection::Horizontal);
+    });
+
+    MenuItem* flipVerticalItem = getMenu()->addItem("Flip Vertical", "Shift+V");
+    flipVerticalItem->setCallback([this]() {
+        if (onFlipRequested_) onFlipRequested_(commands::FlipDirection::Vertical);
+    });
     
     // 添加 Transform 子菜单
     Menu* transformMenu = new Menu("Transform");

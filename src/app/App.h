@@ -27,6 +27,12 @@ class Project;
 class AppContext;
 class SDL_Surface;
 
+namespace commands
+{
+    enum class FlipDirection;
+    enum class RotationAngle;
+}
+
 class App
 {
 public:
@@ -243,6 +249,8 @@ private:
     bool executeCopySelection();                                        // Copy（有像素选区时生效）
     bool executePasteSelection();                                       // Paste（有像素选区时生效）
     bool executeDelete();                                               // Delete（有像素选区时生效，否则删除当前帧或选中的帧）
+    bool executeRotate(commands::RotationAngle angle);                  // Rotate（旋转当前帧或时间轴多选帧）
+    bool executeFlip(commands::FlipDirection direction);                // Flip（翻转当前帧或时间轴多选帧）
 
     // ---------------- 平台与渲染状态 ----------------
     SDL_Window* window_ = nullptr;

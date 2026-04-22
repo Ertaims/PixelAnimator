@@ -4,6 +4,8 @@
 #include "core/Project.h"
 #include "imgui.h"
 
+#include <cstdint>
+
 void ProjectWindow::renderRightPanel(Project* project)
 {
     ImGui::TextUnformatted("Tool Properties");
@@ -115,6 +117,72 @@ void ProjectWindow::renderRightPanel(Project* project)
 
     bool onionSkin = context->isOnionSkinEnabled();
     if (ImGui::Checkbox("Onion Skin", &onionSkin)) context->setOnionSkinEnabled(onionSkin);
+
+    // 对称绘制是全局辅助开关，不再作为某个工具存在；
+    // 放在 Onion Skin 下方，方便在任意工具绘制时随手开启/关闭。
+    ImGui::TextUnformatted("Symmetry");
+    const ImVec2 symmetryIconSize(26.0f, 26.0f);
+    auto renderSymmetryToggle = [&](const char* id,
+                                    const char* fallbackLabel,
+                                    const char* tooltip,
+                                    unsigned int icon,
+                                    bool enabled) -> bool {
+        ImGui::PushID(id);
+        if (enabled) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.24f, 0.52f, 0.86f, 1.0f));
+
+        bool clicked = false;
+        if (icon != 0)
+        {
+            clicked = ImGui::ImageButton(
+                "##symmetry_icon",
+                reinterpret_cast<ImTextureID>(static_cast<uintptr_t>(icon)),
+                symmetryIconSize);
+        }
+        else
+        {
+            clicked = ImGui::Button(fallbackLabel, symmetryIconSize);
+        }
+
+        if (enabled)
+        {
+            ImGui::PopStyleColor();
+            ImGui::GetWindowDrawList()->AddRect(
+                ImGui::GetItemRectMin(),
+                ImGui::GetItemRectMax(),
+                IM_COL32(255, 220, 40, 255),
+                4.0f,
+                0,
+                2.0f);
+        }
+
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", tooltip);
+        ImGui::PopID();
+        return clicked;
+    };
+
+    const bool leftRightSymmetry = context->isLeftRightSymmetryEnabled();
+    if (renderSymmetryToggle(
+            "LeftRightSymmetry",
+            "LR",
+            "Toggle Left/Right Symmetry",
+            toolbarState_.symmetryLeftRightIconTexture,
+            leftRightSymmetry))
+    {
+        context->setLeftRightSymmetryEnabled(!leftRightSymmetry);
+    }
+
+    ImGui::SameLine();
+
+    const bool upDownSymmetry = context->isUpDownSymmetryEnabled();
+    if (renderSymmetryToggle(
+            "UpDownSymmetry",
+            "UD",
+            "Toggle Up/Down Symmetry",
+            toolbarState_.symmetryUpDownIconTexture,
+            upDownSymmetry))
+    {
+        context->setUpDownSymmetryEnabled(!upDownSymmetry);
+    }
 
     // 洋葱皮高级设置
     if (onionSkin)

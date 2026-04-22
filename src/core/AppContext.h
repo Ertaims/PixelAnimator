@@ -358,6 +358,31 @@ public:
         colorRGBA_ = rgba; 
     }
 
+    // 左右对称开关：开启后，画布编辑会沿垂直中轴同步镜像。
+    bool isLeftRightSymmetryEnabled() const
+    {
+        return leftRightSymmetryEnabled_;
+    }
+    void setLeftRightSymmetryEnabled(bool enabled)
+    {
+        leftRightSymmetryEnabled_ = enabled;
+    }
+
+    // 上下对称开关：开启后，画布编辑会沿水平中轴同步镜像。
+    bool isUpDownSymmetryEnabled() const
+    {
+        return upDownSymmetryEnabled_;
+    }
+    void setUpDownSymmetryEnabled(bool enabled)
+    {
+        upDownSymmetryEnabled_ = enabled;
+    }
+
+    bool isAnySymmetryEnabled() const
+    {
+        return leftRightSymmetryEnabled_ || upDownSymmetryEnabled_;
+    }
+
     // 画笔半径（像素），1/2/3 等，供 Brush/Eraser 使用
     int getBrushSize() const 
     { 
@@ -764,6 +789,8 @@ private:
     ToolType tool_ = ToolType::Brush;
     uint32_t colorRGBA_ = 0xFF000000;  // 默认不透明黑
     int brushSize_ = 1;
+    bool leftRightSymmetryEnabled_ = false;
+    bool upDownSymmetryEnabled_ = false;
 
     // 画布视图
     int canvasZoom_ = 4;       // 默认 4 倍

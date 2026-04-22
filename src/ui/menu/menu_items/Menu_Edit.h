@@ -1,6 +1,8 @@
 #pragma once
 
 #include "MenuOptionBase.h"
+#include "commands/FlipCommand.h"
+#include "commands/RotateCommand.h"
 #include <functional>
 
 class AppContext;  // 前向声明
@@ -18,6 +20,8 @@ public:
     void setOnCopyRequested(const std::function<void()>& callback) { onCopyRequested_ = callback; }
     void setOnPasteRequested(const std::function<void()>& callback) { onPasteRequested_ = callback; }
     void setOnDeleteRequested(const std::function<void()>& callback) { onDeleteRequested_ = callback; }
+    void setOnRotateRequested(const std::function<void(commands::RotationAngle)>& callback) { onRotateRequested_ = callback; }
+    void setOnFlipRequested(const std::function<void(commands::FlipDirection)>& callback) { onFlipRequested_ = callback; }
 
 private:
     AppContext* context_ = nullptr;
@@ -26,4 +30,6 @@ private:
     std::function<void()> onCopyRequested_;
     std::function<void()> onPasteRequested_;
     std::function<void()> onDeleteRequested_;
+    std::function<void(commands::RotationAngle)> onRotateRequested_;
+    std::function<void(commands::FlipDirection)> onFlipRequested_;
 };
