@@ -13,12 +13,18 @@ class Project;
  * - 与二进制序列化并存：不替换旧能力，便于平滑迁移。
  * - 最小可用：先覆盖 Project 核心数据（尺寸、帧、像素、项目名）。
  *
- * 当前格式约定（JSON v1）：
+ * 当前格式约定：
+ * - JSON v1：单图层像素帧
+ * - JSON v2：新增 layers / layerState / frame.layers，支持多图层项目
+ *
+ * 关键字段：
  * - root.format  = "PixelAnimatorProject"
- * - root.version = 1
+ * - root.version = 1 或 2
  * - root.canvas.width / root.canvas.height
  * - root.timeline.frameCount
- * - root.frames[i].pixels: "#RRGGBBAA" 字符串数组
+ * - root.layers[i]: 图层名称/显隐/锁定/透明度
+ * - root.layerState.activeLayerIndex
+ * - root.frames[i].layers[j].pixels: "#RRGGBBAA" 字符串数组
  *
  * 注意：
  * - JSON 里像素按字符串存储，可读性好但体积较大。

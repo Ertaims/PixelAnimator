@@ -345,8 +345,8 @@ void App::createMenuAndWindows()
         editMenu_->setOnRotateRequested([this](commands::RotationAngle angle) { executeRotate(angle); });
         editMenu_->setOnFlipRequested([this](commands::FlipDirection direction) { executeFlip(direction); });
     }
-    menuFactory.createViewMenu(menuManager_);
-    menuFactory.createHelpMenu(menuManager_);
+    // menuFactory.createViewMenu(menuManager_);
+    // menuFactory.createHelpMenu(menuManager_);
 
     // 启动时默认创建一个项目，保证界面可用
     createNewProject(16, 16, 1, 0x00000000);

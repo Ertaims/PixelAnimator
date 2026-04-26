@@ -58,6 +58,127 @@ namespace
         return std::find(mask.begin(), mask.end(), static_cast<uint8_t>(1)) != mask.end();
     }
 
+    int roundHalfUp(double value)
+    {
+        return static_cast<int>(std::floor(value + 0.5));
+    }
+
+    /**
+     * @brief 将拖拽外接矩形对应的椭圆填充到选区掩码。
+     *
+     * 说明：
+     * - 椭圆几何始终基于“原始拖拽外接矩形”计算，而不是裁剪后的画布内矩形；
+     *   这样拖拽到画布边缘时，边界不会因为裁剪而被重新拉伸。
+     * - 边界采样逻辑与填充圆工具保持一致：同时按列/按行取边界，再按行回填；
+     *   这样圆形框选的边界会更贴近最终圆形绘制工具的像素观感。
+     */
+    void applyEllipseSelectionToMask(std::vector<uint8_t>& ioMask,
+                                     int canvasWidth,
+                                     int canvasHeight,
+                                     const AppContext::PixelRect& rect,
+                                     AppContext::PixelSelectionOp op)
+    {
+        if (ioMask.size() != static_cast<size_t>(canvasWidth) * static_cast<size_t>(canvasHeight)) return;
+        if (canvasWidth <= 0 || canvasHeight <= 0 || rect.width <= 0 || rect.height <= 0) return;
+
+        AppContext::PixelRect clipped = rect;
+        if (!clampRectToCanvas(clipped, canvasWidth, canvasHeight)) return;
+
+        if (op == AppContext::PixelSelectionOp::Replace)
+        {
+            std::fill(ioMask.begin(), ioMask.end(), static_cast<uint8_t>(0));
+        }
+
+        const int minX = rect.x;
+        const int minY = rect.y;
+        const int maxX = rect.x + rect.width - 1;
+        const int maxY = rect.y + rect.height - 1;
+
+        if (rect.width == 1)
+        {
+            for (int y = clipped.y; y < clipped.y + clipped.height; ++y)
+            {
+                const size_t idx = static_cast<size_t>(y) * static_cast<size_t>(canvasWidth)
+                    + static_cast<size_t>(clipped.x);
+                if (op == AppContext::PixelSelectionOp::Remove) ioMask[idx] = 0;
+                else ioMask[idx] = 1;
+            }
+            return;
+        }
+
+        if (rect.height == 1)
+        {
+            const size_t rowOffset = static_cast<size_t>(clipped.y) * static_cast<size_t>(canvasWidth);
+            for (int x = clipped.x; x < clipped.x + clipped.width; ++x)
+            {
+                const size_t idx = rowOffset + static_cast<size_t>(x);
+                if (op == AppContext::PixelSelectionOp::Remove) ioMask[idx] = 0;
+                else ioMask[idx] = 1;
+            }
+            return;
+        }
+
+        const double centerX = (static_cast<double>(minX) + static_cast<double>(maxX)) * 0.5;
+        const double centerY = (static_cast<double>(minY) + static_cast<double>(maxY)) * 0.5;
+        const double radiusInset = 0.25;
+        const double radiusX = std::max(0.5, static_cast<double>(rect.width - 1) * 0.5 - radiusInset);
+        const double radiusY = std::max(0.5, static_cast<double>(rect.height - 1) * 0.5 - radiusInset);
+
+        std::vector<int> rowLeft(static_cast<size_t>(clipped.height), canvasWidth);
+        std::vector<int> rowRight(static_cast<size_t>(clipped.height), -1);
+
+        auto markBoundaryPoint = [&](int x, int y)
+        {
+            if (y < clipped.y || y >= clipped.y + clipped.height) return;
+
+            const size_t rowIndex = static_cast<size_t>(y - clipped.y);
+            rowLeft[rowIndex] = std::min(rowLeft[rowIndex], x);
+            rowRight[rowIndex] = std::max(rowRight[rowIndex], x);
+        };
+
+        for (int x = minX; x <= maxX; ++x)
+        {
+            const double normalizedX = (static_cast<double>(x) - centerX) / radiusX;
+            if (std::abs(normalizedX) > 1.0) continue;
+
+            const double yOffset = radiusY * std::sqrt(std::max(0.0, 1.0 - normalizedX * normalizedX));
+            const int topY = roundHalfUp(centerY - yOffset);
+            const int bottomY = minY + maxY - topY;
+            markBoundaryPoint(x, topY);
+            markBoundaryPoint(x, bottomY);
+        }
+
+        for (int y = minY; y <= maxY; ++y)
+        {
+            const double normalizedY = (static_cast<double>(y) - centerY) / radiusY;
+            if (std::abs(normalizedY) > 1.0) continue;
+
+            const double xOffset = radiusX * std::sqrt(std::max(0.0, 1.0 - normalizedY * normalizedY));
+            const int leftX = roundHalfUp(centerX - xOffset);
+            const int rightX = minX + maxX - leftX;
+            markBoundaryPoint(leftX, y);
+            markBoundaryPoint(rightX, y);
+        }
+
+        for (int y = clipped.y; y < clipped.y + clipped.height; ++y)
+        {
+            const size_t rowIndex = static_cast<size_t>(y - clipped.y);
+            if (rowRight[rowIndex] < rowLeft[rowIndex]) continue;
+
+            const int fillStartX = std::max(clipped.x, rowLeft[rowIndex]);
+            const int fillEndX = std::min(clipped.x + clipped.width - 1, rowRight[rowIndex]);
+            if (fillEndX < fillStartX) continue;
+
+            const size_t rowOffset = static_cast<size_t>(y) * static_cast<size_t>(canvasWidth);
+            for (int x = fillStartX; x <= fillEndX; ++x)
+            {
+                const size_t idx = rowOffset + static_cast<size_t>(x);
+                if (op == AppContext::PixelSelectionOp::Remove) ioMask[idx] = 0;
+                else ioMask[idx] = 1;
+            }
+        }
+    }
+
     // 比较两个项目是否在“可编辑语义”上完全一致。
     bool areProjectsEquivalent(const Project& lhs, const Project& rhs)
     {
@@ -66,10 +187,28 @@ namespace
         if (lhs.getHeight() != rhs.getHeight()) return false;
         if (lhs.getTimelineFps() != rhs.getTimelineFps()) return false;
         if (lhs.getFrameCount() != rhs.getFrameCount()) return false;
+        if (lhs.getLayerCount() != rhs.getLayerCount()) return false;
+        if (lhs.getActiveLayerIndex() != rhs.getActiveLayerIndex()) return false;
+
+        for (int layerIndex = 0; layerIndex < lhs.getLayerCount(); ++layerIndex)
+        {
+            const Project::LayerInfo& lhsLayer = lhs.getLayerInfo(layerIndex);
+            const Project::LayerInfo& rhsLayer = rhs.getLayerInfo(layerIndex);
+            if (lhsLayer.name != rhsLayer.name) return false;
+            if (lhsLayer.visible != rhsLayer.visible) return false;
+            if (lhsLayer.locked != rhsLayer.locked) return false;
+            if (std::abs(lhsLayer.opacity - rhsLayer.opacity) > 0.0001f) return false;
+        }
 
         for (int i = 0; i < lhs.getFrameCount(); ++i)
         {
-            if (lhs.getFrame(i).pixels != rhs.getFrame(i).pixels) return false;
+            const Project::Frame& lhsFrame = lhs.getFrame(i);
+            const Project::Frame& rhsFrame = rhs.getFrame(i);
+            if (lhsFrame.getLayerCount() != rhsFrame.getLayerCount()) return false;
+            for (int layerIndex = 0; layerIndex < lhsFrame.getLayerCount(); ++layerIndex)
+            {
+                if (lhsFrame.getLayerPixels(layerIndex) != rhsFrame.getLayerPixels(layerIndex)) return false;
+            }
         }
         return true;
     }
@@ -259,31 +398,9 @@ bool AppContext::applyEllipsePixelSelection(int x0,
     rect.y = std::min(y0, y1);
     rect.width = std::abs(x1 - x0) + 1;
     rect.height = std::abs(y1 - y0) + 1;
-    if (!clampRectToCanvas(rect, canvasWidth, canvasHeight)) return false;
 
     const std::vector<uint8_t> beforeMask = pixelSelectionMask_;
-    if (op == PixelSelectionOp::Replace) std::fill(pixelSelectionMask_.begin(), pixelSelectionMask_.end(), static_cast<uint8_t>(0));
-
-    const float cx = static_cast<float>(rect.x) + (static_cast<float>(rect.width) - 1.0f) * 0.5f;
-    const float cy = static_cast<float>(rect.y) + (static_cast<float>(rect.height) - 1.0f) * 0.5f;
-    const float rx = std::max(0.5f, (static_cast<float>(rect.width) - 1.0f) * 0.5f);
-    const float ry = std::max(0.5f, (static_cast<float>(rect.height) - 1.0f) * 0.5f);
-
-    for (int py = rect.y; py < rect.y + rect.height; ++py)
-    {
-        const size_t rowOffset = static_cast<size_t>(py) * static_cast<size_t>(canvasWidth);
-        for (int px = rect.x; px < rect.x + rect.width; ++px)
-        {
-            const float nx = (static_cast<float>(px) + 0.5f - cx) / rx;
-            const float ny = (static_cast<float>(py) + 0.5f - cy) / ry;
-            if ((nx * nx + ny * ny) > 1.0f) continue;
-
-            const size_t index = rowOffset + static_cast<size_t>(px);
-            if (op == PixelSelectionOp::Remove) pixelSelectionMask_[index] = 0;
-            else
-                pixelSelectionMask_[index] = 1;
-        }
-    }
+    applyEllipseSelectionToMask(pixelSelectionMask_, canvasWidth, canvasHeight, rect, op);
 
     pixelSelectionHasAny_ = containsSelectedPixel(pixelSelectionMask_);
     return pixelSelectionMask_ != beforeMask;

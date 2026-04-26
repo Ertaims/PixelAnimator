@@ -75,13 +75,21 @@ namespace
     - 单帧字节数 = width * height * sizeof(uint32_t)。
     - 帧按 frame[0] 到 frame[frameCount-1] 连续存储。
 
-    V3+ 扩展建议
-    ------------
-    1) 每次扩展都递增 version。
-    2) 新字段尽量追加在已知头/尾字段之后。
-    3) 旧字段保持稳定（不重排、不删除）。
-    4) 按版本分支解析，逐级兼容。
-    5) 若要跨平台稳定，建议明确采用小端编码。
+    V3 layout
+    ---------
+    在 V2 的 projectNameBytes 后追加：
+    - layerCount(u32)
+    - activeLayerIndex(u32)
+    - repeated layer metadata:
+      - nameLength(u32)
+      - visible(u32)          // 0/1
+      - locked(u32)           // 0/1
+      - opacity(float)
+      - layerNameBytes[nameLength]
+    - repeated frame/layer pixels:
+      - for frame in frames
+      -   for layer in layers
+      -     layerPixels[width*height] (uint32_t RGBA8888)
     *************************************************************************************/
 
     // 文件头（固定区）：
@@ -107,8 +115,24 @@ namespace
 
     // 魔数：用于识别文件类型；最后一位 '\0' 只是固定 8 字节的一部分。
     constexpr std::array<char, 8> kMagic = {'P', 'X', 'A', 'N', 'I', 'M', '1', '\0'};
-    // v2：基础头 + 项目名长度 + 项目名字节 + 像素帧
+    // v2：基础头 + 项目名长度 + 项目名字节 + 单图层帧像素
     constexpr uint32_t kVersionV2 = 2;
+    // v3：基础头 + 项目名长度 + 图层信息 + 多图层帧像素
+    constexpr uint32_t kVersionV3 = 3;
+
+    struct FileHeaderV3LayerBlock
+    {
+        uint32_t layerCount;
+        uint32_t activeLayerIndex;
+    };
+
+    struct FileHeaderV3LayerEntry
+    {
+        uint32_t nameLength;
+        uint32_t visible;
+        uint32_t locked;
+        float opacity;
+    };
 } // namespace
 
 bool ProjectSerializer::save(const Project& project, const std::string& path, std::string* errorMessage)
@@ -122,10 +146,10 @@ bool ProjectSerializer::save(const Project& project, const std::string& path, st
     }
 
     // 组装头信息。
-    // 当前保存一律写为 v2，便于保留项目名。
+    // 当前保存一律写为 v3，把图层结构与多图层像素一并持久化。
     FileHeader header{};
     std::copy(kMagic.begin(), kMagic.end(), header.magic);
-    header.version = kVersionV2;
+    header.version = kVersionV3;
     header.width = static_cast<uint32_t>(project.getWidth());
     header.height = static_cast<uint32_t>(project.getHeight());
     header.frameCount = static_cast<uint32_t>(project.getFrameCount());
@@ -160,17 +184,58 @@ bool ProjectSerializer::save(const Project& project, const std::string& path, st
         }
     }
 
-    // 依次写每一帧像素。
-    // 像素按 uint32_t 连续数组写入，顺序与 frame.pixels 内存布局一致。
-    for (int i = 0; i < project.getFrameCount(); ++i)
+    // 写 v3 图层信息。
+    const FileHeaderV3LayerBlock layerBlock{
+        static_cast<uint32_t>(project.getLayerCount()),
+        static_cast<uint32_t>(project.getActiveLayerIndex())
+    };
+    out.write(reinterpret_cast<const char*>(&layerBlock), sizeof(layerBlock));
+    if (!out)
     {
-        const Project::Frame& frame = project.getFrame(i);
-        const size_t byteCount = frame.pixels.size() * sizeof(uint32_t);
-        out.write(reinterpret_cast<const char*>(frame.pixels.data()), static_cast<std::streamsize>(byteCount));
+        if (errorMessage) *errorMessage = "Failed to write layer block.";
+        return false;
+    }
+
+    for (int layerIndex = 0; layerIndex < project.getLayerCount(); ++layerIndex)
+    {
+        const Project::LayerInfo& layer = project.getLayerInfo(layerIndex);
+        const FileHeaderV3LayerEntry layerEntry{
+            static_cast<uint32_t>(layer.name.size()),
+            layer.visible ? 1u : 0u,
+            layer.locked ? 1u : 0u,
+            layer.opacity
+        };
+        out.write(reinterpret_cast<const char*>(&layerEntry), sizeof(layerEntry));
         if (!out)
         {
-            if (errorMessage) *errorMessage = "Failed to write frame pixels.";
+            if (errorMessage) *errorMessage = "Failed to write layer metadata.";
             return false;
+        }
+
+        if (layerEntry.nameLength > 0)
+        {
+            out.write(layer.name.data(), static_cast<std::streamsize>(layerEntry.nameLength));
+            if (!out)
+            {
+                if (errorMessage) *errorMessage = "Failed to write layer name.";
+                return false;
+            }
+        }
+    }
+
+    // 依次写每一帧每一层的像素。
+    for (int i = 0; i < project.getFrameCount(); ++i)
+    {
+        for (int layerIndex = 0; layerIndex < project.getLayerCount(); ++layerIndex)
+        {
+            const std::vector<uint32_t>& pixels = project.getLayerPixels(i, layerIndex);
+            const size_t byteCount = pixels.size() * sizeof(uint32_t);
+            out.write(reinterpret_cast<const char*>(pixels.data()), static_cast<std::streamsize>(byteCount));
+            if (!out)
+            {
+                if (errorMessage) *errorMessage = "Failed to write frame layer pixels.";
+                return false;
+            }
         }
     }
 
@@ -203,10 +268,10 @@ std::unique_ptr<Project> ProjectSerializer::load(const std::string& path, std::s
         return nullptr;
     }
 
-    // 仅接受当前实现支持的版本（v2）。
-    if (header.version != kVersionV2)
+    // 当前支持历史 v2（单图层）与 v3（多图层）。
+    if (header.version != kVersionV2 && header.version != kVersionV3)
     {
-        if (errorMessage) *errorMessage = "Unsupported file version. Only v2 is supported.";
+        if (errorMessage) *errorMessage = "Unsupported file version. Only v2/v3 are supported.";
         return nullptr;
     }
 
@@ -243,21 +308,93 @@ std::unique_ptr<Project> ProjectSerializer::load(const std::string& path, std::s
         project->setName(std::string(nameBytes.begin(), nameBytes.end()));
     }
 
-    // 逐帧读取像素数据。
-    // expectedPixelCount 用于防御性修正帧大小，避免异常文件导致长度不一致。
     const size_t expectedPixelCount = static_cast<size_t>(header.width) * static_cast<size_t>(header.height);
-    for (int i = 0; i < project->getFrameCount(); ++i)
-    {
-        Project::Frame& frame = project->getFrame(i);
-        if (frame.pixels.size() != expectedPixelCount) frame.pixels.resize(expectedPixelCount);
 
-        // 每帧固定读取 width*height 个 uint32_t 像素。
-        const size_t byteCount = frame.pixels.size() * sizeof(uint32_t);
-        in.read(reinterpret_cast<char*>(frame.pixels.data()), static_cast<std::streamsize>(byteCount));
+    // v2：旧格式，只保存单图层像素。
+    if (header.version == kVersionV2)
+    {
+        for (int i = 0; i < project->getFrameCount(); ++i)
+        {
+            Project::Frame& frame = project->getFrame(i);
+            if (frame.pixels.size() != expectedPixelCount) frame.pixels.resize(expectedPixelCount);
+
+            const size_t byteCount = frame.pixels.size() * sizeof(uint32_t);
+            in.read(reinterpret_cast<char*>(frame.pixels.data()), static_cast<std::streamsize>(byteCount));
+            if (!in)
+            {
+                if (errorMessage) *errorMessage = "Failed to read frame pixels.";
+                return nullptr;
+            }
+        }
+        return project;
+    }
+
+    // v3：读取图层块。
+    FileHeaderV3LayerBlock layerBlock{};
+    in.read(reinterpret_cast<char*>(&layerBlock), sizeof(layerBlock));
+    if (!in)
+    {
+        if (errorMessage) *errorMessage = "Failed to read layer block.";
+        return nullptr;
+    }
+    if (layerBlock.layerCount == 0)
+    {
+        if (errorMessage) *errorMessage = "Invalid layer count in file.";
+        return nullptr;
+    }
+
+    // 先扩展到目标图层数量，再恢复图层元数据。
+    while (project->getLayerCount() < static_cast<int>(layerBlock.layerCount))
+    {
+        project->addLayer();
+    }
+
+    for (uint32_t layerIndex = 0; layerIndex < layerBlock.layerCount; ++layerIndex)
+    {
+        FileHeaderV3LayerEntry layerEntry{};
+        in.read(reinterpret_cast<char*>(&layerEntry), sizeof(layerEntry));
         if (!in)
         {
-            if (errorMessage) *errorMessage = "Failed to read frame pixels.";
+            if (errorMessage) *errorMessage = "Failed to read layer metadata.";
             return nullptr;
+        }
+
+        std::string layerName;
+        if (layerEntry.nameLength > 0)
+        {
+            std::vector<char> nameBytes(layerEntry.nameLength);
+            in.read(nameBytes.data(), static_cast<std::streamsize>(nameBytes.size()));
+            if (!in)
+            {
+                if (errorMessage) *errorMessage = "Failed to read layer name.";
+                return nullptr;
+            }
+            layerName.assign(nameBytes.begin(), nameBytes.end());
+        }
+
+        project->renameLayer(static_cast<int>(layerIndex), layerName.empty() ? "Layer" : layerName);
+        project->setLayerVisible(static_cast<int>(layerIndex), layerEntry.visible != 0);
+        project->setLayerLocked(static_cast<int>(layerIndex), layerEntry.locked != 0);
+        project->setLayerOpacity(static_cast<int>(layerIndex), layerEntry.opacity);
+    }
+
+    project->setActiveLayerIndex(static_cast<int>(std::min(layerBlock.activeLayerIndex, layerBlock.layerCount - 1)));
+
+    // 逐帧逐层读取像素数据。
+    for (int frameIndex = 0; frameIndex < project->getFrameCount(); ++frameIndex)
+    {
+        for (int layerIndex = 0; layerIndex < project->getLayerCount(); ++layerIndex)
+        {
+            std::vector<uint32_t>& pixels = project->getLayerPixels(frameIndex, layerIndex);
+            if (pixels.size() != expectedPixelCount) pixels.resize(expectedPixelCount);
+
+            const size_t byteCount = pixels.size() * sizeof(uint32_t);
+            in.read(reinterpret_cast<char*>(pixels.data()), static_cast<std::streamsize>(byteCount));
+            if (!in)
+            {
+                if (errorMessage) *errorMessage = "Failed to read frame layer pixels.";
+                return nullptr;
+            }
         }
     }
 

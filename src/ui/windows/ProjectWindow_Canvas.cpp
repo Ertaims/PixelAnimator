@@ -335,7 +335,8 @@ void ProjectWindow::renderCanvasPanel(Project* project)
 
     Project::Frame& frame = project->getFrame(frameIndex);
     ensureCanvasTexture(width, height);
-    uploadCanvasPixels(frame.pixels);
+    const std::vector<uint32_t> composedFrame = project->composeFrame(frameIndex);
+    uploadCanvasPixels(composedFrame);
 
     auto computeImageMetrics = [&](int zoomValue, float panX, float panY, float& outImageW, float& outImageH, ImVec2& outCenterOffset, ImVec2& outImagePos) {
         outImageW = static_cast<float>(width * zoomValue);
@@ -481,7 +482,7 @@ void ProjectWindow::renderCanvasPanel(Project* project)
             const int prevFrameIndex = frameIndex - i;
             if (prevFrameIndex < 0) break;
 
-            const Project::Frame& prevFrame = project->getFrame(prevFrameIndex);
+            const std::vector<uint32_t> prevPixels = project->composeFrame(prevFrameIndex);
             // 透明度渐变：离当前帧越远，透明度越低
             const float alphaFactor = static_cast<float>(previousFrames - i + 1) / static_cast<float>(previousFrames + 1);
             const int alpha = static_cast<int>(basePreviousAlpha * alphaFactor);
@@ -492,7 +493,7 @@ void ProjectWindow::renderCanvasPanel(Project* project)
                 for (int x = 0; x < width; ++x)
                 {
                     const size_t index = static_cast<size_t>(y) * static_cast<size_t>(width) + static_cast<size_t>(x);
-                    const uint32_t pixel = prevFrame.pixels[index];
+                    const uint32_t pixel = prevPixels[index];
                     if (pixel == 0) continue; // 跳过透明像素
 
                     // 提取像素颜色并与前帧颜色混合
@@ -523,7 +524,7 @@ void ProjectWindow::renderCanvasPanel(Project* project)
             const int nextFrameIndex = frameIndex + i;
             if (nextFrameIndex >= frameCount) break;
 
-            const Project::Frame& nextFrame = project->getFrame(nextFrameIndex);
+            const std::vector<uint32_t> nextPixels = project->composeFrame(nextFrameIndex);
             // 透明度渐变：离当前帧越远，透明度越低
             const float alphaFactor = static_cast<float>(nextFrames - i + 1) / static_cast<float>(nextFrames + 1);
             const int alpha = static_cast<int>(baseNextAlpha * alphaFactor);
@@ -534,7 +535,7 @@ void ProjectWindow::renderCanvasPanel(Project* project)
                 for (int x = 0; x < width; ++x)
                 {
                     const size_t index = static_cast<size_t>(y) * static_cast<size_t>(width) + static_cast<size_t>(x);
-                    const uint32_t pixel = nextFrame.pixels[index];
+                    const uint32_t pixel = nextPixels[index];
                     if (pixel == 0) continue; // 跳过透明像素
 
                     // 提取像素颜色并与后帧颜色混合
@@ -603,7 +604,8 @@ void ProjectWindow::renderCanvasPanel(Project* project)
     // - Ctrl+V/菜单 Paste 后进入该模式；
     // - 鼠标移动定位，左键确认，右键或 Esc 取消；
     // - 预览期间暂停普通绘图输入，防止误画。
-    bool blockNormalToolInput = false;
+    const bool activeLayerLocked = project->isActiveLayerLocked();
+    bool blockNormalToolInput = activeLayerLocked;
     if (pastePreviewState_.active)
     {
         blockNormalToolInput = true;
@@ -626,7 +628,11 @@ void ProjectWindow::renderCanvasPanel(Project* project)
                 cancelPastePreview();
                 blockNormalToolInput = false;
             }
-            else if (!blockingPopupOpen && canvasHitboxHovered && hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left))
+            else if (!activeLayerLocked &&
+                     !blockingPopupOpen &&
+                     canvasHitboxHovered &&
+                     hovered &&
+                     ImGui::IsMouseClicked(ImGuiMouseButton_Left))
             {
                 std::string pasteError;
                 if (commands::PasteSelectionCommand::execute(

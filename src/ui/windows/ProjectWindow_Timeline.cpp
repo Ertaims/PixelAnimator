@@ -176,14 +176,6 @@ void ProjectWindow::renderTimelinePanel(Project* project)
     const float timelineHeight = ImGui::GetContentRegionAvail().y;
     ImGui::BeginChild("##TimelineMain", ImVec2(0.0f, timelineHeight), false);
 
-    ImGui::BeginChild("##TimelineLeft", ImVec2(leftPanelWidth, 0.0f), true);
-    ImGui::TextUnformatted("Layers");
-    ImGui::Separator();
-    ImGui::TextUnformatted("1  Background");
-    ImGui::EndChild();
-
-    ImGui::SameLine();
-
     ImGui::BeginChild("##TimelineFrames", ImVec2(0.0f, 0.0f), true, ImGuiWindowFlags_HorizontalScrollbar);
 
     ensureTimelineIconTextures(

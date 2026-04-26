@@ -80,6 +80,11 @@ namespace
         rect.height = std::max(1, std::abs(y1 - y0) + 1);
     }
 
+    int roundHalfUp(double value)
+    {
+        return static_cast<int>(std::floor(value + 0.5));
+    }
+
     /**
      * @brief 将画布像素矩形转换为屏幕坐标矩形。
      *
@@ -102,24 +107,37 @@ namespace
     }
 
     // 计算 8 个手柄中心点（NW/N/NE/E/SE/S/SW/W）。
+    // 为了保证贴边选区也容易抓到手柄，中心点会按手柄尺寸向选区内部轻微内收，
+    // 避免手柄有一半落在画布外而导致命中困难。
     std::array<ImVec2, 8> getSelectionHandleCenters(const AppContext::PixelRect& rect,
                                                     const ImVec2& imagePos,
-                                                    int zoom)
+                                                    int zoom,
+                                                    float handleHalfSize)
     {
         ImVec2 minP(0.0f, 0.0f);
         ImVec2 maxP(0.0f, 0.0f);
         convertPixelRectToScreen(rect, imagePos, zoom, minP, maxP);
-        const float midX = (minP.x + maxP.x) * 0.5f;
-        const float midY = (minP.y + maxP.y) * 0.5f;
+
+        const float screenWidth = std::max(0.0f, maxP.x - minP.x);
+        const float screenHeight = std::max(0.0f, maxP.y - minP.y);
+        const float insetX = std::min(handleHalfSize, screenWidth * 0.5f);
+        const float insetY = std::min(handleHalfSize, screenHeight * 0.5f);
+
+        const float leftX = minP.x + insetX;
+        const float rightX = maxP.x - insetX;
+        const float topY = minP.y + insetY;
+        const float bottomY = maxP.y - insetY;
+        const float midX = (leftX + rightX) * 0.5f;
+        const float midY = (topY + bottomY) * 0.5f;
         return {{
-            ImVec2(minP.x, minP.y),
-            ImVec2(midX, minP.y),
-            ImVec2(maxP.x, minP.y),
-            ImVec2(maxP.x, midY),
-            ImVec2(maxP.x, maxP.y),
-            ImVec2(midX, maxP.y),
-            ImVec2(minP.x, maxP.y),
-            ImVec2(minP.x, midY)
+            ImVec2(leftX, topY),
+            ImVec2(midX, topY),
+            ImVec2(rightX, topY),
+            ImVec2(rightX, midY),
+            ImVec2(rightX, bottomY),
+            ImVec2(midX, bottomY),
+            ImVec2(leftX, bottomY),
+            ImVec2(leftX, midY)
         }};
     }
 
@@ -139,17 +157,27 @@ namespace
                                const ImVec2& mousePos,
                                float handleHalfSize)
     {
-        const auto centers = getSelectionHandleCenters(rect, imagePos, zoom);
+        const auto centers = getSelectionHandleCenters(rect, imagePos, zoom, handleHalfSize);
+        int bestHandle = -1;
+        float bestDistanceSq = 0.0f;
+
         for (int i = 0; i < static_cast<int>(centers.size()); ++i)
         {
             const ImVec2 c = centers[static_cast<size_t>(i)];
             if (mousePos.x >= c.x - handleHalfSize && mousePos.x <= c.x + handleHalfSize
                 && mousePos.y >= c.y - handleHalfSize && mousePos.y <= c.y + handleHalfSize)
             {
-                return i;
+                const float dx = mousePos.x - c.x;
+                const float dy = mousePos.y - c.y;
+                const float distanceSq = dx * dx + dy * dy;
+                if (bestHandle < 0 || distanceSq < bestDistanceSq)
+                {
+                    bestHandle = i;
+                    bestDistanceSq = distanceSq;
+                }
             }
         }
-        return -1;
+        return bestHandle;
     }
 
     // 缩放结果：包含标准化后的目标矩形，以及是否发生轴向翻转。
@@ -572,26 +600,97 @@ namespace
         AppContext::PixelRect clamped = rect;
         clampRectToCanvas(clamped, canvasWidth, canvasHeight);
 
-        if (op == AppContext::PixelSelectionOp::Replace) std::fill(ioMask.begin(), ioMask.end(), static_cast<uint8_t>(0));
+        if (op == AppContext::PixelSelectionOp::Replace)
+        {
+            std::fill(ioMask.begin(), ioMask.end(), static_cast<uint8_t>(0));
+        }
 
-        const float cx = static_cast<float>(clamped.x) + (static_cast<float>(clamped.width) - 1.0f) * 0.5f;
-        const float cy = static_cast<float>(clamped.y) + (static_cast<float>(clamped.height) - 1.0f) * 0.5f;
-        const float rx = std::max(0.5f, (static_cast<float>(clamped.width) - 1.0f) * 0.5f);
-        const float ry = std::max(0.5f, (static_cast<float>(clamped.height) - 1.0f) * 0.5f);
+        const int minX = rect.x;
+        const int minY = rect.y;
+        const int maxX = rect.x + rect.width - 1;
+        const int maxY = rect.y + rect.height - 1;
+
+        if (rect.width == 1)
+        {
+            for (int y = clamped.y; y < clamped.y + clamped.height; ++y)
+            {
+                const size_t idx = static_cast<size_t>(y) * static_cast<size_t>(canvasWidth)
+                    + static_cast<size_t>(clamped.x);
+                if (op == AppContext::PixelSelectionOp::Remove) ioMask[idx] = 0;
+                else ioMask[idx] = 1;
+            }
+            return;
+        }
+
+        if (rect.height == 1)
+        {
+            const size_t rowOffset = static_cast<size_t>(clamped.y) * static_cast<size_t>(canvasWidth);
+            for (int x = clamped.x; x < clamped.x + clamped.width; ++x)
+            {
+                const size_t idx = rowOffset + static_cast<size_t>(x);
+                if (op == AppContext::PixelSelectionOp::Remove) ioMask[idx] = 0;
+                else ioMask[idx] = 1;
+            }
+            return;
+        }
+
+        const double centerX = (static_cast<double>(minX) + static_cast<double>(maxX)) * 0.5;
+        const double centerY = (static_cast<double>(minY) + static_cast<double>(maxY)) * 0.5;
+        const double radiusInset = 0.25;
+        const double radiusX = std::max(0.5, static_cast<double>(rect.width - 1) * 0.5 - radiusInset);
+        const double radiusY = std::max(0.5, static_cast<double>(rect.height - 1) * 0.5 - radiusInset);
+
+        std::vector<int> rowLeft(static_cast<size_t>(clamped.height), canvasWidth);
+        std::vector<int> rowRight(static_cast<size_t>(clamped.height), -1);
+
+        auto markBoundaryPoint = [&](int x, int y)
+        {
+            if (y < clamped.y || y >= clamped.y + clamped.height) return;
+
+            const size_t rowIndex = static_cast<size_t>(y - clamped.y);
+            rowLeft[rowIndex] = std::min(rowLeft[rowIndex], x);
+            rowRight[rowIndex] = std::max(rowRight[rowIndex], x);
+        };
+
+        for (int x = minX; x <= maxX; ++x)
+        {
+            const double normalizedX = (static_cast<double>(x) - centerX) / radiusX;
+            if (std::abs(normalizedX) > 1.0) continue;
+
+            const double yOffset = radiusY * std::sqrt(std::max(0.0, 1.0 - normalizedX * normalizedX));
+            const int topY = roundHalfUp(centerY - yOffset);
+            const int bottomY = minY + maxY - topY;
+            markBoundaryPoint(x, topY);
+            markBoundaryPoint(x, bottomY);
+        }
+
+        for (int y = minY; y <= maxY; ++y)
+        {
+            const double normalizedY = (static_cast<double>(y) - centerY) / radiusY;
+            if (std::abs(normalizedY) > 1.0) continue;
+
+            const double xOffset = radiusX * std::sqrt(std::max(0.0, 1.0 - normalizedY * normalizedY));
+            const int leftX = roundHalfUp(centerX - xOffset);
+            const int rightX = minX + maxX - leftX;
+            markBoundaryPoint(leftX, y);
+            markBoundaryPoint(rightX, y);
+        }
 
         for (int y = clamped.y; y < clamped.y + clamped.height; ++y)
         {
-            const size_t rowOffset = static_cast<size_t>(y) * static_cast<size_t>(canvasWidth);
-            for (int x = clamped.x; x < clamped.x + clamped.width; ++x)
-            {
-                const float nx = (static_cast<float>(x) + 0.5f - cx) / rx;
-                const float ny = (static_cast<float>(y) + 0.5f - cy) / ry;
-                if (nx * nx + ny * ny > 1.0f) continue;
+            const size_t rowIndex = static_cast<size_t>(y - clamped.y);
+            if (rowRight[rowIndex] < rowLeft[rowIndex]) continue;
 
+            const int fillStartX = std::max(clamped.x, rowLeft[rowIndex]);
+            const int fillEndX = std::min(clamped.x + clamped.width - 1, rowRight[rowIndex]);
+            if (fillEndX < fillStartX) continue;
+
+            const size_t rowOffset = static_cast<size_t>(y) * static_cast<size_t>(canvasWidth);
+            for (int x = fillStartX; x <= fillEndX; ++x)
+            {
                 const size_t idx = rowOffset + static_cast<size_t>(x);
                 if (op == AppContext::PixelSelectionOp::Remove) ioMask[idx] = 0;
-                else
-                    ioMask[idx] = 1;
+                else ioMask[idx] = 1;
             }
         }
     }
@@ -941,14 +1040,17 @@ void RectSelectionTool::handleInteraction(AppContext& context,
 
     AppContext::PixelRect currentBounds;
     const bool hasSelectionBounds = context.getPixelSelectionBounds(currentBounds);
-    const float handleHalf = std::max(4.0f, std::min(10.0f, static_cast<float>(zoom) * 0.45f));
+    const float handleDrawHalf = std::max(4.0f, std::min(10.0f, static_cast<float>(zoom) * 0.45f));
+    const float handleHitHalf = std::max(handleDrawHalf + 2.0f, std::min(14.0f, static_cast<float>(zoom) * 0.65f));
     const int hoveredHandle =
-        hasSelectionBounds ? hitTestSelectionHandle(currentBounds, imagePos, zoom, mousePos, handleHalf) : -1;
+        hasSelectionBounds ? hitTestSelectionHandle(currentBounds, imagePos, zoom, mousePos, handleHitHalf) : -1;
     const bool insideSelection = hasSelectionBounds && isPixelInRect(mousePixelX, mousePixelY, currentBounds);
 
     if (canvasHitboxHovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left))
     {
-        if (hoveredOnImage && hoveredHandle >= 0)
+        // 手柄可能因贴边显示而略微压到画布边缘，因此这里优先相信“命中手柄”，
+        // 不再强依赖 hoveredOnImage，避免边界手柄偶发点不中。
+        if ((hoveredOnImage || canvasHitboxHovered) && hoveredHandle >= 0)
         {
             // 进入缩放拖拽前，准备“非破坏性变换缓存”。
             // 若当前选区与上次提交的选区不一致，则重建缓存基准。
@@ -1557,7 +1659,7 @@ void RectSelectionTool::renderOverlay(const AppContext& context,
     if (!hasCurrentBounds) return;
 
     const float handleHalf = std::max(4.0f, std::min(10.0f, static_cast<float>(zoom) * 0.45f));
-    const auto handleCenters = getSelectionHandleCenters(currentBounds, imagePos, zoom);
+    const auto handleCenters = getSelectionHandleCenters(currentBounds, imagePos, zoom, handleHalf);
     for (const ImVec2& c : handleCenters)
     {
         drawList->AddRectFilled(ImVec2(c.x - handleHalf, c.y - handleHalf),

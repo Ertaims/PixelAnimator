@@ -159,6 +159,24 @@ private:
         ToolType rectModePanelHoverMode = ToolType::Rect;           // 当前悬停候选模式
     };
 
+    // 图层面板状态：缓存图层操作按钮纹理，避免每帧重复从磁盘加载。
+    struct LayerPanelState
+    {
+        bool iconsLoaded = false;
+        unsigned int newLayerIconTexture = 0;       // 新建图层
+        unsigned int deleteIconTexture = 0;         // 删除图层
+        unsigned int upIconTexture = 0;             // 上移图层
+        unsigned int downIconTexture = 0;           // 下移图层
+        unsigned int showIconTexture = 0;           // 图层可见
+        unsigned int hideIconTexture = 0;           // 图层隐藏
+        unsigned int lockIconTexture = 0;           // 图层锁定
+        unsigned int unlockIconTexture = 0;         // 图层解锁
+        std::vector<int> selectedLayerIndices;      // 图层面板当前多选结果（Ctrl 点击维护）
+        bool openRenamePopup = false;               // 是否请求打开重命名弹窗
+        int renameLayerIndex = -1;                  // 正在重命名的图层索引
+        char renameLayerName[64] = "";              // 重命名输入缓存
+    };
+
     /**
      * @brief 连续笔划状态（用于解决快速拖拽时断线问题）。
      *
@@ -232,6 +250,7 @@ private:
     PaletteState paletteState_;                     // 调色板状态
     TimelineState timelineState_;                   // 时间轴状态
     ToolbarState toolbarState_;                     // 工具栏状态
+    LayerPanelState layerPanelState_;               // 图层面板状态
     StrokeContinuityState strokeState_;             // 连续笔划状态（每个项目窗口独立）
     SymmetryEditState symmetryEditState_;           // 对称绘制状态（每个项目窗口独立）
     LineTool lineTool_;                             // 直线工具实例（每个项目窗口独立）

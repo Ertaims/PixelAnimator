@@ -18,7 +18,7 @@ namespace
     // ---------------- JSON 格式常量 ----------------
     // format + version 共同决定“这是哪个格式、哪个版本”。
     constexpr const char* kFormatName = "PixelAnimatorProject";
-    constexpr int kJsonVersion = 1;
+    constexpr int kJsonVersion = 2;
     // RGBA8888(uint32_t) -> "#RRGGBBAA"
     // 这里保持与项目内像素布局一致：R 在最低字节，A 在最高字节。
     std::string rgbaToHex(uint32_t rgba)
@@ -122,20 +122,46 @@ bool ProjectJsonSerializer::save(const Project& project, const std::string& path
         {"frameCount", project.getFrameCount()}
     };
 
+    // 写入图层结构。
+    root["layerState"] = {
+        {"activeLayerIndex", project.getActiveLayerIndex()}
+    };
+    json layers = json::array();
+    for (int layerIndex = 0; layerIndex < project.getLayerCount(); ++layerIndex)
+    {
+        const Project::LayerInfo& layer = project.getLayerInfo(layerIndex);
+        layers.push_back({
+            {"index", layerIndex},
+            {"name", layer.name},
+            {"visible", layer.visible},
+            {"locked", layer.locked},
+            {"opacity", layer.opacity}
+        });
+    }
+    root["layers"] = std::move(layers);
+
     // 写入帧数组。
-    //    每个像素转成 "#RRGGBBAA" 文本，换取可读性。
+    //    v2 开始每帧写入每图层像素，保证多图层项目能完整恢复。
     json frames = json::array();
     for (int i = 0; i < project.getFrameCount(); ++i)
     {
-        const Project::Frame& frame = project.getFrame(i);
-        json pixels = json::array();
-        for (uint32_t color : frame.pixels)
-            pixels.push_back(rgbaToHex(color));
+        json frameLayers = json::array();
+        for (int layerIndex = 0; layerIndex < project.getLayerCount(); ++layerIndex)
+        {
+            json pixels = json::array();
+            for (uint32_t color : project.getLayerPixels(i, layerIndex))
+                pixels.push_back(rgbaToHex(color));
+
+            frameLayers.push_back({
+                {"layerIndex", layerIndex},
+                {"pixels", std::move(pixels)}
+            });
+        }
 
         frames.push_back({
             {"index", i},
             {"duration", 1},
-            {"pixels", std::move(pixels)}
+            {"layers", std::move(frameLayers)}
         });
     }
     root["frames"] = std::move(frames);
@@ -203,7 +229,7 @@ std::unique_ptr<Project> ProjectJsonSerializer::load(const std::string& path, st
     }
 
     const int version = root.value("version", 0);
-    if (version != kJsonVersion)
+    if (version != 1 && version != kJsonVersion)
     {
         assignError(errorMessage, "Unsupported JSON version.");
         return nullptr;
@@ -252,49 +278,147 @@ std::unique_ptr<Project> ProjectJsonSerializer::load(const std::string& path, st
     project->setName(name);
     project->setTimelineFps(timelineFps);
 
-    // 逐帧解析像素。
-    //    每帧像素数量必须严格等于 width * height。
     const size_t expectedPixelCount = static_cast<size_t>(width) * static_cast<size_t>(height);
+
+    // v1：旧格式，只有单图层 pixels。
+    if (version == 1)
+    {
+        for (int i = 0; i < frameCount; ++i)
+        {
+            const json& frameObj = frames[static_cast<size_t>(i)];
+            if (!frameObj.is_object() || !frameObj.contains("pixels") || !frameObj["pixels"].is_array())
+            {
+                assignError(errorMessage, "Invalid frame object at index " + std::to_string(i) + ".");
+                return nullptr;
+            }
+
+            const json& pixelsArray = frameObj["pixels"];
+            if (pixelsArray.size() != expectedPixelCount)
+            {
+                assignError(errorMessage, "Pixel count mismatch at frame " + std::to_string(i) + ".");
+                return nullptr;
+            }
+
+            Project::Frame& frame = project->getFrame(i);
+            frame.pixels.resize(expectedPixelCount);
+            for (size_t p = 0; p < expectedPixelCount; ++p)
+            {
+                if (!pixelsArray[p].is_string())
+                {
+                    assignError(errorMessage,
+                                "Invalid pixel type at frame " + std::to_string(i)
+                                    + ", pixel " + std::to_string(p) + ".");
+                    return nullptr;
+                }
+
+                uint32_t color = 0;
+                const std::string text = pixelsArray[p].get<std::string>();
+                if (!hexToRgba(text, color))
+                {
+                    assignError(errorMessage,
+                                "Invalid pixel color at frame " + std::to_string(i)
+                                    + ", pixel " + std::to_string(p) + ": " + text);
+                    return nullptr;
+                }
+                frame.pixels[p] = color;
+            }
+        }
+        return project;
+    }
+
+    // v2：读取图层结构。
+    const json& layers = root["layers"];
+    if (!layers.is_array() || layers.empty())
+    {
+        assignError(errorMessage, "Invalid layers field: expected non-empty array.");
+        return nullptr;
+    }
+
+    while (project->getLayerCount() < static_cast<int>(layers.size()))
+    {
+        project->addLayer();
+    }
+
+    for (size_t layerIndex = 0; layerIndex < layers.size(); ++layerIndex)
+    {
+        const json& layerObj = layers[layerIndex];
+        if (!layerObj.is_object())
+        {
+            assignError(errorMessage, "Invalid layer object at index " + std::to_string(layerIndex) + ".");
+            return nullptr;
+        }
+
+        project->renameLayer(static_cast<int>(layerIndex), layerObj.value("name", "Layer"));
+        project->setLayerVisible(static_cast<int>(layerIndex), layerObj.value("visible", true));
+        project->setLayerLocked(static_cast<int>(layerIndex), layerObj.value("locked", false));
+        project->setLayerOpacity(static_cast<int>(layerIndex), layerObj.value("opacity", 1.0f));
+    }
+
+    const json layerState = root.value("layerState", json::object());
+    project->setActiveLayerIndex(layerState.value("activeLayerIndex", 0));
+
+    // 逐帧逐层解析像素。
     for (int i = 0; i < frameCount; ++i)
     {
         const json& frameObj = frames[static_cast<size_t>(i)];
-        if (!frameObj.is_object() || !frameObj.contains("pixels") || !frameObj["pixels"].is_array())
+        if (!frameObj.is_object() || !frameObj.contains("layers") || !frameObj["layers"].is_array())
         {
-            assignError(errorMessage, "Invalid frame object at index " + std::to_string(i) + ".");
+            assignError(errorMessage, "Invalid frame layers at index " + std::to_string(i) + ".");
             return nullptr;
         }
 
-        const json& pixelsArray = frameObj["pixels"];
-        if (pixelsArray.size() != expectedPixelCount)
+        const json& frameLayers = frameObj["layers"];
+        if (static_cast<int>(frameLayers.size()) != project->getLayerCount())
         {
-            assignError(errorMessage, "Pixel count mismatch at frame " + std::to_string(i) + ".");
+            assignError(errorMessage, "Layer count mismatch at frame " + std::to_string(i) + ".");
             return nullptr;
         }
 
-        Project::Frame& frame = project->getFrame(i);
-        frame.pixels.resize(expectedPixelCount);
-
-        // 逐像素解析 "#RRGGBBAA" -> RGBA8888。
-        for (size_t p = 0; p < expectedPixelCount; ++p)
+        for (int layerIndex = 0; layerIndex < project->getLayerCount(); ++layerIndex)
         {
-            if (!pixelsArray[p].is_string())
+            const json& frameLayerObj = frameLayers[static_cast<size_t>(layerIndex)];
+            if (!frameLayerObj.is_object() || !frameLayerObj.contains("pixels") || !frameLayerObj["pixels"].is_array())
             {
                 assignError(errorMessage,
-                            "Invalid pixel type at frame " + std::to_string(i)
-                                + ", pixel " + std::to_string(p) + ".");
+                            "Invalid frame layer object at frame " + std::to_string(i)
+                                + ", layer " + std::to_string(layerIndex) + ".");
                 return nullptr;
             }
 
-            uint32_t color = 0;
-            const std::string text = pixelsArray[p].get<std::string>();
-            if (!hexToRgba(text, color))
+            const json& pixelsArray = frameLayerObj["pixels"];
+            if (pixelsArray.size() != expectedPixelCount)
             {
                 assignError(errorMessage,
-                            "Invalid pixel color at frame " + std::to_string(i)
-                                + ", pixel " + std::to_string(p) + ": " + text);
+                            "Pixel count mismatch at frame " + std::to_string(i)
+                                + ", layer " + std::to_string(layerIndex) + ".");
                 return nullptr;
             }
-            frame.pixels[p] = color;
+
+            std::vector<uint32_t>& pixels = project->getLayerPixels(i, layerIndex);
+            pixels.resize(expectedPixelCount);
+            for (size_t p = 0; p < expectedPixelCount; ++p)
+            {
+                if (!pixelsArray[p].is_string())
+                {
+                    assignError(errorMessage,
+                                "Invalid pixel type at frame " + std::to_string(i)
+                                    + ", layer " + std::to_string(layerIndex)
+                                    + ", pixel " + std::to_string(p) + ".");
+                    return nullptr;
+                }
+
+                uint32_t color = 0;
+                const std::string text = pixelsArray[p].get<std::string>();
+                if (!hexToRgba(text, color))
+                {
+                    assignError(errorMessage,
+                                "Invalid pixel color at frame " + std::to_string(i)
+                                    + ", layer " + std::to_string(layerIndex)
+                                    + ", pixel " + std::to_string(p) + ": " + text);
+                    return nullptr;
+                }
+                pixels[p] = color;
+            }
         }
     }
 

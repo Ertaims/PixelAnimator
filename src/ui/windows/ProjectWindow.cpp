@@ -11,6 +11,14 @@
 
 ProjectWindow::~ProjectWindow()
 {
+    auto deleteTexture = [](unsigned int& texture) {
+        if (texture != 0)
+        {
+            glDeleteTextures(1, &texture);
+            texture = 0;
+        }
+    };
+
     if (canvasTexture_.texture != 0)
     {
         glDeleteTextures(1, &canvasTexture_.texture);
@@ -101,6 +109,16 @@ ProjectWindow::~ProjectWindow()
         glDeleteTextures(1, &toolbarState_.circleFilledIconTexture);
         toolbarState_.circleFilledIconTexture = 0;
     }
+    deleteTexture(toolbarState_.symmetryLeftRightIconTexture);
+    deleteTexture(toolbarState_.symmetryUpDownIconTexture);
+    deleteTexture(layerPanelState_.newLayerIconTexture);
+    deleteTexture(layerPanelState_.deleteIconTexture);
+    deleteTexture(layerPanelState_.upIconTexture);
+    deleteTexture(layerPanelState_.downIconTexture);
+    deleteTexture(layerPanelState_.showIconTexture);
+    deleteTexture(layerPanelState_.hideIconTexture);
+    deleteTexture(layerPanelState_.lockIconTexture);
+    deleteTexture(layerPanelState_.unlockIconTexture);
 }
 
 void ProjectWindow::beginPastePreview(const commands::PixelClipboardData& clipboard)

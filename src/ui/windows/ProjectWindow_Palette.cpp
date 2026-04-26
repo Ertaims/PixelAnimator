@@ -4,6 +4,7 @@
 #include "core/Project.h"
 #include "imgui.h"
 
+#include <cstdio>
 #include <cstdint>
 #include <vector>
 
@@ -27,6 +28,14 @@ namespace
         const uint32_t b = static_cast<uint32_t>(color.z * 255.0f + 0.5f) & 0xFF;
         const uint32_t a = static_cast<uint32_t>(color.w * 255.0f + 0.5f) & 0xFF;
         return (r << 0) | (g << 8) | (b << 16) | (a << 24);
+    }
+
+    void rgbaToComponents(uint32_t rgba, int& outR, int& outG, int& outB, int& outA)
+    {
+        outR = static_cast<int>((rgba >> 0) & 0xFFu);
+        outG = static_cast<int>((rgba >> 8) & 0xFFu);
+        outB = static_cast<int>((rgba >> 16) & 0xFFu);
+        outA = static_cast<int>((rgba >> 24) & 0xFFu);
     }
 } // namespace
 
@@ -70,13 +79,20 @@ void ProjectWindow::renderLeftPanel(Project* project)
 
     ImGui::TextUnformatted("Color Picker");
     ImVec4 color = rgbaToFloat4(selectedColor);
-    if (ImGui::ColorPicker4("##ProjectColorPicker", &color.x, ImGuiColorEditFlags_AlphaBar))
+    const ImGuiColorEditFlags pickerFlags =
+        ImGuiColorEditFlags_AlphaBar |
+        ImGuiColorEditFlags_NoSidePreview |
+        ImGuiColorEditFlags_DisplayRGB |
+        ImGuiColorEditFlags_DisplayHex;
+    if (ImGui::ColorPicker4("##ProjectColorPicker", &color.x, pickerFlags))
     {
         const uint32_t newColor = float4ToRgba(color);
         if (selectedIsUser && !userPalette.empty()) userPalette[static_cast<size_t>(selectedIndex)] = newColor;
         context->setColorRGBA(newColor);
         context->setProjectDirty(true);
     }
+
+    const uint32_t previewColor = float4ToRgba(color);
 
     ImGui::Separator();
     ImGui::TextUnformatted("Palette - Default");
