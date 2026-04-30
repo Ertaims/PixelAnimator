@@ -1,4 +1,4 @@
-#include "tools/CurveTool.h"
+﻿#include "tools/CurveTool.h"
 
 #include "imgui.h"
 
@@ -189,91 +189,91 @@ void CurveTool::handleInteraction(AppContext& context,
     // Phase::AdjustingControl2 -> Commit（锁定控制点2并提交）
     if (canvasHitboxHovered && hoveredOnImage && ImGui::IsMouseClicked(ImGuiMouseButton_Left))
     {
-        if (state_.phase == InteractionState::Phase::None)
+        if (m_state.phase == InteractionState::Phase::None)
         {
             // 第一次点击：初始化起点并捕获像素快照。
             // 后续预览始终基于 basePixels 重算，避免预览叠加污染。
-            state_.phase = InteractionState::Phase::DefiningSegment;
-            state_.startX = mousePixelX;
-            state_.startY = mousePixelY;
-            state_.endX = mousePixelX;
-            state_.endY = mousePixelY;
+            m_state.phase = InteractionState::Phase::DefiningSegment;
+            m_state.startX = mousePixelX;
+            m_state.startY = mousePixelY;
+            m_state.endX = mousePixelX;
+            m_state.endY = mousePixelY;
             buildDefaultControlPoints(
-                state_.startX,
-                state_.startY,
-                state_.endX,
-                state_.endY,
-                state_.control1X,
-                state_.control1Y,
-                state_.control2X,
-                state_.control2Y);
-            state_.basePixels = frame.pixels;
-            state_.hasBasePixels = true;
+                m_state.startX,
+                m_state.startY,
+                m_state.endX,
+                m_state.endY,
+                m_state.control1X,
+                m_state.control1Y,
+                m_state.control2X,
+                m_state.control2Y);
+            m_state.basePixels = frame.pixels;
+            m_state.hasBasePixels = true;
         }
-        else if (state_.phase == InteractionState::Phase::AdjustingControl1)
+        else if (m_state.phase == InteractionState::Phase::AdjustingControl1)
         {
             // 第二次左键：锁定控制点1，进入控制点2调整阶段。
-            state_.control1X = mousePixelX;
-            state_.control1Y = mousePixelY;
-            state_.phase = InteractionState::Phase::AdjustingControl2;
+            m_state.control1X = mousePixelX;
+            m_state.control1Y = mousePixelY;
+            m_state.phase = InteractionState::Phase::AdjustingControl2;
         }
-        else if (state_.phase == InteractionState::Phase::AdjustingControl2)
+        else if (m_state.phase == InteractionState::Phase::AdjustingControl2)
         {
             // 第三次左键：提交最终曲线。
             // 这里再次从 basePixels 重算最终像素，保证提交结果与最后一次预览一致。
-            state_.control2X = mousePixelX;
-            state_.control2Y = mousePixelY;
-            std::vector<uint32_t> finalPixels = state_.basePixels;
+            m_state.control2X = mousePixelX;
+            m_state.control2Y = mousePixelY;
+            std::vector<uint32_t> finalPixels = m_state.basePixels;
             rasterizeCubicBezier(finalPixels,
                                  canvasWidth,
                                  canvasHeight,
-                                 state_.startX,
-                                 state_.startY,
-                                 state_.control1X,
-                                 state_.control1Y,
-                                 state_.control2X,
-                                 state_.control2Y,
-                                 state_.endX,
-                                 state_.endY,
+                                 m_state.startX,
+                                 m_state.startY,
+                                 m_state.control1X,
+                                 m_state.control1Y,
+                                 m_state.control2X,
+                                 m_state.control2Y,
+                                 m_state.endX,
+                                 m_state.endY,
                                  context.getBrushSize(),
                                  context.getColorRGBA(),
                                  context);
-            outPixelsCommitted = (finalPixels != state_.basePixels);
+            outPixelsCommitted = (finalPixels != m_state.basePixels);
             frame.pixels.swap(finalPixels);
-            state_ = {};
+            m_state = {};
             return;
         }
     }
 
-    if (state_.phase == InteractionState::Phase::None || !state_.hasBasePixels) return;
+    if (m_state.phase == InteractionState::Phase::None || !m_state.hasBasePixels) return;
 
-    if (state_.phase == InteractionState::Phase::DefiningSegment)
+    if (m_state.phase == InteractionState::Phase::DefiningSegment)
     {
         // 拖拽定义端点阶段：鼠标当前位置作为终点。
-        state_.endX = mousePixelX;
-        state_.endY = mousePixelY;
+        m_state.endX = mousePixelX;
+        m_state.endY = mousePixelY;
         buildDefaultControlPoints(
-            state_.startX,
-            state_.startY,
-            state_.endX,
-            state_.endY,
-            state_.control1X,
-            state_.control1Y,
-            state_.control2X,
-            state_.control2Y);
+            m_state.startX,
+            m_state.startY,
+            m_state.endX,
+            m_state.endY,
+            m_state.control1X,
+            m_state.control1Y,
+            m_state.control2X,
+            m_state.control2Y);
 
-        std::vector<uint32_t> preview = state_.basePixels;
+        std::vector<uint32_t> preview = m_state.basePixels;
         rasterizeCubicBezier(preview,
                              canvasWidth,
                              canvasHeight,
-                             state_.startX,
-                             state_.startY,
-                             state_.control1X,
-                             state_.control1Y,
-                             state_.control2X,
-                             state_.control2Y,
-                             state_.endX,
-                             state_.endY,
+                             m_state.startX,
+                             m_state.startY,
+                             m_state.control1X,
+                             m_state.control1Y,
+                             m_state.control2X,
+                             m_state.control2Y,
+                             m_state.endX,
+                             m_state.endY,
                              context.getBrushSize(),
                              context.getColorRGBA(),
                              context);
@@ -282,7 +282,7 @@ void CurveTool::handleInteraction(AppContext& context,
         // 松开左键后，端点确定，进入控制点1调整阶段。
         if (!ImGui::IsMouseDown(ImGuiMouseButton_Left))
         {
-            state_.phase = InteractionState::Phase::AdjustingControl1;
+            m_state.phase = InteractionState::Phase::AdjustingControl1;
         }
         return;
     }
@@ -290,29 +290,29 @@ void CurveTool::handleInteraction(AppContext& context,
     // 控制点调整阶段：鼠标位置即当前控制点，实时预览。
     // - AdjustingControl1：更新控制点1
     // - AdjustingControl2：更新控制点2
-    if (state_.phase == InteractionState::Phase::AdjustingControl1)
+    if (m_state.phase == InteractionState::Phase::AdjustingControl1)
     {
-        state_.control1X = mousePixelX;
-        state_.control1Y = mousePixelY;
+        m_state.control1X = mousePixelX;
+        m_state.control1Y = mousePixelY;
     }
-    else if (state_.phase == InteractionState::Phase::AdjustingControl2)
+    else if (m_state.phase == InteractionState::Phase::AdjustingControl2)
     {
-        state_.control2X = mousePixelX;
-        state_.control2Y = mousePixelY;
+        m_state.control2X = mousePixelX;
+        m_state.control2Y = mousePixelY;
     }
 
-    std::vector<uint32_t> preview = state_.basePixels;
+    std::vector<uint32_t> preview = m_state.basePixels;
     rasterizeCubicBezier(preview,
                          canvasWidth,
                          canvasHeight,
-                         state_.startX,
-                         state_.startY,
-                         state_.control1X,
-                         state_.control1Y,
-                         state_.control2X,
-                         state_.control2Y,
-                         state_.endX,
-                         state_.endY,
+                         m_state.startX,
+                         m_state.startY,
+                         m_state.control1X,
+                         m_state.control1Y,
+                         m_state.control2X,
+                         m_state.control2Y,
+                         m_state.endX,
+                         m_state.endY,
                          context.getBrushSize(),
                          context.getColorRGBA(),
                          context);
@@ -342,9 +342,10 @@ void CurveTool::renderOverlay(const AppContext& context,
 void CurveTool::resetInteractionState(Project::Frame* frame)
 {
     // 若当前处于交互中，恢复到交互开始前快照，确保不会留下半成品。
-    if (frame && state_.hasBasePixels && state_.phase != InteractionState::Phase::None)
+    if (frame && m_state.hasBasePixels && m_state.phase != InteractionState::Phase::None)
     {
-        frame->pixels = state_.basePixels;
+        frame->pixels = m_state.basePixels;
     }
-    state_ = {};
+    m_state = {};
 }
+

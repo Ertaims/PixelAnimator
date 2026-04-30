@@ -1,9 +1,11 @@
 ﻿#include "tools/RectSelectionTool.h"
 
 #include "core/Project.h"
+#include "render/SelectionOverlayRenderer.h"
+#include "tools/selection/SelectionGeometry.h"
+#include "tools/selection/SelectionTransform.h"
 
 #include <algorithm>
-#include <array>
 #include <cmath>
 #include <vector>
 
@@ -80,67 +82,6 @@ namespace
         rect.height = std::max(1, std::abs(y1 - y0) + 1);
     }
 
-    int roundHalfUp(double value)
-    {
-        return static_cast<int>(std::floor(value + 0.5));
-    }
-
-    /**
-     * @brief 将画布像素矩形转换为屏幕坐标矩形。
-     *
-     * @param rect 像素坐标系矩形
-     * @param imagePos 画布图像左上角屏幕坐标
-     * @param zoom 当前缩放倍率
-     * @param outMin 输出屏幕矩形左上角
-     * @param outMax 输出屏幕矩形右下角
-     */
-    void convertPixelRectToScreen(const AppContext::PixelRect& rect,
-                                  const ImVec2& imagePos,
-                                  int zoom,
-                                  ImVec2& outMin,
-                                  ImVec2& outMax)
-    {
-        outMin = ImVec2(imagePos.x + static_cast<float>(rect.x * zoom),
-                        imagePos.y + static_cast<float>(rect.y * zoom));
-        outMax = ImVec2(imagePos.x + static_cast<float>((rect.x + rect.width) * zoom),
-                        imagePos.y + static_cast<float>((rect.y + rect.height) * zoom));
-    }
-
-    // 计算 8 个手柄中心点（NW/N/NE/E/SE/S/SW/W）。
-    // 为了保证贴边选区也容易抓到手柄，中心点会按手柄尺寸向选区内部轻微内收，
-    // 避免手柄有一半落在画布外而导致命中困难。
-    std::array<ImVec2, 8> getSelectionHandleCenters(const AppContext::PixelRect& rect,
-                                                    const ImVec2& imagePos,
-                                                    int zoom,
-                                                    float handleHalfSize)
-    {
-        ImVec2 minP(0.0f, 0.0f);
-        ImVec2 maxP(0.0f, 0.0f);
-        convertPixelRectToScreen(rect, imagePos, zoom, minP, maxP);
-
-        const float screenWidth = std::max(0.0f, maxP.x - minP.x);
-        const float screenHeight = std::max(0.0f, maxP.y - minP.y);
-        const float insetX = std::min(handleHalfSize, screenWidth * 0.5f);
-        const float insetY = std::min(handleHalfSize, screenHeight * 0.5f);
-
-        const float leftX = minP.x + insetX;
-        const float rightX = maxP.x - insetX;
-        const float topY = minP.y + insetY;
-        const float bottomY = maxP.y - insetY;
-        const float midX = (leftX + rightX) * 0.5f;
-        const float midY = (topY + bottomY) * 0.5f;
-        return {{
-            ImVec2(leftX, topY),
-            ImVec2(midX, topY),
-            ImVec2(rightX, topY),
-            ImVec2(rightX, midY),
-            ImVec2(rightX, bottomY),
-            ImVec2(midX, bottomY),
-            ImVec2(leftX, bottomY),
-            ImVec2(leftX, midY)
-        }};
-    }
-
     /**
      * @brief 测试鼠标是否命中 8 个缩放手柄。
      *
@@ -157,7 +98,7 @@ namespace
                                const ImVec2& mousePos,
                                float handleHalfSize)
     {
-        const auto centers = getSelectionHandleCenters(rect, imagePos, zoom, handleHalfSize);
+        const auto centers = render::getSelectionHandleCenters(rect, imagePos, zoom, handleHalfSize);
         int bestHandle = -1;
         float bestDistanceSq = 0.0f;
 
@@ -178,340 +119,6 @@ namespace
             }
         }
         return bestHandle;
-    }
-
-    // 缩放结果：包含标准化后的目标矩形，以及是否发生轴向翻转。
-    struct ResizeResult
-    {
-        AppContext::PixelRect rect;
-        bool flipX = false;
-        bool flipY = false;
-    };
-
-    /**
-     * @brief 根据手柄拖拽计算缩放后的目标矩形。
-     *
-     * @param initial 拖拽开始时的初始选区矩形
-     * @param handle 当前激活手柄编号（0~7）
-     * @param deltaX 鼠标在像素坐标中的水平位移
-     * @param deltaY 鼠标在像素坐标中的垂直位移
-     * @param canvasWidth 画布像素宽度
-     * @param canvasHeight 画布像素高度
-     * @param keepAspect 是否保持等比例缩放（Ctrl）
-     * @return ResizeResult 目标矩形以及 X/Y 轴翻转标记
-     */
-    ResizeResult buildResizedRect(const AppContext::PixelRect& initial,
-                                  int handle,
-                                  int deltaX,
-                                  int deltaY,
-                                  int canvasWidth,
-                                  int canvasHeight,
-                                  bool keepAspect)
-    {
-        int left = initial.x;
-        int top = initial.y;
-        int right = initial.x + initial.width - 1;
-        int bottom = initial.y + initial.height - 1;
-
-        const bool moveLeft = (handle == 0 || handle == 6 || handle == 7);
-        const bool moveRight = (handle == 2 || handle == 3 || handle == 4);
-        const bool moveTop = (handle == 0 || handle == 1 || handle == 2);
-        const bool moveBottom = (handle == 4 || handle == 5 || handle == 6);
-
-        if (moveLeft) left += deltaX;
-        if (moveRight) right += deltaX;
-        if (moveTop) top += deltaY;
-        if (moveBottom) bottom += deltaY;
-
-        if (keepAspect && initial.width > 0 && initial.height > 0)
-        {
-            const float aspect = static_cast<float>(initial.width) / static_cast<float>(initial.height);
-            const int curW = std::abs(right - left) + 1;
-            const int curH = std::abs(bottom - top) + 1;
-            int newW = curW;
-            int newH = curH;
-
-            if ((moveLeft || moveRight) && (moveTop || moveBottom))
-            {
-                const float sx = static_cast<float>(std::max(1, curW)) / static_cast<float>(std::max(1, initial.width));
-                const float sy = static_cast<float>(std::max(1, curH)) / static_cast<float>(std::max(1, initial.height));
-                const float s = std::max(sx, sy);
-                newW = std::max(1, static_cast<int>(std::lround(static_cast<float>(initial.width) * s)));
-                newH = std::max(1, static_cast<int>(std::lround(static_cast<float>(initial.height) * s)));
-            }
-            else if (moveLeft || moveRight)
-            {
-                newW = std::max(1, curW);
-                newH = std::max(1, static_cast<int>(std::lround(static_cast<float>(newW) / aspect)));
-            }
-            else if (moveTop || moveBottom)
-            {
-                newH = std::max(1, curH);
-                newW = std::max(1, static_cast<int>(std::lround(static_cast<float>(newH) * aspect)));
-            }
-
-            if (moveLeft && !moveRight) left = right - newW + 1;
-            else
-                right = left + ((right >= left) ? (newW - 1) : -(newW - 1));
-
-            if (moveTop && !moveBottom) top = bottom - newH + 1;
-            else if (moveTop || moveBottom)
-                bottom = top + ((bottom >= top) ? (newH - 1) : -(newH - 1));
-            else
-            {
-                const float centerY = static_cast<float>(initial.y) + (static_cast<float>(initial.height - 1) * 0.5f);
-                top = static_cast<int>(std::lround(centerY - static_cast<float>(newH - 1) * 0.5f));
-                bottom = top + newH - 1;
-            }
-
-            if ((moveTop || moveBottom) && !(moveLeft || moveRight))
-            {
-                const float centerX = static_cast<float>(initial.x) + (static_cast<float>(initial.width - 1) * 0.5f);
-                left = static_cast<int>(std::lround(centerX - static_cast<float>(newW - 1) * 0.5f));
-                right = left + newW - 1;
-            }
-        }
-
-        ResizeResult out;
-        out.flipX = right < left;
-        out.flipY = bottom < top;
-
-        AppContext::PixelRect normalized;
-        normalized.x = std::min(left, right);
-        normalized.y = std::min(top, bottom);
-        normalized.width = std::abs(right - left) + 1;
-        normalized.height = std::abs(bottom - top) + 1;
-        clampRectToCanvas(normalized, canvasWidth, canvasHeight);
-        out.rect = normalized;
-        return out;
-    }
-
-    // 绘制蚂蚁线边框。
-    void drawMarchingAntsRect(ImDrawList* drawList,
-                              const ImVec2& minP,
-                              const ImVec2& maxP,
-                              float segmentLength,
-                              float timePhase)
-    {
-        if (!drawList) return;
-        const float width = maxP.x - minP.x;
-        const float height = maxP.y - minP.y;
-        if (width <= 0.0f || height <= 0.0f || segmentLength <= 0.0f) return;
-
-        const ImU32 whiteColor = IM_COL32(255, 255, 255, 255);
-        const ImU32 blackColor = IM_COL32(20, 20, 20, 255);
-        const float patternLength = segmentLength * 2.0f;
-        const float phase = std::fmod(timePhase, patternLength);
-
-        auto drawEdge = [&](const ImVec2& p0, const ImVec2& p1, float edgeLen, float offsetBase) {
-            if (edgeLen <= 0.0f) return;
-
-            const ImVec2 dir((p1.x - p0.x) / edgeLen, (p1.y - p0.y) / edgeLen);
-            for (float s = -phase; s < edgeLen; s += segmentLength)
-            {
-                const float start = std::max(0.0f, s);
-                const float end = std::min(edgeLen, s + segmentLength);
-                if (end <= start) continue;
-
-                const int stripeIndex = static_cast<int>(std::floor((s + phase + offsetBase) / segmentLength));
-                const ImU32 col = ((stripeIndex & 1) == 0) ? whiteColor : blackColor;
-                const ImVec2 a(p0.x + dir.x * start, p0.y + dir.y * start);
-                const ImVec2 b(p0.x + dir.x * end, p0.y + dir.y * end);
-                drawList->AddLine(a, b, col, 2.0f);
-            }
-        };
-
-        drawEdge(ImVec2(minP.x, minP.y), ImVec2(maxP.x, minP.y), width, 0.0f);
-        drawEdge(ImVec2(maxP.x, minP.y), ImVec2(maxP.x, maxP.y), height, width);
-        drawEdge(ImVec2(maxP.x, maxP.y), ImVec2(minP.x, maxP.y), width, width + height);
-        drawEdge(ImVec2(minP.x, maxP.y), ImVec2(minP.x, minP.y), height, width + height + width);
-    }
-
-    /**
-     * @brief 将当前选区像素整体平移到新位置，并执行“剪切式移动”。
-     *
-     * 行为说明：
-     * - 先把源选区像素从结果图中清空（透明）；
-     * - 再把源选区像素搬运到 (x+dx, y+dy)；
-     * - 越界目标像素自动裁掉；
-     * - 仅处理“当前选区中的像素”，其余像素保持不变。
-     */
-    bool buildMovedPixelsFromSource(const std::vector<uint32_t>& sourcePixels,
-                                    std::vector<uint32_t>& outPixels,
-                                    const std::vector<uint8_t>& sourceMask,
-                                    int canvasWidth,
-                                    int canvasHeight,
-                                    int dx,
-                                    int dy)
-    {
-        outPixels = sourcePixels;
-
-        // 先清空源选区像素。
-        for (int y = 0; y < canvasHeight; ++y)
-        {
-            const size_t rowOffset = static_cast<size_t>(y) * static_cast<size_t>(canvasWidth);
-            for (int x = 0; x < canvasWidth; ++x)
-            {
-                const size_t idx = rowOffset + static_cast<size_t>(x);
-                if (idx >= sourceMask.size() || sourceMask[idx] == 0) continue;
-                outPixels[idx] = 0x00000000u;
-            }
-        }
-
-        // 再把源选区像素搬运到目标位置。
-        for (int y = 0; y < canvasHeight; ++y)
-        {
-            const size_t rowOffset = static_cast<size_t>(y) * static_cast<size_t>(canvasWidth);
-            for (int x = 0; x < canvasWidth; ++x)
-            {
-                const size_t srcIdx = rowOffset + static_cast<size_t>(x);
-                if (srcIdx >= sourceMask.size() || sourceMask[srcIdx] == 0) continue;
-
-                const int nx = x + dx;
-                const int ny = y + dy;
-                if (nx < 0 || ny < 0 || nx >= canvasWidth || ny >= canvasHeight) continue;
-
-                const size_t dstIdx = static_cast<size_t>(ny) * static_cast<size_t>(canvasWidth) + static_cast<size_t>(nx);
-                outPixels[dstIdx] = sourcePixels[srcIdx];
-            }
-        }
-
-        return outPixels != sourcePixels;
-    }
-
-    /**
-     * @brief 将当前选区像素按 fromRect -> toRect 做缩放变换（最近邻，反向采样）。
-     *
-     * 行为说明：
-     * - 与选区掩码一致，采用“目标反查源”的方式避免空洞；
-     * - 只会搬运“源选区中的像素”；
-     * - 同样是剪切式：源选区先清空，再写入目标；
-     * - 非选区像素保持不变。
-     */
-    bool buildScaledPixelsFromSource(const std::vector<uint32_t>& sourcePixels,
-                                     std::vector<uint32_t>& outPixels,
-                                     const std::vector<uint8_t>& sourceMask,
-                                     int canvasWidth,
-                                     int canvasHeight,
-                                     const AppContext::PixelRect& fromRect,
-                                     const AppContext::PixelRect& toRect,
-                                     bool flipX,
-                                     bool flipY)
-    {
-        if (fromRect.width <= 0 || fromRect.height <= 0 || toRect.width <= 0 || toRect.height <= 0) return false;
-        outPixels = sourcePixels;
-
-        // 清空源选区像素。
-        for (int y = 0; y < canvasHeight; ++y)
-        {
-            const size_t rowOffset = static_cast<size_t>(y) * static_cast<size_t>(canvasWidth);
-            for (int x = 0; x < canvasWidth; ++x)
-            {
-                const size_t idx = rowOffset + static_cast<size_t>(x);
-                if (idx >= sourceMask.size() || sourceMask[idx] == 0) continue;
-                outPixels[idx] = 0x00000000u;
-            }
-        }
-
-        // 目标像素反向映射到源矩形。
-        for (int dy = toRect.y; dy < toRect.y + toRect.height; ++dy)
-        {
-            for (int dx = toRect.x; dx < toRect.x + toRect.width; ++dx)
-            {
-                if (dx < 0 || dy < 0 || dx >= canvasWidth || dy >= canvasHeight) continue;
-
-                const float u = (toRect.width <= 1)
-                    ? 0.0f
-                    : static_cast<float>(dx - toRect.x) / static_cast<float>(toRect.width - 1);
-                const float v = (toRect.height <= 1)
-                    ? 0.0f
-                    : static_cast<float>(dy - toRect.y) / static_cast<float>(toRect.height - 1);
-
-                const float sampleU = flipX ? (1.0f - u) : u;
-                const float sampleV = flipY ? (1.0f - v) : v;
-                const int sx = fromRect.x + static_cast<int>(std::lround(sampleU * static_cast<float>(fromRect.width - 1)));
-                const int sy = fromRect.y + static_cast<int>(std::lround(sampleV * static_cast<float>(fromRect.height - 1)));
-                if (sx < 0 || sy < 0 || sx >= canvasWidth || sy >= canvasHeight) continue;
-
-                const size_t srcIdx = static_cast<size_t>(sy) * static_cast<size_t>(canvasWidth) + static_cast<size_t>(sx);
-                if (srcIdx >= sourceMask.size() || sourceMask[srcIdx] == 0) continue;
-                const size_t dstIdx = static_cast<size_t>(dy) * static_cast<size_t>(canvasWidth) + static_cast<size_t>(dx);
-                outPixels[dstIdx] = sourcePixels[srcIdx];
-            }
-        }
-
-        return outPixels != sourcePixels;
-    }
-
-    bool buildMovedMaskFromSource(const std::vector<uint8_t>& sourceMask,
-                                  std::vector<uint8_t>& outMask,
-                                  int canvasWidth,
-                                  int canvasHeight,
-                                  int dx,
-                                  int dy)
-    {
-        outMask.assign(static_cast<size_t>(canvasWidth) * static_cast<size_t>(canvasHeight), static_cast<uint8_t>(0));
-        if (sourceMask.size() != outMask.size()) return false;
-
-        for (int y = 0; y < canvasHeight; ++y)
-        {
-            const size_t rowOffset = static_cast<size_t>(y) * static_cast<size_t>(canvasWidth);
-            for (int x = 0; x < canvasWidth; ++x)
-            {
-                const size_t srcIdx = rowOffset + static_cast<size_t>(x);
-                if (sourceMask[srcIdx] == 0) continue;
-
-                const int nx = x + dx;
-                const int ny = y + dy;
-                if (nx < 0 || ny < 0 || nx >= canvasWidth || ny >= canvasHeight) continue;
-
-                const size_t dstIdx = static_cast<size_t>(ny) * static_cast<size_t>(canvasWidth) + static_cast<size_t>(nx);
-                outMask[dstIdx] = 1;
-            }
-        }
-        return true;
-    }
-
-    bool buildScaledMaskFromSource(const std::vector<uint8_t>& sourceMask,
-                                   std::vector<uint8_t>& outMask,
-                                   int canvasWidth,
-                                   int canvasHeight,
-                                   const AppContext::PixelRect& fromRect,
-                                   const AppContext::PixelRect& toRect,
-                                   bool flipX,
-                                   bool flipY)
-    {
-        outMask.assign(static_cast<size_t>(canvasWidth) * static_cast<size_t>(canvasHeight), static_cast<uint8_t>(0));
-        if (sourceMask.size() != outMask.size()) return false;
-        if (fromRect.width <= 0 || fromRect.height <= 0 || toRect.width <= 0 || toRect.height <= 0) return false;
-
-        for (int dy = toRect.y; dy < toRect.y + toRect.height; ++dy)
-        {
-            for (int dx = toRect.x; dx < toRect.x + toRect.width; ++dx)
-            {
-                if (dx < 0 || dy < 0 || dx >= canvasWidth || dy >= canvasHeight) continue;
-
-                const float u = (toRect.width <= 1)
-                    ? 0.0f
-                    : static_cast<float>(dx - toRect.x) / static_cast<float>(toRect.width - 1);
-                const float v = (toRect.height <= 1)
-                    ? 0.0f
-                    : static_cast<float>(dy - toRect.y) / static_cast<float>(toRect.height - 1);
-
-                const float sampleU = flipX ? (1.0f - u) : u;
-                const float sampleV = flipY ? (1.0f - v) : v;
-                const int sx = fromRect.x + static_cast<int>(std::lround(sampleU * static_cast<float>(fromRect.width - 1)));
-                const int sy = fromRect.y + static_cast<int>(std::lround(sampleV * static_cast<float>(fromRect.height - 1)));
-                if (sx < 0 || sy < 0 || sx >= canvasWidth || sy >= canvasHeight) continue;
-
-                const size_t srcIdx = static_cast<size_t>(sy) * static_cast<size_t>(canvasWidth) + static_cast<size_t>(sx);
-                if (sourceMask[srcIdx] == 0) continue;
-
-                const size_t dstIdx = static_cast<size_t>(dy) * static_cast<size_t>(canvasWidth) + static_cast<size_t>(dx);
-                outMask[dstIdx] = 1;
-            }
-        }
-        return true;
     }
 
     void captureSelectionMask(const AppContext& context,
@@ -551,150 +158,6 @@ namespace
         }
     }
 
-    bool maskHasAnySelected(const std::vector<uint8_t>& mask)
-    {
-        for (const uint8_t v : mask)
-        {
-            if (v != 0) return true;
-        }
-        return false;
-    }
-
-    void applyRectSelectionOpToMask(std::vector<uint8_t>& ioMask,
-                                    int canvasWidth,
-                                    int canvasHeight,
-                                    const AppContext::PixelRect& rect,
-                                    AppContext::PixelSelectionOp op)
-    {
-        if (ioMask.size() != static_cast<size_t>(canvasWidth) * static_cast<size_t>(canvasHeight)) return;
-        if (canvasWidth <= 0 || canvasHeight <= 0 || rect.width <= 0 || rect.height <= 0) return;
-
-        AppContext::PixelRect clamped = rect;
-        clampRectToCanvas(clamped, canvasWidth, canvasHeight);
-
-        if (op == AppContext::PixelSelectionOp::Replace) std::fill(ioMask.begin(), ioMask.end(), static_cast<uint8_t>(0));
-
-        for (int y = clamped.y; y < clamped.y + clamped.height; ++y)
-        {
-            const size_t rowOffset = static_cast<size_t>(y) * static_cast<size_t>(canvasWidth);
-            for (int x = clamped.x; x < clamped.x + clamped.width; ++x)
-            {
-                const size_t idx = rowOffset + static_cast<size_t>(x);
-                if (op == AppContext::PixelSelectionOp::Remove) ioMask[idx] = 0;
-                else
-                    ioMask[idx] = 1;
-            }
-        }
-    }
-
-    // 将椭圆区域应用到选区掩码。
-    void applyEllipseSelectionOpToMask(std::vector<uint8_t>& ioMask,
-                                       int canvasWidth,
-                                       int canvasHeight,
-                                       const AppContext::PixelRect& rect,
-                                       AppContext::PixelSelectionOp op)
-    {
-        if (ioMask.size() != static_cast<size_t>(canvasWidth) * static_cast<size_t>(canvasHeight)) return;
-        if (canvasWidth <= 0 || canvasHeight <= 0 || rect.width <= 0 || rect.height <= 0) return;
-
-        AppContext::PixelRect clamped = rect;
-        clampRectToCanvas(clamped, canvasWidth, canvasHeight);
-
-        if (op == AppContext::PixelSelectionOp::Replace)
-        {
-            std::fill(ioMask.begin(), ioMask.end(), static_cast<uint8_t>(0));
-        }
-
-        const int minX = rect.x;
-        const int minY = rect.y;
-        const int maxX = rect.x + rect.width - 1;
-        const int maxY = rect.y + rect.height - 1;
-
-        if (rect.width == 1)
-        {
-            for (int y = clamped.y; y < clamped.y + clamped.height; ++y)
-            {
-                const size_t idx = static_cast<size_t>(y) * static_cast<size_t>(canvasWidth)
-                    + static_cast<size_t>(clamped.x);
-                if (op == AppContext::PixelSelectionOp::Remove) ioMask[idx] = 0;
-                else ioMask[idx] = 1;
-            }
-            return;
-        }
-
-        if (rect.height == 1)
-        {
-            const size_t rowOffset = static_cast<size_t>(clamped.y) * static_cast<size_t>(canvasWidth);
-            for (int x = clamped.x; x < clamped.x + clamped.width; ++x)
-            {
-                const size_t idx = rowOffset + static_cast<size_t>(x);
-                if (op == AppContext::PixelSelectionOp::Remove) ioMask[idx] = 0;
-                else ioMask[idx] = 1;
-            }
-            return;
-        }
-
-        const double centerX = (static_cast<double>(minX) + static_cast<double>(maxX)) * 0.5;
-        const double centerY = (static_cast<double>(minY) + static_cast<double>(maxY)) * 0.5;
-        const double radiusInset = 0.25;
-        const double radiusX = std::max(0.5, static_cast<double>(rect.width - 1) * 0.5 - radiusInset);
-        const double radiusY = std::max(0.5, static_cast<double>(rect.height - 1) * 0.5 - radiusInset);
-
-        std::vector<int> rowLeft(static_cast<size_t>(clamped.height), canvasWidth);
-        std::vector<int> rowRight(static_cast<size_t>(clamped.height), -1);
-
-        auto markBoundaryPoint = [&](int x, int y)
-        {
-            if (y < clamped.y || y >= clamped.y + clamped.height) return;
-
-            const size_t rowIndex = static_cast<size_t>(y - clamped.y);
-            rowLeft[rowIndex] = std::min(rowLeft[rowIndex], x);
-            rowRight[rowIndex] = std::max(rowRight[rowIndex], x);
-        };
-
-        for (int x = minX; x <= maxX; ++x)
-        {
-            const double normalizedX = (static_cast<double>(x) - centerX) / radiusX;
-            if (std::abs(normalizedX) > 1.0) continue;
-
-            const double yOffset = radiusY * std::sqrt(std::max(0.0, 1.0 - normalizedX * normalizedX));
-            const int topY = roundHalfUp(centerY - yOffset);
-            const int bottomY = minY + maxY - topY;
-            markBoundaryPoint(x, topY);
-            markBoundaryPoint(x, bottomY);
-        }
-
-        for (int y = minY; y <= maxY; ++y)
-        {
-            const double normalizedY = (static_cast<double>(y) - centerY) / radiusY;
-            if (std::abs(normalizedY) > 1.0) continue;
-
-            const double xOffset = radiusX * std::sqrt(std::max(0.0, 1.0 - normalizedY * normalizedY));
-            const int leftX = roundHalfUp(centerX - xOffset);
-            const int rightX = minX + maxX - leftX;
-            markBoundaryPoint(leftX, y);
-            markBoundaryPoint(rightX, y);
-        }
-
-        for (int y = clamped.y; y < clamped.y + clamped.height; ++y)
-        {
-            const size_t rowIndex = static_cast<size_t>(y - clamped.y);
-            if (rowRight[rowIndex] < rowLeft[rowIndex]) continue;
-
-            const int fillStartX = std::max(clamped.x, rowLeft[rowIndex]);
-            const int fillEndX = std::min(clamped.x + clamped.width - 1, rowRight[rowIndex]);
-            if (fillEndX < fillStartX) continue;
-
-            const size_t rowOffset = static_cast<size_t>(y) * static_cast<size_t>(canvasWidth);
-            for (int x = fillStartX; x <= fillEndX; ++x)
-            {
-                const size_t idx = rowOffset + static_cast<size_t>(x);
-                if (op == AppContext::PixelSelectionOp::Remove) ioMask[idx] = 0;
-                else ioMask[idx] = 1;
-            }
-        }
-    }
-
     void applySelectionShapeOpToMask(std::vector<uint8_t>& ioMask,
                                      int canvasWidth,
                                      int canvasHeight,
@@ -704,7 +167,7 @@ namespace
     {
         if (shape == RectSelectionTool::SelectionShape::Ellipse)
         {
-            applyEllipseSelectionOpToMask(ioMask, canvasWidth, canvasHeight, rect, op);
+            selection::applyEllipseOpToMask(ioMask, canvasWidth, canvasHeight, rect, op);
             return;
         }
         if (shape == RectSelectionTool::SelectionShape::MagicWand)
@@ -713,282 +176,9 @@ namespace
             // 这里保持原掩码不变，避免在框选预览分支误绘制矩形。
             return;
         }
-        applyRectSelectionOpToMask(ioMask, canvasWidth, canvasHeight, rect, op);
+        selection::applyRectOpToMask(ioMask, canvasWidth, canvasHeight, rect, op);
     }
 
-    // 将“任意掩码”按 Replace/Add/Remove 应用到目标掩码。
-    void applyArbitraryMaskOpToMask(std::vector<uint8_t>& ioMask,
-                                    const std::vector<uint8_t>& applyMask,
-                                    AppContext::PixelSelectionOp op)
-    {
-        if (ioMask.size() != applyMask.size()) return;
-        if (op == AppContext::PixelSelectionOp::Replace) std::fill(ioMask.begin(), ioMask.end(), static_cast<uint8_t>(0));
-
-        for (size_t i = 0; i < ioMask.size(); ++i)
-        {
-            if (applyMask[i] == 0) continue;
-            if (op == AppContext::PixelSelectionOp::Remove) ioMask[i] = 0;
-            else
-                ioMask[i] = 1;
-        }
-    }
-
-    // 给套索路径追加一段整数像素线，避免快速拖拽出现路径断裂。
-    void appendLineToLassoPath(std::vector<ImVec2>& path, int x0, int y0, int x1, int y1)
-    {
-        int dx = std::abs(x1 - x0);
-        int sx = (x0 < x1) ? 1 : -1;
-        int dy = -std::abs(y1 - y0);
-        int sy = (y0 < y1) ? 1 : -1;
-        int err = dx + dy;
-        int x = x0;
-        int y = y0;
-
-        while (true)
-        {
-            if (path.empty()
-                || static_cast<int>(path.back().x) != x
-                || static_cast<int>(path.back().y) != y)
-            {
-                path.emplace_back(static_cast<float>(x), static_cast<float>(y));
-            }
-            if (x == x1 && y == y1) break;
-            const int e2 = err * 2;
-            if (e2 >= dy)
-            {
-                err += dy;
-                x += sx;
-            }
-            if (e2 <= dx)
-            {
-                err += dx;
-                y += sy;
-            }
-        }
-    }
-
-    // 判断点是否在多边形内部（奇偶规则）。
-    bool isPointInsidePolygonEvenOdd(const std::vector<ImVec2>& polygon, float px, float py)
-    {
-        if (polygon.size() < 3) return false;
-        bool inside = false;
-        size_t j = polygon.size() - 1;
-        for (size_t i = 0; i < polygon.size(); ++i)
-        {
-            const float xi = polygon[i].x + 0.5f;
-            const float yi = polygon[i].y + 0.5f;
-            const float xj = polygon[j].x + 0.5f;
-            const float yj = polygon[j].y + 0.5f;
-
-            const bool intersect = ((yi > py) != (yj > py))
-                && (px < (xj - xi) * (py - yi) / ((yj - yi) + 1e-6f) + xi);
-            if (intersect) inside = !inside;
-            j = i;
-        }
-        return inside;
-    }
-
-    // 根据套索路径生成闭合区域掩码。
-    bool buildLassoMaskFromPath(const std::vector<ImVec2>& inputPath,
-                                int canvasWidth,
-                                int canvasHeight,
-                                std::vector<uint8_t>& outMask)
-    {
-        outMask.assign(static_cast<size_t>(canvasWidth) * static_cast<size_t>(canvasHeight), static_cast<uint8_t>(0));
-        if (canvasWidth <= 0 || canvasHeight <= 0 || inputPath.size() < 2) return false;
-
-        // 拷贝一份路径，并保证首尾闭合。
-        std::vector<ImVec2> polygon = inputPath;
-        const int firstX = static_cast<int>(polygon.front().x);
-        const int firstY = static_cast<int>(polygon.front().y);
-        const int lastX = static_cast<int>(polygon.back().x);
-        const int lastY = static_cast<int>(polygon.back().y);
-        if (firstX != lastX || firstY != lastY) appendLineToLassoPath(polygon, lastX, lastY, firstX, firstY);
-        if (polygon.size() < 3) return false;
-
-        int minX = canvasWidth - 1;
-        int minY = canvasHeight - 1;
-        int maxX = 0;
-        int maxY = 0;
-        bool hasValid = false;
-        for (const ImVec2& p : polygon)
-        {
-            const int x = std::clamp(static_cast<int>(p.x), 0, canvasWidth - 1);
-            const int y = std::clamp(static_cast<int>(p.y), 0, canvasHeight - 1);
-            minX = std::min(minX, x);
-            minY = std::min(minY, y);
-            maxX = std::max(maxX, x);
-            maxY = std::max(maxY, y);
-            hasValid = true;
-        }
-        if (!hasValid) return false;
-
-        for (int y = minY; y <= maxY; ++y)
-        {
-            const size_t rowOffset = static_cast<size_t>(y) * static_cast<size_t>(canvasWidth);
-            for (int x = minX; x <= maxX; ++x)
-            {
-                const float cx = static_cast<float>(x) + 0.5f;
-                const float cy = static_cast<float>(y) + 0.5f;
-                if (isPointInsidePolygonEvenOdd(polygon, cx, cy)) outMask[rowOffset + static_cast<size_t>(x)] = 1;
-            }
-        }
-
-        // 边界像素也标记为选中，保证轮廓不会出现断裂。
-        for (const ImVec2& p : polygon)
-        {
-            const int x = std::clamp(static_cast<int>(p.x), 0, canvasWidth - 1);
-            const int y = std::clamp(static_cast<int>(p.y), 0, canvasHeight - 1);
-            outMask[static_cast<size_t>(y) * static_cast<size_t>(canvasWidth) + static_cast<size_t>(x)] = 1;
-        }
-
-        return maskHasAnySelected(outMask);
-    }
-
-    // 判断当前点击是否足够接近首点，用于“点击起点闭合”。
-    bool isCloseToFirstVertex(const std::vector<ImVec2>& vertices, int x, int y, int thresholdPixels)
-    {
-        if (vertices.empty()) return false;
-        const int fx = static_cast<int>(vertices.front().x);
-        const int fy = static_cast<int>(vertices.front().y);
-        return std::abs(fx - x) <= thresholdPixels && std::abs(fy - y) <= thresholdPixels;
-    }
-
-    // 根据多边形顶点构建闭合掩码：先把边离散成像素路径，再复用套索填充逻辑。
-    bool buildPolygonMaskFromVertices(const std::vector<ImVec2>& vertices,
-                                      int canvasWidth,
-                                      int canvasHeight,
-                                      std::vector<uint8_t>& outMask)
-    {
-        if (vertices.size() < 3) return false;
-
-        std::vector<ImVec2> pathPixels;
-        pathPixels.reserve(vertices.size() * 4);
-        pathPixels.push_back(vertices.front());
-
-        for (size_t i = 1; i < vertices.size(); ++i)
-        {
-            const int x0 = static_cast<int>(vertices[i - 1].x);
-            const int y0 = static_cast<int>(vertices[i - 1].y);
-            const int x1 = static_cast<int>(vertices[i].x);
-            const int y1 = static_cast<int>(vertices[i].y);
-            appendLineToLassoPath(pathPixels, x0, y0, x1, y1);
-        }
-
-        const int lx = static_cast<int>(vertices.back().x);
-        const int ly = static_cast<int>(vertices.back().y);
-        const int fx = static_cast<int>(vertices.front().x);
-        const int fy = static_cast<int>(vertices.front().y);
-        appendLineToLassoPath(pathPixels, lx, ly, fx, fy);
-
-        return buildLassoMaskFromPath(pathPixels, canvasWidth, canvasHeight, outMask);
-    }
-
-    void drawMaskSolidOutline(ImDrawList* drawList,
-                              const std::vector<uint8_t>& mask,
-                              int canvasWidth,
-                              int canvasHeight,
-                              const ImVec2& imagePos,
-                              int zoom,
-                              ImU32 color,
-                              float thickness)
-    {
-        if (!drawList || zoom <= 0) return;
-        if (mask.size() != static_cast<size_t>(canvasWidth) * static_cast<size_t>(canvasHeight)) return;
-
-        const auto isSel = [&](int x, int y) -> bool {
-            if (x < 0 || y < 0 || x >= canvasWidth || y >= canvasHeight) return false;
-            const size_t idx = static_cast<size_t>(y) * static_cast<size_t>(canvasWidth) + static_cast<size_t>(x);
-            return mask[idx] != 0;
-        };
-
-        for (int y = 0; y < canvasHeight; ++y)
-        {
-            for (int x = 0; x < canvasWidth; ++x)
-            {
-                if (!isSel(x, y)) continue;
-
-                const float x0 = imagePos.x + static_cast<float>(x * zoom);
-                const float y0 = imagePos.y + static_cast<float>(y * zoom);
-                const float x1 = x0 + static_cast<float>(zoom);
-                const float y1 = y0 + static_cast<float>(zoom);
-
-                if (!isSel(x, y - 1)) drawList->AddLine(ImVec2(x0, y0), ImVec2(x1, y0), color, thickness);
-                if (!isSel(x + 1, y)) drawList->AddLine(ImVec2(x1, y0), ImVec2(x1, y1), color, thickness);
-                if (!isSel(x, y + 1)) drawList->AddLine(ImVec2(x0, y1), ImVec2(x1, y1), color, thickness);
-                if (!isSel(x - 1, y)) drawList->AddLine(ImVec2(x0, y0), ImVec2(x0, y1), color, thickness);
-            }
-        }
-    }
-
-    void drawMarchingAntsEdge(ImDrawList* drawList,
-                              const ImVec2& p0,
-                              const ImVec2& p1,
-                              float edgeLen,
-                              float segmentLength,
-                              float timePhase,
-                              float offsetBase)
-    {
-        if (!drawList || edgeLen <= 0.0f || segmentLength <= 0.0f) return;
-
-        const ImU32 whiteColor = IM_COL32(255, 255, 255, 255);
-        const ImU32 blackColor = IM_COL32(20, 20, 20, 255);
-        const float patternLength = segmentLength * 2.0f;
-        const float phase = std::fmod(timePhase, patternLength);
-        const ImVec2 dir((p1.x - p0.x) / edgeLen, (p1.y - p0.y) / edgeLen);
-
-        for (float s = -phase; s < edgeLen; s += segmentLength)
-        {
-            const float start = std::max(0.0f, s);
-            const float end = std::min(edgeLen, s + segmentLength);
-            if (end <= start) continue;
-
-            const int stripeIndex = static_cast<int>(std::floor((s + phase + offsetBase) / segmentLength));
-            const ImU32 col = ((stripeIndex & 1) == 0) ? whiteColor : blackColor;
-            const ImVec2 a(p0.x + dir.x * start, p0.y + dir.y * start);
-            const ImVec2 b(p0.x + dir.x * end, p0.y + dir.y * end);
-            drawList->AddLine(a, b, col, 2.0f);
-        }
-    }
-
-    void drawMarchingAntsMask(ImDrawList* drawList,
-                              const std::vector<uint8_t>& mask,
-                              int canvasWidth,
-                              int canvasHeight,
-                              const ImVec2& imagePos,
-                              int zoom,
-                              float segmentLength,
-                              float timePhase)
-    {
-        if (!drawList || zoom <= 0) return;
-        if (mask.size() != static_cast<size_t>(canvasWidth) * static_cast<size_t>(canvasHeight)) return;
-
-        const auto isSel = [&](int x, int y) -> bool {
-            if (x < 0 || y < 0 || x >= canvasWidth || y >= canvasHeight) return false;
-            const size_t idx = static_cast<size_t>(y) * static_cast<size_t>(canvasWidth) + static_cast<size_t>(x);
-            return mask[idx] != 0;
-        };
-
-        const float edgeLen = static_cast<float>(zoom);
-        for (int y = 0; y < canvasHeight; ++y)
-        {
-            for (int x = 0; x < canvasWidth; ++x)
-            {
-                if (!isSel(x, y)) continue;
-
-                const float x0 = imagePos.x + static_cast<float>(x * zoom);
-                const float y0 = imagePos.y + static_cast<float>(y * zoom);
-                const float x1 = x0 + static_cast<float>(zoom);
-                const float y1 = y0 + static_cast<float>(zoom);
-                const float base = static_cast<float>((x + y) * zoom);
-
-                if (!isSel(x, y - 1)) drawMarchingAntsEdge(drawList, ImVec2(x0, y0), ImVec2(x1, y0), edgeLen, segmentLength, timePhase, base);
-                if (!isSel(x + 1, y)) drawMarchingAntsEdge(drawList, ImVec2(x1, y0), ImVec2(x1, y1), edgeLen, segmentLength, timePhase, base + edgeLen);
-                if (!isSel(x, y + 1)) drawMarchingAntsEdge(drawList, ImVec2(x0, y1), ImVec2(x1, y1), edgeLen, segmentLength, timePhase, base + edgeLen * 2.0f);
-                if (!isSel(x - 1, y)) drawMarchingAntsEdge(drawList, ImVec2(x0, y0), ImVec2(x0, y1), edgeLen, segmentLength, timePhase, base + edgeLen * 3.0f);
-            }
-        }
-    }
 } // namespace
 
 bool RectSelectionTool::apply(Project::Frame& frame,
@@ -1025,18 +215,18 @@ void RectSelectionTool::handleInteraction(AppContext& context,
 
     if (anyPopupOpen)
     {
-        state_.mode = InteractionState::Mode::None;
-        state_.previewBoundsValid = false;
-        state_.previewFlipX = false;
-        state_.previewFlipY = false;
+        m_state.mode = InteractionState::Mode::None;
+        m_state.previewBoundsValid = false;
+        m_state.previewFlipX = false;
+        m_state.previewFlipY = false;
         return;
     }
 
     int mousePixelX = 0;
     int mousePixelY = 0;
     getClampedPixelFromMouse(mousePos, imagePos, zoom, canvasWidth, canvasHeight, mousePixelX, mousePixelY);
-    state_.hoverMouseX = mousePixelX;
-    state_.hoverMouseY = mousePixelY;
+    m_state.hoverMouseX = mousePixelX;
+    m_state.hoverMouseY = mousePixelY;
 
     AppContext::PixelRect currentBounds;
     const bool hasSelectionBounds = context.getPixelSelectionBounds(currentBounds);
@@ -1054,24 +244,24 @@ void RectSelectionTool::handleInteraction(AppContext& context,
         {
             // 进入缩放拖拽前，准备“非破坏性变换缓存”。
             // 若当前选区与上次提交的选区不一致，则重建缓存基准。
-            if (!sourceCacheValid_ || !isSameRect(currentBounds, lastCommittedBounds_))
+            if (!m_sourceCacheValid || !isSameRect(currentBounds, m_lastCommittedBounds))
             {
-                sourceFramePixels_ = frame.pixels;
-                captureSelectionMask(context, canvasWidth, canvasHeight, sourceSelectionMask_);
-                sourceBounds_ = currentBounds;
-                lastCommittedBounds_ = currentBounds;
-                sourceCacheValid_ = true;
+                m_sourceFramePixels = frame.pixels;
+                captureSelectionMask(context, canvasWidth, canvasHeight, m_sourceSelectionMask);
+                m_sourceBounds = currentBounds;
+                m_lastCommittedBounds = currentBounds;
+                m_sourceCacheValid = true;
             }
 
-            state_.mode = InteractionState::Mode::Resizing;
-            state_.activeHandle = hoveredHandle;
-            state_.startMouseX = mousePixelX;
-            state_.startMouseY = mousePixelY;
-            state_.initialBounds = currentBounds;
-            state_.previewBounds = currentBounds;
-            state_.previewBoundsValid = true;
-            state_.previewFlipX = false;
-            state_.previewFlipY = false;
+            m_state.mode = InteractionState::Mode::Resizing;
+            m_state.activeHandle = hoveredHandle;
+            m_state.startMouseX = mousePixelX;
+            m_state.startMouseY = mousePixelY;
+            m_state.initialBounds = currentBounds;
+            m_state.previewBounds = currentBounds;
+            m_state.previewBoundsValid = true;
+            m_state.previewFlipX = false;
+            m_state.previewFlipY = false;
         }
         else if (hoveredOnImage && insideSelection)
         {
@@ -1081,29 +271,29 @@ void RectSelectionTool::handleInteraction(AppContext& context,
              * - 不能复用缩放阶段留下的历史缓存，否则会把旧选区像素投影到新位置，
              *   导致你看到的“像素莫名移动/跑出框选区域”。
              */
-            sourceFramePixels_ = frame.pixels;
-            captureSelectionMask(context, canvasWidth, canvasHeight, sourceSelectionMask_);
-            sourceBounds_ = currentBounds;
-            lastCommittedBounds_ = currentBounds;
-            sourceCacheValid_ = true;
+            m_sourceFramePixels = frame.pixels;
+            captureSelectionMask(context, canvasWidth, canvasHeight, m_sourceSelectionMask);
+            m_sourceBounds = currentBounds;
+            m_lastCommittedBounds = currentBounds;
+            m_sourceCacheValid = true;
 
-            state_.mode = InteractionState::Mode::Moving;
-            state_.startMouseX = mousePixelX;
-            state_.startMouseY = mousePixelY;
-            state_.initialBounds = currentBounds;
-            state_.previewBounds = currentBounds;
-            state_.previewBoundsValid = true;
-            state_.previewFlipX = false;
-            state_.previewFlipY = false;
+            m_state.mode = InteractionState::Mode::Moving;
+            m_state.startMouseX = mousePixelX;
+            m_state.startMouseY = mousePixelY;
+            m_state.initialBounds = currentBounds;
+            m_state.previewBounds = currentBounds;
+            m_state.previewBoundsValid = true;
+            m_state.previewFlipX = false;
+            m_state.previewFlipY = false;
         }
         else if (hoveredOnImage)
         {
-            if (selectionShape_ == SelectionShape::MagicWand)
+            if (m_selectionShape == SelectionShape::MagicWand)
             {
                 const AppContext::PixelSelectionOp op = ImGui::GetIO().KeyCtrl
                     ? AppContext::PixelSelectionOp::Add
                     : AppContext::PixelSelectionOp::Replace;
-                if (magicWandTool_.applyFromSeed(
+                if (m_magicWandTool.applyFromSeed(
                         frame,
                         canvasWidth,
                         canvasHeight,
@@ -1113,90 +303,90 @@ void RectSelectionTool::handleInteraction(AppContext& context,
                         op))
                 {
                     // 选区定义发生变化，失效变换缓存。
-                    sourceCacheValid_ = false;
-                    sourceFramePixels_.clear();
-                    sourceSelectionMask_.clear();
+                    m_sourceCacheValid = false;
+                    m_sourceFramePixels.clear();
+                    m_sourceSelectionMask.clear();
                 }
-                state_ = {};
+                m_state = {};
             }
-            else if (selectionShape_ == SelectionShape::PolygonLasso)
+            else if (m_selectionShape == SelectionShape::PolygonLasso)
             {
                 const AppContext::PixelSelectionOp clickOp = ImGui::GetIO().KeyCtrl
                     ? AppContext::PixelSelectionOp::Add
                     : AppContext::PixelSelectionOp::Replace;
 
-                if (state_.mode != InteractionState::Mode::PolygonLassoSelecting)
+                if (m_state.mode != InteractionState::Mode::PolygonLassoSelecting)
                 {
-                    state_.mode = InteractionState::Mode::PolygonLassoSelecting;
-                    state_.removeMode = false;
-                    state_.previewOp = clickOp;
-                    state_.previewBoundsValid = false;
-                    state_.previewFlipX = false;
-                    state_.previewFlipY = false;
-                    state_.lassoPathPixels.clear();
-                    state_.lassoPathPixels.emplace_back(static_cast<float>(mousePixelX), static_cast<float>(mousePixelY));
+                    m_state.mode = InteractionState::Mode::PolygonLassoSelecting;
+                    m_state.removeMode = false;
+                    m_state.previewOp = clickOp;
+                    m_state.previewBoundsValid = false;
+                    m_state.previewFlipX = false;
+                    m_state.previewFlipY = false;
+                    m_state.lassoPathPixels.clear();
+                    m_state.lassoPathPixels.emplace_back(static_cast<float>(mousePixelX), static_cast<float>(mousePixelY));
                 }
-                else if (!state_.removeMode)
+                else if (!m_state.removeMode)
                 {
                     // 点击起点闭合：至少 3 个顶点时生效。
-                    if (state_.lassoPathPixels.size() >= 3
-                        && isCloseToFirstVertex(state_.lassoPathPixels, mousePixelX, mousePixelY, 1))
+                    if (m_state.lassoPathPixels.size() >= 3
+                        && selection::isCloseToFirstVertex(m_state.lassoPathPixels, mousePixelX, mousePixelY, 1))
                     {
                         std::vector<uint8_t> polygonMask;
-                        if (buildPolygonMaskFromVertices(state_.lassoPathPixels, canvasWidth, canvasHeight, polygonMask))
+                        if (selection::buildPolygonMaskFromVertices(m_state.lassoPathPixels, canvasWidth, canvasHeight, polygonMask))
                         {
-                            context.applyMaskPixelSelection(polygonMask, canvasWidth, canvasHeight, state_.previewOp);
-                            sourceCacheValid_ = false;
-                            sourceFramePixels_.clear();
-                            sourceSelectionMask_.clear();
+                            context.applyMaskPixelSelection(polygonMask, canvasWidth, canvasHeight, m_state.previewOp);
+                            m_sourceCacheValid = false;
+                            m_sourceFramePixels.clear();
+                            m_sourceSelectionMask.clear();
                         }
-                        state_ = {};
+                        m_state = {};
                     }
                     else
                     {
-                        const int lastX = static_cast<int>(state_.lassoPathPixels.back().x);
-                        const int lastY = static_cast<int>(state_.lassoPathPixels.back().y);
+                        const int lastX = static_cast<int>(m_state.lassoPathPixels.back().x);
+                        const int lastY = static_cast<int>(m_state.lassoPathPixels.back().y);
                         if (lastX != mousePixelX || lastY != mousePixelY)
-                            state_.lassoPathPixels.emplace_back(static_cast<float>(mousePixelX), static_cast<float>(mousePixelY));
+                            m_state.lassoPathPixels.emplace_back(static_cast<float>(mousePixelX), static_cast<float>(mousePixelY));
                     }
                 }
             }
-            else if (selectionShape_ == SelectionShape::Lasso)
+            else if (m_selectionShape == SelectionShape::Lasso)
             {
-                state_.mode = InteractionState::Mode::LassoSelecting;
-                state_.removeMode = false;
-                state_.previewOp = ImGui::GetIO().KeyCtrl
+                m_state.mode = InteractionState::Mode::LassoSelecting;
+                m_state.removeMode = false;
+                m_state.previewOp = ImGui::GetIO().KeyCtrl
                     ? AppContext::PixelSelectionOp::Add
                     : AppContext::PixelSelectionOp::Replace;
-                state_.previewBoundsValid = false;
-                state_.previewFlipX = false;
-                state_.previewFlipY = false;
-                state_.lassoPathPixels.clear();
-                state_.lassoPathPixels.emplace_back(static_cast<float>(mousePixelX), static_cast<float>(mousePixelY));
+                m_state.previewBoundsValid = false;
+                m_state.previewFlipX = false;
+                m_state.previewFlipY = false;
+                m_state.lassoPathPixels.clear();
+                m_state.lassoPathPixels.emplace_back(static_cast<float>(mousePixelX), static_cast<float>(mousePixelY));
             }
             else
             {
-            state_.mode = InteractionState::Mode::BoxSelecting;
-            state_.dragStartX = mousePixelX;
-            state_.dragStartY = mousePixelY;
-            state_.removeMode = false;
+            m_state.mode = InteractionState::Mode::BoxSelecting;
+            m_state.dragStartX = mousePixelX;
+            m_state.dragStartY = mousePixelY;
+            m_state.removeMode = false;
             // 左键框选：按下瞬间决定是 Replace 还是 Add，拖拽过程不再抖动。
-            state_.previewOp = ImGui::GetIO().KeyCtrl
+            m_state.previewOp = ImGui::GetIO().KeyCtrl
                 ? AppContext::PixelSelectionOp::Add
                 : AppContext::PixelSelectionOp::Replace;
-            state_.previewBounds = rectFromDragPixels(mousePixelX, mousePixelY, mousePixelX, mousePixelY);
-            state_.previewBoundsValid = true;
-            state_.previewFlipX = false;
-            state_.previewFlipY = false;
+            m_state.previewBounds = rectFromDragPixels(mousePixelX, mousePixelY, mousePixelX, mousePixelY);
+            m_state.previewBoundsValid = true;
+            m_state.previewFlipX = false;
+            m_state.previewFlipY = false;
             }
         }
     }
 
     if (canvasHitboxHovered && hoveredOnImage && ImGui::IsMouseClicked(ImGuiMouseButton_Right))
     {
-        if (selectionShape_ == SelectionShape::MagicWand)
+        if (m_selectionShape == SelectionShape::MagicWand)
         {
-            if (magicWandTool_.applyFromSeed(
+            if (m_magicWandTool.applyFromSeed(
                     frame,
                     canvasWidth,
                     canvasHeight,
@@ -1205,100 +395,100 @@ void RectSelectionTool::handleInteraction(AppContext& context,
                     context,
                     AppContext::PixelSelectionOp::Remove))
             {
-                sourceCacheValid_ = false;
-                sourceFramePixels_.clear();
-                sourceSelectionMask_.clear();
+                m_sourceCacheValid = false;
+                m_sourceFramePixels.clear();
+                m_sourceSelectionMask.clear();
             }
-            state_ = {};
+            m_state = {};
         }
-        else if (selectionShape_ == SelectionShape::PolygonLasso)
+        else if (m_selectionShape == SelectionShape::PolygonLasso)
         {
-            if (state_.mode != InteractionState::Mode::PolygonLassoSelecting)
+            if (m_state.mode != InteractionState::Mode::PolygonLassoSelecting)
             {
-                state_.mode = InteractionState::Mode::PolygonLassoSelecting;
-                state_.removeMode = true;
-                state_.previewOp = AppContext::PixelSelectionOp::Remove;
-                state_.previewBoundsValid = false;
-                state_.previewFlipX = false;
-                state_.previewFlipY = false;
-                state_.lassoPathPixels.clear();
-                state_.lassoPathPixels.emplace_back(static_cast<float>(mousePixelX), static_cast<float>(mousePixelY));
+                m_state.mode = InteractionState::Mode::PolygonLassoSelecting;
+                m_state.removeMode = true;
+                m_state.previewOp = AppContext::PixelSelectionOp::Remove;
+                m_state.previewBoundsValid = false;
+                m_state.previewFlipX = false;
+                m_state.previewFlipY = false;
+                m_state.lassoPathPixels.clear();
+                m_state.lassoPathPixels.emplace_back(static_cast<float>(mousePixelX), static_cast<float>(mousePixelY));
             }
-            else if (state_.removeMode)
+            else if (m_state.removeMode)
             {
-                if (state_.lassoPathPixels.size() >= 3
-                    && isCloseToFirstVertex(state_.lassoPathPixels, mousePixelX, mousePixelY, 1))
+                if (m_state.lassoPathPixels.size() >= 3
+                    && selection::isCloseToFirstVertex(m_state.lassoPathPixels, mousePixelX, mousePixelY, 1))
                 {
                     std::vector<uint8_t> polygonMask;
-                    if (buildPolygonMaskFromVertices(state_.lassoPathPixels, canvasWidth, canvasHeight, polygonMask))
+                    if (selection::buildPolygonMaskFromVertices(m_state.lassoPathPixels, canvasWidth, canvasHeight, polygonMask))
                     {
-                        context.applyMaskPixelSelection(polygonMask, canvasWidth, canvasHeight, state_.previewOp);
-                        sourceCacheValid_ = false;
-                        sourceFramePixels_.clear();
-                        sourceSelectionMask_.clear();
+                        context.applyMaskPixelSelection(polygonMask, canvasWidth, canvasHeight, m_state.previewOp);
+                        m_sourceCacheValid = false;
+                        m_sourceFramePixels.clear();
+                        m_sourceSelectionMask.clear();
                     }
-                    state_ = {};
+                    m_state = {};
                 }
                 else
                 {
-                    const int lastX = static_cast<int>(state_.lassoPathPixels.back().x);
-                    const int lastY = static_cast<int>(state_.lassoPathPixels.back().y);
+                    const int lastX = static_cast<int>(m_state.lassoPathPixels.back().x);
+                    const int lastY = static_cast<int>(m_state.lassoPathPixels.back().y);
                     if (lastX != mousePixelX || lastY != mousePixelY)
-                        state_.lassoPathPixels.emplace_back(static_cast<float>(mousePixelX), static_cast<float>(mousePixelY));
+                        m_state.lassoPathPixels.emplace_back(static_cast<float>(mousePixelX), static_cast<float>(mousePixelY));
                 }
             }
             else
             {
                 // 左键进行中的多边形套索遇到右键时直接取消，避免操作歧义。
-                state_ = {};
+                m_state = {};
             }
         }
-        else if (selectionShape_ == SelectionShape::Lasso)
+        else if (m_selectionShape == SelectionShape::Lasso)
         {
-            state_.mode = InteractionState::Mode::LassoSelecting;
-            state_.removeMode = true;
-            state_.previewOp = AppContext::PixelSelectionOp::Remove;
-            state_.previewBoundsValid = false;
-            state_.previewFlipX = false;
-            state_.previewFlipY = false;
-            state_.lassoPathPixels.clear();
-            state_.lassoPathPixels.emplace_back(static_cast<float>(mousePixelX), static_cast<float>(mousePixelY));
+            m_state.mode = InteractionState::Mode::LassoSelecting;
+            m_state.removeMode = true;
+            m_state.previewOp = AppContext::PixelSelectionOp::Remove;
+            m_state.previewBoundsValid = false;
+            m_state.previewFlipX = false;
+            m_state.previewFlipY = false;
+            m_state.lassoPathPixels.clear();
+            m_state.lassoPathPixels.emplace_back(static_cast<float>(mousePixelX), static_cast<float>(mousePixelY));
         }
         else
         {
-            state_.mode = InteractionState::Mode::BoxSelecting;
-            state_.dragStartX = mousePixelX;
-            state_.dragStartY = mousePixelY;
-            state_.removeMode = true;
-            state_.previewOp = AppContext::PixelSelectionOp::Remove;
-            state_.previewBounds = rectFromDragPixels(mousePixelX, mousePixelY, mousePixelX, mousePixelY);
-            state_.previewBoundsValid = true;
-            state_.previewFlipX = false;
-            state_.previewFlipY = false;
+            m_state.mode = InteractionState::Mode::BoxSelecting;
+            m_state.dragStartX = mousePixelX;
+            m_state.dragStartY = mousePixelY;
+            m_state.removeMode = true;
+            m_state.previewOp = AppContext::PixelSelectionOp::Remove;
+            m_state.previewBounds = rectFromDragPixels(mousePixelX, mousePixelY, mousePixelX, mousePixelY);
+            m_state.previewBoundsValid = true;
+            m_state.previewFlipX = false;
+            m_state.previewFlipY = false;
         }
     }
 
-    switch (state_.mode)
+    switch (m_state.mode)
     {
     case InteractionState::Mode::BoxSelecting:
     {
-        const bool usingRight = state_.removeMode;
+        const bool usingRight = m_state.removeMode;
         const bool stillDown = ImGui::IsMouseDown(usingRight ? ImGuiMouseButton_Right : ImGuiMouseButton_Left);
-        state_.previewBounds = rectFromDragPixels(state_.dragStartX, state_.dragStartY, mousePixelX, mousePixelY);
-        state_.previewBoundsValid = true;
-        state_.previewFlipX = false;
-        state_.previewFlipY = false;
+        m_state.previewBounds = rectFromDragPixels(m_state.dragStartX, m_state.dragStartY, mousePixelX, mousePixelY);
+        m_state.previewBoundsValid = true;
+        m_state.previewFlipX = false;
+        m_state.previewFlipY = false;
 
         if (!stillDown)
         {
             const AppContext::PixelSelectionOp op = usingRight
                 ? AppContext::PixelSelectionOp::Remove
-                : state_.previewOp;
-            if (selectionShape_ == SelectionShape::Ellipse)
+                : m_state.previewOp;
+            if (m_selectionShape == SelectionShape::Ellipse)
             {
                 context.applyEllipsePixelSelection(
-                    state_.dragStartX,
-                    state_.dragStartY,
+                    m_state.dragStartX,
+                    m_state.dragStartY,
                     mousePixelX,
                     mousePixelY,
                     canvasWidth,
@@ -1308,8 +498,8 @@ void RectSelectionTool::handleInteraction(AppContext& context,
             else
             {
                 context.applyRectPixelSelection(
-                    state_.dragStartX,
-                    state_.dragStartY,
+                    m_state.dragStartX,
+                    m_state.dragStartY,
                     mousePixelX,
                     mousePixelY,
                     canvasWidth,
@@ -1318,35 +508,35 @@ void RectSelectionTool::handleInteraction(AppContext& context,
             }
 
             // 框选改动会改变选区定义，需要失效旧的变换缓存。
-            sourceCacheValid_ = false;
-            sourceFramePixels_.clear();
-            sourceSelectionMask_.clear();
-            state_ = {};
+            m_sourceCacheValid = false;
+            m_sourceFramePixels.clear();
+            m_sourceSelectionMask.clear();
+            m_state = {};
         }
         break;
     }
     case InteractionState::Mode::LassoSelecting:
     {
-        const bool usingRight = state_.removeMode;
+        const bool usingRight = m_state.removeMode;
         const bool stillDown = ImGui::IsMouseDown(usingRight ? ImGuiMouseButton_Right : ImGuiMouseButton_Left);
-        if (!state_.lassoPathPixels.empty())
+        if (!m_state.lassoPathPixels.empty())
         {
-            const int lastX = static_cast<int>(state_.lassoPathPixels.back().x);
-            const int lastY = static_cast<int>(state_.lassoPathPixels.back().y);
-            appendLineToLassoPath(state_.lassoPathPixels, lastX, lastY, mousePixelX, mousePixelY);
+            const int lastX = static_cast<int>(m_state.lassoPathPixels.back().x);
+            const int lastY = static_cast<int>(m_state.lassoPathPixels.back().y);
+            selection::appendLineToPath(m_state.lassoPathPixels, lastX, lastY, mousePixelX, mousePixelY);
         }
 
         if (!stillDown)
         {
             std::vector<uint8_t> lassoMask;
-            if (buildLassoMaskFromPath(state_.lassoPathPixels, canvasWidth, canvasHeight, lassoMask))
+            if (selection::buildLassoMaskFromPath(m_state.lassoPathPixels, canvasWidth, canvasHeight, lassoMask))
             {
-                context.applyMaskPixelSelection(lassoMask, canvasWidth, canvasHeight, state_.previewOp);
-                sourceCacheValid_ = false;
-                sourceFramePixels_.clear();
-                sourceSelectionMask_.clear();
+                context.applyMaskPixelSelection(lassoMask, canvasWidth, canvasHeight, m_state.previewOp);
+                m_sourceCacheValid = false;
+                m_sourceFramePixels.clear();
+                m_sourceSelectionMask.clear();
             }
-            state_ = {};
+            m_state = {};
         }
         break;
     }
@@ -1361,22 +551,22 @@ void RectSelectionTool::handleInteraction(AppContext& context,
     case InteractionState::Mode::Moving:
     {
         const bool stillDown = ImGui::IsMouseDown(ImGuiMouseButton_Left);
-        const int dx = mousePixelX - state_.startMouseX;
-        const int dy = mousePixelY - state_.startMouseY;
-        state_.previewBounds = state_.initialBounds;
-        state_.previewBounds.x += dx;
-        state_.previewBounds.y += dy;
-        clampRectToCanvas(state_.previewBounds, canvasWidth, canvasHeight);
-        state_.previewBoundsValid = true;
+        const int dx = mousePixelX - m_state.startMouseX;
+        const int dy = mousePixelY - m_state.startMouseY;
+        m_state.previewBounds = m_state.initialBounds;
+        m_state.previewBounds.x += dx;
+        m_state.previewBounds.y += dy;
+        clampRectToCanvas(m_state.previewBounds, canvasWidth, canvasHeight);
+        m_state.previewBoundsValid = true;
 
         // 实时预览：每帧都基于“拖拽开始快照”重算，避免累计误差。
-        if (sourceCacheValid_)
+        if (m_sourceCacheValid)
         {
             std::vector<uint32_t> previewPixels;
-            buildMovedPixelsFromSource(
-                sourceFramePixels_,
+            selection::buildMovedPixelsFromSource(
+                m_sourceFramePixels,
                 previewPixels,
-                sourceSelectionMask_,
+                m_sourceSelectionMask,
                 canvasWidth,
                 canvasHeight,
                 dx,
@@ -1391,43 +581,43 @@ void RectSelectionTool::handleInteraction(AppContext& context,
         if (!stillDown)
         {
             context.movePixelSelection(dx, dy);
-            lastCommittedBounds_ = state_.previewBounds;
-            state_ = {};
+            m_lastCommittedBounds = m_state.previewBounds;
+            m_state = {};
         }
         break;
     }
     case InteractionState::Mode::Resizing:
     {
         const bool stillDown = ImGui::IsMouseDown(ImGuiMouseButton_Left);
-        const int dx = mousePixelX - state_.startMouseX;
-        const int dy = mousePixelY - state_.startMouseY;
-        const ResizeResult resizeResult = buildResizedRect(
-            state_.initialBounds,
-            state_.activeHandle,
+        const int dx = mousePixelX - m_state.startMouseX;
+        const int dy = mousePixelY - m_state.startMouseY;
+        const selection::ResizeResult resizeResult = selection::buildResizedRect(
+            m_state.initialBounds,
+            m_state.activeHandle,
             dx,
             dy,
             canvasWidth,
             canvasHeight,
             ImGui::GetIO().KeyCtrl);
-        state_.previewBounds = resizeResult.rect;
-        state_.previewBoundsValid = true;
-        state_.previewFlipX = resizeResult.flipX;
-        state_.previewFlipY = resizeResult.flipY;
+        m_state.previewBounds = resizeResult.rect;
+        m_state.previewBoundsValid = true;
+        m_state.previewFlipX = resizeResult.flipX;
+        m_state.previewFlipY = resizeResult.flipY;
 
         // 实时预览：每帧都基于“拖拽开始快照”做缩放变换，避免反复重采样劣化。
-        if (sourceCacheValid_)
+        if (m_sourceCacheValid)
         {
             std::vector<uint32_t> previewPixels;
-            buildScaledPixelsFromSource(
-                sourceFramePixels_,
+            selection::buildScaledPixelsFromSource(
+                m_sourceFramePixels,
                 previewPixels,
-                sourceSelectionMask_,
+                m_sourceSelectionMask,
                 canvasWidth,
                 canvasHeight,
-                sourceBounds_,
-                state_.previewBounds,
-                state_.previewFlipX,
-                state_.previewFlipY);
+                m_sourceBounds,
+                m_state.previewBounds,
+                m_state.previewFlipX,
+                m_state.previewFlipY);
             if (frame.pixels != previewPixels)
             {
                 frame.pixels.swap(previewPixels);
@@ -1438,12 +628,12 @@ void RectSelectionTool::handleInteraction(AppContext& context,
         if (!stillDown)
         {
             context.transformPixelSelectionByRect(
-                state_.initialBounds,
-                state_.previewBounds,
-                state_.previewFlipX,
-                state_.previewFlipY);
-            lastCommittedBounds_ = state_.previewBounds;
-            state_ = {};
+                m_state.initialBounds,
+                m_state.previewBounds,
+                m_state.previewFlipX,
+                m_state.previewFlipY);
+            m_lastCommittedBounds = m_state.previewBounds;
+            m_state = {};
         }
         break;
     }
@@ -1452,21 +642,21 @@ void RectSelectionTool::handleInteraction(AppContext& context,
     }
 
     // 光标反馈。
-    if (state_.mode == InteractionState::Mode::Moving)
+    if (m_state.mode == InteractionState::Mode::Moving)
     {
         ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeAll);
     }
-    else if (state_.mode == InteractionState::Mode::LassoSelecting)
+    else if (m_state.mode == InteractionState::Mode::LassoSelecting)
     {
         ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
     }
-    else if (state_.mode == InteractionState::Mode::PolygonLassoSelecting)
+    else if (m_state.mode == InteractionState::Mode::PolygonLassoSelecting)
     {
         ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
     }
-    else if (state_.mode == InteractionState::Mode::Resizing || hoveredHandle >= 0)
+    else if (m_state.mode == InteractionState::Mode::Resizing || hoveredHandle >= 0)
     {
-        switch (hoveredHandle >= 0 ? hoveredHandle : state_.activeHandle)
+        switch (hoveredHandle >= 0 ? hoveredHandle : m_state.activeHandle)
         {
         case 0:
         case 4:
@@ -1521,50 +711,50 @@ void RectSelectionTool::renderOverlay(const AppContext& context,
     std::vector<uint8_t> displayMask = committedMask;
     ImU32 displayColor = IM_COL32(255, 210, 80, 255);
 
-    if (state_.mode == InteractionState::Mode::BoxSelecting && state_.previewBoundsValid)
+    if (m_state.mode == InteractionState::Mode::BoxSelecting && m_state.previewBoundsValid)
     {
         std::vector<uint8_t> previewMask = committedMask;
         applySelectionShapeOpToMask(
             previewMask,
             canvasWidth,
             canvasHeight,
-            state_.previewBounds,
-            state_.previewOp,
-            selectionShape_);
+            m_state.previewBounds,
+            m_state.previewOp,
+            m_selectionShape);
         displayMask.swap(previewMask);
 
-        if (state_.previewOp == AppContext::PixelSelectionOp::Add) displayColor = IM_COL32(90, 230, 140, 255);
-        else if (state_.previewOp == AppContext::PixelSelectionOp::Remove)
+        if (m_state.previewOp == AppContext::PixelSelectionOp::Add) displayColor = IM_COL32(90, 230, 140, 255);
+        else if (m_state.previewOp == AppContext::PixelSelectionOp::Remove)
             displayColor = IM_COL32(255, 120, 120, 255);
         else
             displayColor = IM_COL32(80, 220, 255, 255);
 
         // 仅在框选阶段保留旧轮廓参考（用户此前明确希望此行为）。
-        if (maskHasAnySelected(committedMask)) drawMaskSolidOutline(drawList, committedMask, canvasWidth, canvasHeight, imagePos, zoom, IM_COL32(190, 170, 80, 180), 1.0f);
+        if (selection::maskHasAnySelected(committedMask)) render::drawMaskSolidOutline(drawList, committedMask, canvasWidth, canvasHeight, imagePos, zoom, IM_COL32(190, 170, 80, 180), 1.0f);
     }
-    else if (state_.mode == InteractionState::Mode::LassoSelecting && state_.lassoPathPixels.size() >= 2)
+    else if (m_state.mode == InteractionState::Mode::LassoSelecting && m_state.lassoPathPixels.size() >= 2)
     {
         std::vector<uint8_t> lassoMask;
-        if (buildLassoMaskFromPath(state_.lassoPathPixels, canvasWidth, canvasHeight, lassoMask))
+        if (selection::buildLassoMaskFromPath(m_state.lassoPathPixels, canvasWidth, canvasHeight, lassoMask))
         {
             std::vector<uint8_t> previewMask = committedMask;
-            applyArbitraryMaskOpToMask(previewMask, lassoMask, state_.previewOp);
+            selection::applyMaskOpToMask(previewMask, lassoMask, m_state.previewOp);
             displayMask.swap(previewMask);
 
-            if (state_.previewOp == AppContext::PixelSelectionOp::Add) displayColor = IM_COL32(90, 230, 140, 255);
-            else if (state_.previewOp == AppContext::PixelSelectionOp::Remove)
+            if (m_state.previewOp == AppContext::PixelSelectionOp::Add) displayColor = IM_COL32(90, 230, 140, 255);
+            else if (m_state.previewOp == AppContext::PixelSelectionOp::Remove)
                 displayColor = IM_COL32(255, 120, 120, 255);
             else
                 displayColor = IM_COL32(80, 220, 255, 255);
 
-            if (maskHasAnySelected(committedMask)) drawMaskSolidOutline(drawList, committedMask, canvasWidth, canvasHeight, imagePos, zoom, IM_COL32(190, 170, 80, 180), 1.0f);
+            if (selection::maskHasAnySelected(committedMask)) render::drawMaskSolidOutline(drawList, committedMask, canvasWidth, canvasHeight, imagePos, zoom, IM_COL32(190, 170, 80, 180), 1.0f);
         }
     }
-    else if (state_.mode == InteractionState::Mode::PolygonLassoSelecting && !state_.lassoPathPixels.empty())
+    else if (m_state.mode == InteractionState::Mode::PolygonLassoSelecting && !m_state.lassoPathPixels.empty())
     {
-        std::vector<ImVec2> previewVertices = state_.lassoPathPixels;
-        const int hoverX = state_.hoverMouseX;
-        const int hoverY = state_.hoverMouseY;
+        std::vector<ImVec2> previewVertices = m_state.lassoPathPixels;
+        const int hoverX = m_state.hoverMouseX;
+        const int hoverY = m_state.hoverMouseY;
         const int lastX = static_cast<int>(previewVertices.back().x);
         const int lastY = static_cast<int>(previewVertices.back().y);
         if (lastX != hoverX || lastY != hoverY)
@@ -1573,72 +763,49 @@ void RectSelectionTool::renderOverlay(const AppContext& context,
         if (previewVertices.size() >= 3)
         {
             std::vector<uint8_t> polygonMask;
-            if (buildPolygonMaskFromVertices(previewVertices, canvasWidth, canvasHeight, polygonMask))
+            if (selection::buildPolygonMaskFromVertices(previewVertices, canvasWidth, canvasHeight, polygonMask))
             {
                 std::vector<uint8_t> previewMask = committedMask;
-                applyArbitraryMaskOpToMask(previewMask, polygonMask, state_.previewOp);
+                selection::applyMaskOpToMask(previewMask, polygonMask, m_state.previewOp);
                 displayMask.swap(previewMask);
 
-                if (state_.previewOp == AppContext::PixelSelectionOp::Add) displayColor = IM_COL32(90, 230, 140, 255);
-                else if (state_.previewOp == AppContext::PixelSelectionOp::Remove)
+                if (m_state.previewOp == AppContext::PixelSelectionOp::Add) displayColor = IM_COL32(90, 230, 140, 255);
+                else if (m_state.previewOp == AppContext::PixelSelectionOp::Remove)
                     displayColor = IM_COL32(255, 120, 120, 255);
                 else
                     displayColor = IM_COL32(80, 220, 255, 255);
 
-                if (maskHasAnySelected(committedMask)) drawMaskSolidOutline(drawList, committedMask, canvasWidth, canvasHeight, imagePos, zoom, IM_COL32(190, 170, 80, 180), 1.0f);
+                if (selection::maskHasAnySelected(committedMask)) render::drawMaskSolidOutline(drawList, committedMask, canvasWidth, canvasHeight, imagePos, zoom, IM_COL32(190, 170, 80, 180), 1.0f);
             }
         }
 
-        // 多边形路径辅助显示：统一使用黑色像素风（线段 + 顶点方点）。
-        const ImU32 guideColor = IM_COL32(0, 0, 0, 255);
-        for (size_t i = 1; i < previewVertices.size(); ++i)
-        {
-            const ImVec2 p0(
-                imagePos.x + (previewVertices[i - 1].x + 0.5f) * static_cast<float>(zoom),
-                imagePos.y + (previewVertices[i - 1].y + 0.5f) * static_cast<float>(zoom));
-            const ImVec2 p1(
-                imagePos.x + (previewVertices[i].x + 0.5f) * static_cast<float>(zoom),
-                imagePos.y + (previewVertices[i].y + 0.5f) * static_cast<float>(zoom));
-            drawList->AddLine(p0, p1, guideColor, 1.0f);
-        }
-
-        const float vertexHalf = std::max(1.0f, static_cast<float>(zoom) * 0.12f);
-        for (const ImVec2& v : state_.lassoPathPixels)
-        {
-            const ImVec2 c(
-                imagePos.x + (v.x + 0.5f) * static_cast<float>(zoom),
-                imagePos.y + (v.y + 0.5f) * static_cast<float>(zoom));
-            drawList->AddRectFilled(
-                ImVec2(c.x - vertexHalf, c.y - vertexHalf),
-                ImVec2(c.x + vertexHalf, c.y + vertexHalf),
-                IM_COL32(0, 0, 0, 255));
-        }
+        render::drawPolygonLassoGuide(drawList, previewVertices, m_state.lassoPathPixels, imagePos, zoom);
     }
-    else if (state_.mode == InteractionState::Mode::Moving && state_.previewBoundsValid && sourceCacheValid_)
+    else if (m_state.mode == InteractionState::Mode::Moving && m_state.previewBoundsValid && m_sourceCacheValid)
     {
-        const int dx = state_.previewBounds.x - state_.initialBounds.x;
-        const int dy = state_.previewBounds.y - state_.initialBounds.y;
-        buildMovedMaskFromSource(sourceSelectionMask_, displayMask, canvasWidth, canvasHeight, dx, dy);
+        const int dx = m_state.previewBounds.x - m_state.initialBounds.x;
+        const int dy = m_state.previewBounds.y - m_state.initialBounds.y;
+        selection::buildMovedMaskFromSource(m_sourceSelectionMask, displayMask, canvasWidth, canvasHeight, dx, dy);
         displayColor = IM_COL32(80, 220, 255, 255);
     }
-    else if (state_.mode == InteractionState::Mode::Resizing && state_.previewBoundsValid && sourceCacheValid_)
+    else if (m_state.mode == InteractionState::Mode::Resizing && m_state.previewBoundsValid && m_sourceCacheValid)
     {
-        buildScaledMaskFromSource(
-            sourceSelectionMask_,
+        selection::buildScaledMaskFromSource(
+            m_sourceSelectionMask,
             displayMask,
             canvasWidth,
             canvasHeight,
-            sourceBounds_,
-            state_.previewBounds,
-            state_.previewFlipX,
-            state_.previewFlipY);
+            m_sourceBounds,
+            m_state.previewBounds,
+            m_state.previewFlipX,
+            m_state.previewFlipY);
         displayColor = IM_COL32(80, 220, 255, 255);
     }
 
-    if (!maskHasAnySelected(displayMask)) return;
+    if (!selection::maskHasAnySelected(displayMask)) return;
 
-    drawMaskSolidOutline(drawList, displayMask, canvasWidth, canvasHeight, imagePos, zoom, displayColor, 1.2f);
-    drawMarchingAntsMask(drawList, displayMask, canvasWidth, canvasHeight, imagePos, zoom, segmentLength, timePhase);
+    render::drawMaskSolidOutline(drawList, displayMask, canvasWidth, canvasHeight, imagePos, zoom, displayColor, 1.2f);
+    render::drawMarchingAntsMask(drawList, displayMask, canvasWidth, canvasHeight, imagePos, zoom, segmentLength, timePhase);
 
     AppContext::PixelRect currentBounds;
     const bool hasCurrentBounds = context.getPixelSelectionBounds(currentBounds);
@@ -1652,29 +819,22 @@ void RectSelectionTool::renderOverlay(const AppContext& context,
     const bool showHandles =
         !anyPopupOpen
         && context.getTool() == ToolType::RectSelection
-        && state_.mode == InteractionState::Mode::None;
+        && m_state.mode == InteractionState::Mode::None;
 
     if (!showHandles) return;
 
     if (!hasCurrentBounds) return;
 
     const float handleHalf = std::max(4.0f, std::min(10.0f, static_cast<float>(zoom) * 0.45f));
-    const auto handleCenters = getSelectionHandleCenters(currentBounds, imagePos, zoom, handleHalf);
-    for (const ImVec2& c : handleCenters)
-    {
-        drawList->AddRectFilled(ImVec2(c.x - handleHalf, c.y - handleHalf),
-                                ImVec2(c.x + handleHalf, c.y + handleHalf),
-                                IM_COL32(40, 120, 200, 255));
-        drawList->AddRect(ImVec2(c.x - handleHalf, c.y - handleHalf),
-                          ImVec2(c.x + handleHalf, c.y + handleHalf),
-                          IM_COL32(255, 255, 255, 255));
-    }
+    render::drawSelectionHandles(drawList, currentBounds, imagePos, zoom, handleHalf);
 }
 
 void RectSelectionTool::resetInteractionState()
 {
-    state_ = {};
-    sourceCacheValid_ = false;
-    sourceFramePixels_.clear();
-    sourceSelectionMask_.clear();
+    m_state = {};
+    m_sourceCacheValid = false;
+    m_sourceFramePixels.clear();
+    m_sourceSelectionMask.clear();
 }
+
+

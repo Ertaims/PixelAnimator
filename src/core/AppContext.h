@@ -40,7 +40,7 @@ enum class ToolType : int
     Count          // 工具数量，用于遍历与边界检查
 };
 
-/*
+/**
  * @brief 应用程序/编辑器上下文
  *
  * 职责：
@@ -106,19 +106,19 @@ public:
     // 获取当前项目指针；无打开项目时返回 nullptr
     Project* getProject() const 
     { 
-        return project_; 
+        return m_project; 
     }
 
     // 设置当前项目（不负责释放旧项目，由调用方管理生命周期）
     void setProject(Project* project) 
     { 
-        project_ = project; 
+        m_project = project; 
     }
 
     // 是否有打开的项目
     bool hasProject() const 
     { 
-        return project_ != nullptr; 
+        return m_project != nullptr; 
     }
 
     /**
@@ -127,7 +127,7 @@ public:
      */
     bool isProjectDirty() const 
     { 
-        return projectDirty_; 
+        return m_projectDirty; 
     }
 
     // 标记项目已修改
@@ -136,13 +136,13 @@ public:
     // 当前项目文件路径（未保存或新建时为空）
     const std::string& getProjectFilePath() const 
     { 
-        return projectFilePath_; 
+        return m_projectFilePath; 
     }
 
     // 设置当前项目文件路径（保存/另存为/打开后更新）
     void setProjectFilePath(const std::string& path) 
     { 
-        projectFilePath_ = path; 
+        m_projectFilePath = path; 
     }
 
     // -------------------------------------------------------------------------
@@ -152,37 +152,37 @@ public:
     // 当前选中的动画索引（多动画时使用，MVP 可固定为 0）
     int getCurrentAnimationIndex() const 
     { 
-        return currentAnimationIndex_; 
+        return m_currentAnimationIndex; 
     }
 
     // 设置当前动画索引；调用方需保证 0 <= index < 动画数量 
     void setCurrentAnimationIndex(int index) 
     { 
-        currentAnimationIndex_ = index; 
+        m_currentAnimationIndex = index; 
     }
 
     // 当前选中的帧索引（时间线、画布编辑的目标帧）
     int getCurrentFrameIndex() const 
     { 
-        return currentFrameIndex_; 
+        return m_currentFrameIndex; 
     }
 
     // 设置当前帧索引；调用方需保证 0 <= index < 帧数量
     void setCurrentFrameIndex(int index) 
     { 
-        currentFrameIndex_ = index; 
+        m_currentFrameIndex = index; 
     }
 
     /**
      * @brief 获取当前帧多选列表。
      *
      * 约定：
-     * - selectedFrameIndices_[0] 视为“主帧”（Primary），
+     * - m_selectedFrameIndices[0] 视为“主帧”（Primary），
      *   多选状态下画布应显示这帧。
      */
     const std::vector<int>& getSelectedFrameIndices() const
     {
-        return selectedFrameIndices_;
+        return m_selectedFrameIndices;
     }
 
     /**
@@ -190,20 +190,20 @@ public:
      */
     bool hasMultiFrameSelection() const
     {
-        return selectedFrameIndices_.size() > 1;
+        return m_selectedFrameIndices.size() > 1;
     }
 
     /**
      * @brief 获取主选中帧索引。
      *
      * 返回策略：
-     * - 若选区非空，返回 selectedFrameIndices_[0]
-     * - 否则回退到 currentFrameIndex_
+     * - 若选区非空，返回 m_selectedFrameIndices[0]
+     * - 否则回退到 m_currentFrameIndex
      */
     int getPrimarySelectedFrameIndex() const
     {
-        if (!selectedFrameIndices_.empty()) return selectedFrameIndices_.front();
-        return currentFrameIndex_;
+        if (!m_selectedFrameIndices.empty()) return m_selectedFrameIndices.front();
+        return m_currentFrameIndex;
     }
 
     /**
@@ -245,7 +245,7 @@ public:
      */
     const std::vector<FrameGroup>& getFrameGroups() const
     {
-        return frameGroups_;
+        return m_frameGroups;
     }
 
     /**
@@ -334,13 +334,13 @@ public:
     // 当前选中的工具
     ToolType getTool() const 
     { 
-        return tool_; 
+        return m_tool; 
     }
 
     // 设置当前工具（由工具栏、快捷键调用）
     void setTool(ToolType tool) 
     { 
-        tool_ = tool; 
+        m_tool = tool; 
     }
 
     /**
@@ -349,44 +349,44 @@ public:
      */
     uint32_t getColorRGBA() const 
     { 
-        return colorRGBA_; 
+        return m_colorRGBA; 
     }
 
     // 设置前景色（RGBA8888）
     void setColorRGBA(uint32_t rgba) 
     { 
-        colorRGBA_ = rgba; 
+        m_colorRGBA = rgba; 
     }
 
     // 左右对称开关：开启后，画布编辑会沿垂直中轴同步镜像。
     bool isLeftRightSymmetryEnabled() const
     {
-        return leftRightSymmetryEnabled_;
+        return m_leftRightSymmetryEnabled;
     }
     void setLeftRightSymmetryEnabled(bool enabled)
     {
-        leftRightSymmetryEnabled_ = enabled;
+        m_leftRightSymmetryEnabled = enabled;
     }
 
     // 上下对称开关：开启后，画布编辑会沿水平中轴同步镜像。
     bool isUpDownSymmetryEnabled() const
     {
-        return upDownSymmetryEnabled_;
+        return m_upDownSymmetryEnabled;
     }
     void setUpDownSymmetryEnabled(bool enabled)
     {
-        upDownSymmetryEnabled_ = enabled;
+        m_upDownSymmetryEnabled = enabled;
     }
 
     bool isAnySymmetryEnabled() const
     {
-        return leftRightSymmetryEnabled_ || upDownSymmetryEnabled_;
+        return m_leftRightSymmetryEnabled || m_upDownSymmetryEnabled;
     }
 
     // 画笔半径（像素），1/2/3 等，供 Brush/Eraser 使用
     int getBrushSize() const 
     { 
-        return brushSize_; 
+        return m_brushSize; 
     }
 
     // 设置画笔半径
@@ -399,7 +399,7 @@ public:
     // 画布缩放倍率（整数倍，如 1/2/4/8）
     int getCanvasZoom() const 
     { 
-        return canvasZoom_; 
+        return m_canvasZoom; 
     }
 
     // 设置画布缩放；建议限制在 [1, 2, 4, 8, 16] 等 
@@ -408,27 +408,27 @@ public:
     // 画布平移 X（像素，屏幕空间）
     float getCanvasPanX() const 
     { 
-        return canvasPanX_; 
+        return m_canvasPanX; 
     }
 
     // 画布平移 Y（像素，屏幕空间）
     float getCanvasPanY() const 
     { 
-        return canvasPanY_; 
+        return m_canvasPanY; 
     }
 
     // 设置画布平移
     void setCanvasPan(float x, float y) 
     { 
-        canvasPanX_ = x; 
-        canvasPanY_ = y; 
+        m_canvasPanX = x; 
+        m_canvasPanY = y; 
     }
 
     // 叠加平移量（用于鼠标拖拽平移）
     void addCanvasPan(float dx, float dy) 
     { 
-        canvasPanX_ += dx; 
-        canvasPanY_ += dy; 
+        m_canvasPanX += dx; 
+        m_canvasPanY += dy; 
     }
 
     // -------------------------------------------------------------------------
@@ -552,13 +552,13 @@ public:
     // 获取撤销重做栈；未初始化时返回 nullptr
     CommandStack* getCommandStack() const 
     { 
-        return commandStack_; 
+        return m_commandStack; 
     }
 
     // 设置命令栈（由 App 或初始化逻辑创建并传入）
     void setCommandStack(CommandStack* stack) 
     { 
-        commandStack_ = stack; 
+        m_commandStack = stack; 
     }
 
     // 是否可撤销
@@ -631,120 +631,120 @@ public:
     // 是否显示网格线
     bool isGridVisible() const 
     { 
-        return gridVisible_; 
+        return m_gridVisible; 
     }
 
     // 设置网格线显隐
     void setGridVisible(bool visible) 
     { 
-        gridVisible_ = visible; 
+        m_gridVisible = visible; 
     }
 
     // 是否开启洋葱皮
     bool isOnionSkinEnabled() const 
     {
-        return onionSkinEnabled_;
+        return m_onionSkinEnabled;
     }
 
     // 设置洋葱皮开关
     void setOnionSkinEnabled(bool enabled) 
     {
-        onionSkinEnabled_ = enabled;
+        m_onionSkinEnabled = enabled;
     }
 
     // 洋葱皮前帧显示数量
     int getOnionSkinPreviousFrames() const
     {
-        return onionSkinPreviousFrames_;
+        return m_onionSkinPreviousFrames;
     }
 
     // 设置洋葱皮前帧显示数量
     void setOnionSkinPreviousFrames(int count)
     {
-        onionSkinPreviousFrames_ = std::max(0, std::min(10, count));
+        m_onionSkinPreviousFrames = std::max(0, std::min(10, count));
     }
 
     // 洋葱皮后帧显示数量
     int getOnionSkinNextFrames() const
     {
-        return onionSkinNextFrames_;
+        return m_onionSkinNextFrames;
     }
 
     // 设置洋葱皮后帧显示数量
     void setOnionSkinNextFrames(int count)
     {
-        onionSkinNextFrames_ = std::max(0, std::min(10, count));
+        m_onionSkinNextFrames = std::max(0, std::min(10, count));
     }
 
     // 洋葱皮前帧透明度
     int getOnionSkinPreviousAlpha() const
     {
-        return onionSkinPreviousAlpha_;
+        return m_onionSkinPreviousAlpha;
     }
 
     // 设置洋葱皮前帧透明度
     void setOnionSkinPreviousAlpha(int alpha)
     {
-        onionSkinPreviousAlpha_ = std::max(0, std::min(255, alpha));
+        m_onionSkinPreviousAlpha = std::max(0, std::min(255, alpha));
     }
 
     // 洋葱皮后帧透明度
     int getOnionSkinNextAlpha() const
     {
-        return onionSkinNextAlpha_;
+        return m_onionSkinNextAlpha;
     }
 
     // 设置洋葱皮后帧透明度
     void setOnionSkinNextAlpha(int alpha)
     {
-        onionSkinNextAlpha_ = std::max(0, std::min(255, alpha));
+        m_onionSkinNextAlpha = std::max(0, std::min(255, alpha));
     }
 
     // 洋葱皮前帧颜色
     uint32_t getOnionSkinPreviousColor() const
     {
-        return onionSkinPreviousColor_;
+        return m_onionSkinPreviousColor;
     }
 
     // 设置洋葱皮前帧颜色
     void setOnionSkinPreviousColor(uint32_t color)
     {
-        onionSkinPreviousColor_ = color;
+        m_onionSkinPreviousColor = color;
     }
 
     // 洋葱皮后帧颜色
     uint32_t getOnionSkinNextColor() const
     {
-        return onionSkinNextColor_;
+        return m_onionSkinNextColor;
     }
 
     // 设置洋葱皮后帧颜色
     void setOnionSkinNextColor(uint32_t color)
     {
-        onionSkinNextColor_ = color;
+        m_onionSkinNextColor = color;
     }
 
     // 是否显示时间线面板
     bool isTimelineVisible() const 
     { 
-        return timelineVisible_; 
+        return m_timelineVisible; 
     }
 
     // 设置时间线面板显隐
     void setTimelineVisible(bool visible) 
     { 
-        timelineVisible_ = visible; 
+        m_timelineVisible = visible; 
     }
 
     // 画布背景模式：true=棋盘背景，false=纯白背景
     bool isCheckerboardBackgroundEnabled() const
     {
-        return checkerboardBackground_;
+        return m_checkerboardBackground;
     }
 
     void setCheckerboardBackgroundEnabled(bool enabled)
     {
-        checkerboardBackground_ = enabled;
+        m_checkerboardBackground = enabled;
     }
 
 private:
@@ -775,52 +775,53 @@ private:
     void trimUndoHistoryToLimit();
 
     // 项目与文档
-    Project* project_ = nullptr;
-    bool projectDirty_ = false;
-    std::string projectFilePath_;
+    Project* m_project = nullptr;
+    bool m_projectDirty = false;
+    std::string m_projectFilePath;
 
     // 动画与帧
-    int currentAnimationIndex_ = 0;
-    int currentFrameIndex_ = 0;
-    std::vector<int> selectedFrameIndices_ = {0};
-    std::vector<FrameGroup> frameGroups_;
+    int m_currentAnimationIndex = 0;
+    int m_currentFrameIndex = 0;
+    std::vector<int> m_selectedFrameIndices = {0};
+    std::vector<FrameGroup> m_frameGroups;
 
     // 工具与颜色
-    ToolType tool_ = ToolType::Brush;
-    uint32_t colorRGBA_ = 0xFF000000;  // 默认不透明黑
-    int brushSize_ = 1;
-    bool leftRightSymmetryEnabled_ = false;
-    bool upDownSymmetryEnabled_ = false;
+    ToolType m_tool = ToolType::Brush;
+    uint32_t m_colorRGBA = 0xFF000000;  // 默认不透明黑
+    int m_brushSize = 1;
+    bool m_leftRightSymmetryEnabled = false;
+    bool m_upDownSymmetryEnabled = false;
 
     // 画布视图
-    int canvasZoom_ = 4;       // 默认 4 倍
-    float canvasPanX_ = 0.0f;
-    float canvasPanY_ = 0.0f;
+    int m_canvasZoom = 4;       // 默认 4 倍
+    float m_canvasPanX = 0.0f;
+    float m_canvasPanY = 0.0f;
 
     // 像素选区掩码（1 表示选中，0 表示未选中）
-    int pixelSelectionCanvasWidth_ = 0;
-    int pixelSelectionCanvasHeight_ = 0;
-    std::vector<uint8_t> pixelSelectionMask_;
-    bool pixelSelectionHasAny_ = false;
+    int m_pixelSelectionCanvasWidth = 0;
+    int m_pixelSelectionCanvasHeight = 0;
+    std::vector<uint8_t> m_pixelSelectionMask;
+    bool m_pixelSelectionHasAny = false;
 
     // 撤销/重做（不拥有所有权，由外部创建与释放）
-    CommandStack* commandStack_ = nullptr;
+    CommandStack* m_commandStack = nullptr;
 
     // 快照式撤销历史（每个项目窗口上下文独立）
-    std::vector<UndoHistoryEntry> undoHistory_;
-    int undoHistoryCurrentIndex_ = -1;
-    int undoHistorySavedIndex_ = -1;
-    int undoHistoryMaxEntries_ = 200;
+    std::vector<UndoHistoryEntry> m_undoHistory;
+    int m_undoHistoryCurrentIndex = -1;
+    int m_undoHistorySavedIndex = -1;
+    int m_undoHistoryMaxEntries = 200;
 
     // 视图选项
-    bool gridVisible_ = false;
-    bool onionSkinEnabled_ = false;
-    int onionSkinPreviousFrames_ = 3;
-    int onionSkinNextFrames_ = 3;
-    int onionSkinPreviousAlpha_ = 50;
-    int onionSkinNextAlpha_ = 50;
-    uint32_t onionSkinPreviousColor_ = 0xFF0000FF; // 红色
-    uint32_t onionSkinNextColor_ = 0x0000FFFF; // 蓝色
-    bool timelineVisible_ = true;
-    bool checkerboardBackground_ = true;
+    bool m_gridVisible = false;
+    bool m_onionSkinEnabled = false;
+    int m_onionSkinPreviousFrames = 3;
+    int m_onionSkinNextFrames = 3;
+    int m_onionSkinPreviousAlpha = 50;
+    int m_onionSkinNextAlpha = 50;
+    uint32_t m_onionSkinPreviousColor = 0xFF0000FF; // 红色
+    uint32_t m_onionSkinNextColor = 0x0000FFFF; // 蓝色
+    bool m_timelineVisible = true;
+    bool m_checkerboardBackground = true;
 };
+

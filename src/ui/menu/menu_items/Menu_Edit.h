@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "MenuOptionBase.h"
 #include "commands/FlipCommand.h"
@@ -14,22 +14,23 @@ public:
 
     void initialize() override;
 
-    void setContext(AppContext* context) { context_ = context; }
-    void setOnUndoHistoryRequested(const std::function<void()>& callback) { onUndoHistoryRequested_ = callback; }
-    void setOnCutRequested(const std::function<void()>& callback) { onCutRequested_ = callback; }
-    void setOnCopyRequested(const std::function<void()>& callback) { onCopyRequested_ = callback; }
-    void setOnPasteRequested(const std::function<void()>& callback) { onPasteRequested_ = callback; }
-    void setOnDeleteRequested(const std::function<void()>& callback) { onDeleteRequested_ = callback; }
-    void setOnRotateRequested(const std::function<void(commands::RotationAngle)>& callback) { onRotateRequested_ = callback; }
-    void setOnFlipRequested(const std::function<void(commands::FlipDirection)>& callback) { onFlipRequested_ = callback; }
+    void setContext(AppContext* context) { m_context = context; }
+    void setOnUndoHistoryRequested(const std::function<void()>& callback) { m_onUndoHistoryRequested = callback; }
+    void setOnCutRequested(const std::function<void()>& callback) { m_onCutRequested = callback; }
+    void setOnCopyRequested(const std::function<void()>& callback) { m_onCopyRequested = callback; }
+    void setOnPasteRequested(const std::function<void()>& callback) { m_onPasteRequested = callback; }
+    void setOnDeleteRequested(const std::function<void()>& callback) { m_onDeleteRequested = callback; }
+    void setOnRotateRequested(const std::function<void(commands::RotationAngle)>& callback) { m_onRotateRequested = callback; }
+    void setOnFlipRequested(const std::function<void(commands::FlipDirection)>& callback) { m_onFlipRequested = callback; }
 
 private:
-    AppContext* context_ = nullptr;
-    std::function<void()> onUndoHistoryRequested_;
-    std::function<void()> onCutRequested_;
-    std::function<void()> onCopyRequested_;
-    std::function<void()> onPasteRequested_;
-    std::function<void()> onDeleteRequested_;
-    std::function<void(commands::RotationAngle)> onRotateRequested_;
-    std::function<void(commands::FlipDirection)> onFlipRequested_;
+    AppContext* m_context = nullptr;
+    std::function<void()> m_onUndoHistoryRequested;
+    std::function<void()> m_onCutRequested;
+    std::function<void()> m_onCopyRequested;
+    std::function<void()> m_onPasteRequested;
+    std::function<void()> m_onDeleteRequested;
+    std::function<void(commands::RotationAngle)> m_onRotateRequested;
+    std::function<void(commands::FlipDirection)> m_onFlipRequested;
 };
+

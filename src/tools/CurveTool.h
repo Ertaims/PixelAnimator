@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "Tool.h"
 #include "imgui.h"
@@ -93,5 +93,6 @@ private:
         bool hasBasePixels = false;        // 是否已有有效快照
     };
 
-    InteractionState state_;
+    InteractionState m_state;
 };
+

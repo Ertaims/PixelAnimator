@@ -5,7 +5,7 @@
  * 说明：
  * - App 是程序入口层的“总控”对象。
  * - 每个项目窗口对应一个独立 ProjectSession（项目数据 + 编辑上下文 + 窗口实例）。
- * - activeContext_ 始终指向“当前活跃窗口”的上下文，菜单命令也跟随它切换。
+ * - m_activeContext 始终指向“当前活跃窗口”的上下文，菜单命令也跟随它切换。
  */
 
 #pragma once
@@ -93,7 +93,7 @@ public:
 
     // 初始化 SDL/OpenGL/ImGui，并创建菜单和默认项目窗口
     bool init();
-    // 进入主循环，直到 done_ = true
+    // 进入主循环，直到 m_done = true
     void run();
     // 按顺序释放资源
     void shutdown();
@@ -253,103 +253,104 @@ private:
     bool executeFlip(commands::FlipDirection direction);                // Flip（翻转当前帧或时间轴多选帧）
 
     // ---------------- 平台与渲染状态 ----------------
-    SDL_Window* window_ = nullptr;
-    SDL_GLContext glContext_ = nullptr;
-    const char* glslVersion_ = "#version 330";
-    float mainScale_ = 1.0f;
-    ImVec4 clearColor_ = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
-    bool done_ = false;
+    SDL_Window* m_window = nullptr;
+    SDL_GLContext m_glContext = nullptr;
+    const char* m_glslVersion = "#version 330";
+    float m_mainScale = 1.0f;
+    ImVec4 m_clearColor = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
+    bool m_done = false;
 
     // ---------------- 菜单与项目容器 ----------------
-    MenuManager* menuManager_ = nullptr;
-    Menu_File* fileMenu_ = nullptr;
-    Menu_Edit* editMenu_ = nullptr;
-    std::vector<ProjectSession> projectSessions_;
-    std::vector<std::string> recentProjectPaths_;
-    AppContext* activeContext_ = nullptr;
+    MenuManager* m_menuManager = nullptr;
+    Menu_File* m_fileMenu = nullptr;
+    Menu_Edit* m_editMenu = nullptr;
+    std::vector<ProjectSession> m_projectSessions;
+    std::vector<std::string> m_recentProjectPaths;
+    AppContext* m_activeContext = nullptr;
 
     // ---------------- Dock 布局与编号 ----------------
-    bool dockLayoutInitialized_ = false;
-    int nextProjectId_ = 1;
+    bool m_dockLayoutInitialized = false;
+    int m_nextProjectId = 1;
 
     // ---------------- New Project UI 状态 ----------------
-    bool newProjectPopupRequested_ = false;
-    int newProjectWidth_ = 16;
-    int newProjectHeight_ = 16;
-    int newProjectFrameCount_ = 1;
-    ImVec4 newProjectBgColor_ = ImVec4(0.0f, 0.0f, 0.0f, 0.0f);
-    int newProjectCanvasBgMode_ = 0; // 0=Checkerboard, 1=White
+    bool m_newProjectPopupRequested = false;
+    int m_newProjectWidth = 16;
+    int m_newProjectHeight = 16;
+    int m_newProjectFrameCount = 1;
+    ImVec4 m_newProjectBgColor = ImVec4(0.0f, 0.0f, 0.0f, 0.0f);
+    int m_newProjectCanvasBgMode = 0; // 0=Checkerboard, 1=White
 
     // ---------------- Sprite Sheet 导出弹窗状态 ----------------
-    bool spriteSheetExportPopupRequested_ = false;
-    SpriteSheetExportMode spriteSheetExportMode_ = SpriteSheetExportMode::Row;
-    bool spriteSheetExportUseSelectedFrames_ = false;
-    int spriteSheetExportColumnsPerRow_ = 4;
-    bool spriteSheetExportUseCustomGroups_ = false;
-    int spriteSheetExportGroupSpacing_ = 8;
-    std::vector<SpriteSheetGroupDraft> spriteSheetExportGroups_;
-    bool spriteSheetExportIconsLoaded_ = false;
-    unsigned int spriteSheetRowIconTexture_ = 0;
-    unsigned int spriteSheetColumnIconTexture_ = 0;
-    unsigned int spriteSheetRowColumnIconTexture_ = 0;
+    bool m_spriteSheetExportPopupRequested = false;
+    SpriteSheetExportMode m_spriteSheetExportMode = SpriteSheetExportMode::Row;
+    bool m_spriteSheetExportUseSelectedFrames = false;
+    int m_spriteSheetExportColumnsPerRow = 4;
+    bool m_spriteSheetExportUseCustomGroups = false;
+    int m_spriteSheetExportGroupSpacing = 8;
+    std::vector<SpriteSheetGroupDraft> m_spriteSheetExportGroups;
+    bool m_spriteSheetExportIconsLoaded = false;
+    unsigned int m_spriteSheetRowIconTexture = 0;
+    unsigned int m_spriteSheetColumnIconTexture = 0;
+    unsigned int m_spriteSheetRowColumnIconTexture = 0;
 
     // ---------------- Sprite Sheet 导入弹窗状态 ----------------
-    bool spriteSheetImportPopupRequested_ = false;
-    std::string spriteSheetImportPendingPath_;
-    bool spriteSheetImportRowMajor_ = true;
-    bool spriteSheetImportUseGridCountMode_ = false;
-    bool spriteSheetImportUseCustomSlice_ = false;
-    int spriteSheetImportSliceWidth_ = 16;
-    int spriteSheetImportSliceHeight_ = 16;
-    int spriteSheetImportGridRows_ = 1;
-    int spriteSheetImportGridCols_ = 1;
-    SpriteSheetImportStrategy spriteSheetImportStrategy_ = SpriteSheetImportStrategy::AppendAfterCurrent;
-    SpriteSheetImportGrouping spriteSheetImportGrouping_ = SpriteSheetImportGrouping::None;
-    int spriteSheetImportPreviewWidth_ = 0;
-    int spriteSheetImportPreviewHeight_ = 0;
-    int spriteSheetImportPreviewColumns_ = 0;
-    int spriteSheetImportPreviewRows_ = 0;
-    int spriteSheetImportPreviewFrames_ = 0;
-    unsigned int spriteSheetImportPreviewTexture_ = 0;
-    std::vector<uint8_t> spriteSheetImportTileSelected_;
+    bool m_spriteSheetImportPopupRequested = false;
+    std::string m_spriteSheetImportPendingPath;
+    bool m_spriteSheetImportRowMajor = true;
+    bool m_spriteSheetImportUseGridCountMode = false;
+    bool m_spriteSheetImportUseCustomSlice = false;
+    int m_spriteSheetImportSliceWidth = 16;
+    int m_spriteSheetImportSliceHeight = 16;
+    int m_spriteSheetImportGridRows = 1;
+    int m_spriteSheetImportGridCols = 1;
+    SpriteSheetImportStrategy m_spriteSheetImportStrategy = SpriteSheetImportStrategy::AppendAfterCurrent;
+    SpriteSheetImportGrouping m_spriteSheetImportGrouping = SpriteSheetImportGrouping::None;
+    int m_spriteSheetImportPreviewWidth = 0;
+    int m_spriteSheetImportPreviewHeight = 0;
+    int m_spriteSheetImportPreviewColumns = 0;
+    int m_spriteSheetImportPreviewRows = 0;
+    int m_spriteSheetImportPreviewFrames = 0;
+    unsigned int m_spriteSheetImportPreviewTexture = 0;
+    std::vector<uint8_t> m_spriteSheetImportTileSelected;
 
     // ---------------- Open/Save 最小可用弹窗状态 ----------------
-    bool openDialogInFlight_ = false;
-    bool saveDialogInFlight_ = false;
-    bool exportDialogInFlight_ = false;
-    bool importDialogInFlight_ = false;
-    std::mutex dialogMutex_;
-    std::string pendingOpenPath_;
-    std::string pendingSavePath_;
-    std::string pendingDialogError_;
-    std::string pendingExportPath_;
-    std::string pendingImportPath_;
-    bool pendingOpenReady_ = false;
-    bool pendingSaveReady_ = false;
-    bool pendingExportReady_ = false;
-    bool pendingImportReady_ = false;
-    ProjectFileFormat pendingSaveFormat_ = ProjectFileFormat::Binary;
-    ProjectFileFormat saveDialogFormat_ = ProjectFileFormat::Binary;
-    ExportKind pendingExportKind_ = ExportKind::CurrentFramePng;
-    ExportKind exportDialogKind_ = ExportKind::CurrentFramePng;
-    ImportKind pendingImportKind_ = ImportKind::CurrentFramePng;
-    ImportKind importDialogKind_ = ImportKind::CurrentFramePng;
-    SpriteSheetExportMode pendingExportSpriteMode_ = SpriteSheetExportMode::Row;
-    SpriteSheetExportMode exportDialogSpriteMode_ = SpriteSheetExportMode::Row;
-    bool pendingExportUseSelectedFrames_ = false;
-    bool exportDialogUseSelectedFrames_ = false;
-    int pendingExportColumnsPerRow_ = 4;
-    int exportDialogColumnsPerRow_ = 4;
-    bool pendingExportUseCustomGroups_ = false;
-    bool exportDialogUseCustomGroups_ = false;
-    int pendingExportGroupSpacing_ = 8;
-    int exportDialogGroupSpacing_ = 8;
-    std::vector<SpriteSheetGroupResolved> pendingExportCustomGroups_;
-    std::vector<SpriteSheetGroupResolved> exportDialogCustomGroups_;
-    bool pendingImportSpriteSheetRowMajor_ = true;
-    bool importDialogSpriteSheetRowMajor_ = true;
-    bool pendingDialogErrorReady_ = false;
-    std::string pendingErrorMessage_;
-    bool undoHistoryPopupRequested_ = false;
-    commands::PixelClipboardData pixelClipboard_;
+    bool m_openDialogInFlight = false;
+    bool m_saveDialogInFlight = false;
+    bool m_exportDialogInFlight = false;
+    bool m_importDialogInFlight = false;
+    std::mutex m_dialogMutex;
+    std::string m_pendingOpenPath;
+    std::string m_pendingSavePath;
+    std::string m_pendingDialogError;
+    std::string m_pendingExportPath;
+    std::string m_pendingImportPath;
+    bool m_pendingOpenReady = false;
+    bool m_pendingSaveReady = false;
+    bool m_pendingExportReady = false;
+    bool m_pendingImportReady = false;
+    ProjectFileFormat m_pendingSaveFormat = ProjectFileFormat::Binary;
+    ProjectFileFormat m_saveDialogFormat = ProjectFileFormat::Binary;
+    ExportKind m_pendingExportKind = ExportKind::CurrentFramePng;
+    ExportKind m_exportDialogKind = ExportKind::CurrentFramePng;
+    ImportKind m_pendingImportKind = ImportKind::CurrentFramePng;
+    ImportKind m_importDialogKind = ImportKind::CurrentFramePng;
+    SpriteSheetExportMode m_pendingExportSpriteMode = SpriteSheetExportMode::Row;
+    SpriteSheetExportMode m_exportDialogSpriteMode = SpriteSheetExportMode::Row;
+    bool m_pendingExportUseSelectedFrames = false;
+    bool m_exportDialogUseSelectedFrames = false;
+    int m_pendingExportColumnsPerRow = 4;
+    int m_exportDialogColumnsPerRow = 4;
+    bool m_pendingExportUseCustomGroups = false;
+    bool m_exportDialogUseCustomGroups = false;
+    int m_pendingExportGroupSpacing = 8;
+    int m_exportDialogGroupSpacing = 8;
+    std::vector<SpriteSheetGroupResolved> m_pendingExportCustomGroups;
+    std::vector<SpriteSheetGroupResolved> m_exportDialogCustomGroups;
+    bool m_pendingImportSpriteSheetRowMajor = true;
+    bool m_importDialogSpriteSheetRowMajor = true;
+    bool m_pendingDialogErrorReady = false;
+    std::string m_pendingErrorMessage;
+    bool m_undoHistoryPopupRequested = false;
+    commands::PixelClipboardData m_pixelClipboard;
 };
+

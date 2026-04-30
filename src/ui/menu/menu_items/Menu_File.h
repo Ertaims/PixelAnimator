@@ -41,26 +41,27 @@ public:
     void setOnCloseProjectCallback(const std::function<void()>& callback);
     void setOnCloseAllProjectsCallback(const std::function<void()>& callback);
     void setRecentProjectPaths(const std::vector<std::string>& paths);
-    void setContext(AppContext* context) { context_ = context; }
+    void setContext(AppContext* context) { m_context = context; }
 
 private:
     void rebuildOpenRecentMenu();
 
-    AppContext* context_ = nullptr;
-    Menu* openRecentMenu_ = nullptr;
-    std::vector<std::string> recentProjectPaths_;
+    AppContext* m_context = nullptr;
+    Menu* m_openRecentMenu = nullptr;
+    std::vector<std::string> m_recentProjectPaths;
 
-    std::function<void()> onExitCallback_;                  // Exit回调函数
-    std::function<void()> onNewProjectCallback_;            // 新建项目回调函数
-    std::function<void()> onOpenProjectCallback_;           // 打开项目回调函数
-    std::function<void()> onSaveProjectCallback_;           // 保存项目回调函数
-    std::function<void()> onSaveAsBinaryProjectCallback_;   // 另存为二进制项目回调函数
-    std::function<void()> onSaveAsJsonProjectCallback_;     // 另存为 JSON 项目回调函数
-    std::function<void()> onExportCurrentFramePngCallback_; // 导出当前帧 PNG 回调函数
-    std::function<void()> onExportSpriteSheetConfigCallback_; // 打开精灵图导出配置弹窗回调函数
-    std::function<void()> onImportSingleFramePngCallback_; // 导入单帧 PNG 回调函数
-    std::function<void()> onImportSpriteSheetPngCallback_; // 导入精灵图 PNG 回调函数
-    std::function<void(const std::string&)> onOpenRecentProjectByPathCallback_; // 按路径打开最近项目
-    std::function<void()> onCloseProjectCallback_;          // 关闭项目回调函数
-    std::function<void()> onCloseAllProjectsCallback_;      // 关闭所有项目回调函数
+    std::function<void()> m_onExitCallback;                  // Exit回调函数
+    std::function<void()> m_onNewProjectCallback;            // 新建项目回调函数
+    std::function<void()> m_onOpenProjectCallback;           // 打开项目回调函数
+    std::function<void()> m_onSaveProjectCallback;           // 保存项目回调函数
+    std::function<void()> m_onSaveAsBinaryProjectCallback;   // 另存为二进制项目回调函数
+    std::function<void()> m_onSaveAsJsonProjectCallback;     // 另存为 JSON 项目回调函数
+    std::function<void()> m_onExportCurrentFramePngCallback; // 导出当前帧 PNG 回调函数
+    std::function<void()> m_onExportSpriteSheetConfigCallback; // 打开精灵图导出配置弹窗回调函数
+    std::function<void()> m_onImportSingleFramePngCallback; // 导入单帧 PNG 回调函数
+    std::function<void()> m_onImportSpriteSheetPngCallback; // 导入精灵图 PNG 回调函数
+    std::function<void(const std::string&)> m_onOpenRecentProjectByPathCallback; // 按路径打开最近项目
+    std::function<void()> m_onCloseProjectCallback;          // 关闭项目回调函数
+    std::function<void()> m_onCloseAllProjectsCallback;      // 关闭所有项目回调函数
 };
+

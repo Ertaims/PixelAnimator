@@ -49,9 +49,9 @@ void ProjectWindow::renderLeftPanel(Project* project)
         0xFFFF00FF, 0xFFFFFF00, 0xFF804000, 0xFFFFA500,
         0xFF8B4513, 0xFF800080, 0xFF008080, 0xFF1E90FF
     };
-    std::vector<uint32_t>& userPalette = paletteState_.userPalette;
-    int& selectedIndex = paletteState_.selectedIndex;
-    bool& selectedIsUser = paletteState_.selectedIsUser;
+    std::vector<uint32_t>& userPalette = m_paletteState.userPalette;
+    int& selectedIndex = m_paletteState.selectedIndex;
+    bool& selectedIsUser = m_paletteState.selectedIsUser;
 
     const int defaultCount = static_cast<int>(sizeof(kDefaultPalette) / sizeof(kDefaultPalette[0]));
     const int userCount = static_cast<int>(userPalette.size());
@@ -165,3 +165,4 @@ void ProjectWindow::renderLeftPanel(Project* project)
         context->setProjectDirty(true);
     }
 }
+

@@ -1,4 +1,4 @@
-#include "tools/CircleFilledTool.h"
+﻿#include "tools/CircleFilledTool.h"
 
 #include "imgui.h"
 
@@ -161,28 +161,28 @@ void CircleFilledTool::handleInteraction(AppContext& context,
     // 开始新圆形拖拽。
     if (canvasHitboxHovered && hoveredOnImage && ImGui::IsMouseClicked(ImGuiMouseButton_Left))
     {
-        state_.drawing = true;
-        state_.startX = mousePixelX;
-        state_.startY = mousePixelY;
-        state_.endX = mousePixelX;
-        state_.endY = mousePixelY;
-        state_.basePixels = frame.pixels;
-        state_.hasBasePixels = true;
+        m_state.drawing = true;
+        m_state.startX = mousePixelX;
+        m_state.startY = mousePixelY;
+        m_state.endX = mousePixelX;
+        m_state.endY = mousePixelY;
+        m_state.basePixels = frame.pixels;
+        m_state.hasBasePixels = true;
     }
 
-    if (!state_.drawing || !state_.hasBasePixels) return;
+    if (!m_state.drawing || !m_state.hasBasePixels) return;
 
     // 拖拽实时预览：每帧都从快照重算圆形，避免重复叠加。
-    state_.endX = mousePixelX;
-    state_.endY = mousePixelY;
+    m_state.endX = mousePixelX;
+    m_state.endY = mousePixelY;
 
-    std::vector<uint32_t> previewPixels = state_.basePixels;
+    std::vector<uint32_t> previewPixels = m_state.basePixels;
     
     // 基于拖拽外接矩形绘制填充圆/椭圆。
-    const int minX = std::min(state_.startX, state_.endX);
-    const int maxX = std::max(state_.startX, state_.endX);
-    const int minY = std::min(state_.startY, state_.endY);
-    const int maxY = std::max(state_.startY, state_.endY);
+    const int minX = std::min(m_state.startX, m_state.endX);
+    const int maxX = std::max(m_state.startX, m_state.endX);
+    const int minY = std::min(m_state.startY, m_state.endY);
+    const int maxY = std::max(m_state.startY, m_state.endY);
 
     rasterizeEllipseFilled(
         previewPixels,
@@ -200,8 +200,8 @@ void CircleFilledTool::handleInteraction(AppContext& context,
     // 抬起提交。
     if (!ImGui::IsMouseDown(ImGuiMouseButton_Left))
     {
-        outPixelsCommitted = (frame.pixels != state_.basePixels);
-        state_ = {};
+        outPixelsCommitted = (frame.pixels != m_state.basePixels);
+        m_state = {};
     }
 }
 
@@ -221,6 +221,7 @@ void CircleFilledTool::renderOverlay(const AppContext& context,
 
 void CircleFilledTool::resetInteractionState(Project::Frame* frame)
 {
-    if (frame && state_.drawing && state_.hasBasePixels) frame->pixels = state_.basePixels;
-    state_ = {};
+    if (frame && m_state.drawing && m_state.hasBasePixels) frame->pixels = m_state.basePixels;
+    m_state = {};
 }
+

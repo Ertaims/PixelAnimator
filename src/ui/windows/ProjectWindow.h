@@ -1,4 +1,4 @@
-#ifndef PROJECTWINDOW_H
+﻿#ifndef PROJECTWINDOW_H
 #define PROJECTWINDOW_H
 
 #include "Window.h"
@@ -10,6 +10,8 @@
 #include "tools/RectFilledTool.h"
 #include "tools/RectangleTool.h"
 #include "tools/RectSelectionTool.h"
+#include "render/CanvasTexture.h"
+#include "ui/windows/LayerPanel.h"
 #include <cstdint>
 #include <functional>
 #include <string>
@@ -36,7 +38,7 @@ public:
     ProjectWindow(AppContext* context,
                   const std::string& windowLabel,
                   const std::function<void(AppContext*)>& onFocused = {})
-        : Window("ProjectWindow"), context(context), windowLabel_(windowLabel), onFocused_(onFocused) {}
+        : Window("ProjectWindow"), context(context), m_windowLabel(windowLabel), m_onFocused(onFocused) {}
 
     ~ProjectWindow() override;
 
@@ -52,14 +54,14 @@ public:
      * 
      * @return const char* 返回窗口标签的 C 风格字符串。
      */
-    const char* getWindowLabel() const { return windowLabel_.c_str(); }
+    const char* getWindowLabel() const { return m_windowLabel.c_str(); }
 
     /**
      * @brief 设置窗口标签。
      * 
      * @param label 新的窗口标签字符串。
      */
-    void setWindowLabel(const std::string& label) { windowLabel_ = label; }
+    void setWindowLabel(const std::string& label) { m_windowLabel = label; }
 
     // 启动粘贴预览（由 App 的 Paste 命令触发）。
     void beginPastePreview(const commands::PixelClipboardData& clipboard);
@@ -71,14 +73,6 @@ public:
     void cancelPastePreview();
 
 private:
-    // 画布纹理状态结构体，用于存储画布纹理的相关信息。
-    struct CanvasTextureState
-    {
-        unsigned int texture = 0; // OpenGL 纹理 ID
-        int width = 0;            // 纹理宽度
-        int height = 0;           // 纹理高度
-    };
-
     // 调色板状态结构体，用于存储用户自定义调色板及选中颜色的信息。
     struct PaletteState
     {
@@ -159,24 +153,6 @@ private:
         ToolType rectModePanelHoverMode = ToolType::Rect;           // 当前悬停候选模式
     };
 
-    // 图层面板状态：缓存图层操作按钮纹理，避免每帧重复从磁盘加载。
-    struct LayerPanelState
-    {
-        bool iconsLoaded = false;
-        unsigned int newLayerIconTexture = 0;       // 新建图层
-        unsigned int deleteIconTexture = 0;         // 删除图层
-        unsigned int upIconTexture = 0;             // 上移图层
-        unsigned int downIconTexture = 0;           // 下移图层
-        unsigned int showIconTexture = 0;           // 图层可见
-        unsigned int hideIconTexture = 0;           // 图层隐藏
-        unsigned int lockIconTexture = 0;           // 图层锁定
-        unsigned int unlockIconTexture = 0;         // 图层解锁
-        std::vector<int> selectedLayerIndices;      // 图层面板当前多选结果（Ctrl 点击维护）
-        bool openRenamePopup = false;               // 是否请求打开重命名弹窗
-        int renameLayerIndex = -1;                  // 正在重命名的图层索引
-        char renameLayerName[64] = "";              // 重命名输入缓存
-    };
-
     /**
      * @brief 连续笔划状态（用于解决快速拖拽时断线问题）。
      *
@@ -244,27 +220,29 @@ private:
     void renderTimelinePanel(Project* project);
 
     AppContext* context = nullptr;                  // 应用上下文指针
-    std::string windowLabel_;                       // 窗口标签字符串
-    std::function<void(AppContext*)> onFocused_;    // 窗口获得焦点时的回调函数
-    CanvasTextureState canvasTexture_;              // 画布纹理状态
-    PaletteState paletteState_;                     // 调色板状态
-    TimelineState timelineState_;                   // 时间轴状态
-    ToolbarState toolbarState_;                     // 工具栏状态
-    LayerPanelState layerPanelState_;               // 图层面板状态
-    StrokeContinuityState strokeState_;             // 连续笔划状态（每个项目窗口独立）
-    SymmetryEditState symmetryEditState_;           // 对称绘制状态（每个项目窗口独立）
-    LineTool lineTool_;                             // 直线工具实例（每个项目窗口独立）
-    CurveTool curveTool_;                           // 曲线工具实例（每个项目窗口独立）
-    RectangleTool rectangleTool_;                   // 矩形工具实例（每个项目窗口独立）
-    RectFilledTool rectFilledTool_;                 // 填充矩形工具实例（每个项目窗口独立）
-    CircleTool circleTool_;                         // 圆形工具实例（每个项目窗口独立）
-    CircleFilledTool circleFilledTool_;             // 填充圆形工具实例（每个项目窗口独立）
-    RectSelectionTool rectSelectionTool_;           // 矩形框选工具实例（每个项目窗口独立）
-    PastePreviewState pastePreviewState_;           // 粘贴预览状态（每个项目窗口独立）
-    int lastCanvasWidth_ = 0;                       // 上一帧渲染时的画布宽度（用于自动适配缩放）
-    int lastCanvasHeight_ = 0;                      // 上一帧渲染时的画布高度（用于自动适配缩放）
-    int pendingCanvasWidth_ = 0;                    // 待处理的画布宽度
-    int pendingCanvasHeight_ = 0;                   // 待处理的画布高度
+    std::string m_windowLabel;                       // 窗口标签字符串
+    std::function<void(AppContext*)> m_onFocused;    // 窗口获得焦点时的回调函数
+    render::CanvasTexture m_canvasTexture;           // 画布纹理状态
+    PaletteState m_paletteState;                     // 调色板状态
+    TimelineState m_timelineState;                   // 时间轴状态
+    ToolbarState m_toolbarState;                     // 工具栏状态
+    LayerPanel m_layerPanel;                         // 右侧图层面板
+    StrokeContinuityState m_strokeState;             // 连续笔划状态（每个项目窗口独立）
+    SymmetryEditState m_symmetryEditState;           // 对称绘制状态（每个项目窗口独立）
+    LineTool m_lineTool;                             // 直线工具实例（每个项目窗口独立）
+    CurveTool m_curveTool;                           // 曲线工具实例（每个项目窗口独立）
+    RectangleTool m_rectangleTool;                   // 矩形工具实例（每个项目窗口独立）
+    RectFilledTool m_rectFilledTool;                 // 填充矩形工具实例（每个项目窗口独立）
+    CircleTool m_circleTool;                         // 圆形工具实例（每个项目窗口独立）
+    CircleFilledTool m_circleFilledTool;             // 填充圆形工具实例（每个项目窗口独立）
+    RectSelectionTool m_rectSelectionTool;           // 矩形框选工具实例（每个项目窗口独立）
+    PastePreviewState m_pastePreviewState;           // 粘贴预览状态（每个项目窗口独立）
+    int m_lastCanvasWidth = 0;                       // 上一帧渲染时的画布宽度（用于自动适配缩放）
+    int m_lastCanvasHeight = 0;                      // 上一帧渲染时的画布高度（用于自动适配缩放）
+    int m_pendingCanvasWidth = 0;                    // 待处理的画布宽度
+    int m_pendingCanvasHeight = 0;                   // 待处理的画布高度
 };
 
 #endif // PROJECTWINDOW_H
+
+

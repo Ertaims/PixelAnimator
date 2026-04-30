@@ -23,12 +23,21 @@ set(HEADERS
 set(SOURCES 
     src/main.cpp
     src/app/App.cpp
+    src/app/App_Dialogs.cpp
+    src/app/App_Edit.cpp
+    src/app/App_FileIO.cpp
+    src/app/App_ImportExport.cpp
+    src/app/App_Project.cpp
+    src/app/App_Shortcuts.cpp
     src/core/AppContext.cpp
     src/core/Project.cpp
     src/io/ProjectSerializer.cpp
     src/io/ProjectJsonSerializer.cpp
     src/io/ImageExporter.cpp
     src/io/ImageImporter.cpp
+    src/render/Texture.cpp
+    src/render/CanvasTexture.cpp
+    src/render/SelectionOverlayRenderer.cpp
     src/commands/PixelClipboardCommands.cpp
     src/commands/DeleteCommand.cpp
     src/commands/FlipCommand.cpp
@@ -43,6 +52,8 @@ set(SOURCES
     src/tools/RectangleTool.cpp
     src/tools/RectSelectionTool.cpp
     src/tools/MagicWandSelectionTool.cpp
+    src/tools/selection/SelectionGeometry.cpp
+    src/tools/selection/SelectionTransform.cpp
     src/tools/CircleTool.cpp
     src/tools/CircleFilledTool.cpp
     src/ui/menu/MenuBase.cpp
@@ -61,9 +72,9 @@ set(SOURCES
     src/ui/windows/ProjectWindow_Tools.cpp
     src/ui/windows/ProjectWindow_Canvas.cpp
     src/ui/windows/ProjectWindow_ToolProperties.cpp
+    src/ui/windows/LayerPanel.cpp
     src/ui/windows/ProjectWindow_Timeline.cpp
     src/ui/windows/WindowFactory.cpp
-    src/ui/statusBar/statusBar.cpp
 )
 
 # 添加ImGui源文件

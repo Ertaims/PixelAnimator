@@ -85,5 +85,6 @@ private:
         bool hasBasePixels = false;         // 是否已捕获快照
     };
 
-    InteractionState state_;
+    InteractionState m_state;
 };
+

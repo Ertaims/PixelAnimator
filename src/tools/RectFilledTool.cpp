@@ -80,36 +80,36 @@ void RectFilledTool::handleInteraction(AppContext& context,
 
     if (canvasHitboxHovered && hoveredOnImage && ImGui::IsMouseClicked(ImGuiMouseButton_Left))
     {
-        state_.drawing = true;
-        state_.startX = mousePixelX;
-        state_.startY = mousePixelY;
-        state_.endX = mousePixelX;
-        state_.endY = mousePixelY;
-        state_.basePixels = frame.pixels;
-        state_.hasBasePixels = true;
+        m_state.drawing = true;
+        m_state.startX = mousePixelX;
+        m_state.startY = mousePixelY;
+        m_state.endX = mousePixelX;
+        m_state.endY = mousePixelY;
+        m_state.basePixels = frame.pixels;
+        m_state.hasBasePixels = true;
     }
 
-    if (!state_.drawing || !state_.hasBasePixels) return;
+    if (!m_state.drawing || !m_state.hasBasePixels) return;
 
-    state_.endX = mousePixelX;
-    state_.endY = mousePixelY;
+    m_state.endX = mousePixelX;
+    m_state.endY = mousePixelY;
 
-    std::vector<uint32_t> previewPixels = state_.basePixels;
+    std::vector<uint32_t> previewPixels = m_state.basePixels;
     rasterizeFilledRectangle(previewPixels,
                              canvasWidth,
                              canvasHeight,
-                             state_.startX,
-                             state_.startY,
-                             state_.endX,
-                             state_.endY,
+                             m_state.startX,
+                             m_state.startY,
+                             m_state.endX,
+                             m_state.endY,
                              context.getColorRGBA(),
                              context);
     frame.pixels.swap(previewPixels);
 
     if (!ImGui::IsMouseDown(ImGuiMouseButton_Left))
     {
-        outPixelsCommitted = (frame.pixels != state_.basePixels);
-        state_ = {};
+        outPixelsCommitted = (frame.pixels != m_state.basePixels);
+        m_state = {};
     }
 }
 
@@ -128,6 +128,7 @@ void RectFilledTool::renderOverlay(const AppContext& context,
 
 void RectFilledTool::resetInteractionState(Project::Frame* frame)
 {
-    if (frame && state_.drawing && state_.hasBasePixels) frame->pixels = state_.basePixels;
-    state_ = {};
+    if (frame && m_state.drawing && m_state.hasBasePixels) frame->pixels = m_state.basePixels;
+    m_state = {};
 }
+

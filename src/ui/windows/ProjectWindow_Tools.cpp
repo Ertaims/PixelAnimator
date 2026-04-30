@@ -1,48 +1,13 @@
-#include "ProjectWindow.h"
+﻿#include "ProjectWindow.h"
 
 #include "core/AppContext.h"
 #include "imgui.h"
+#include "render/Texture.h"
 
-#include <SDL3/SDL.h>
-#include <SDL3/SDL_opengl.h>
-#include <SDL3_image/SDL_image.h>
 #include <string>
 
 namespace
 {
-    /**
-     * @brief 从磁盘加载图片并创建 OpenGL 2D 纹理。
-     *
-     * @param path 图片文件路径（支持 png 等 SDL_image 可读格式）
-     * @return GLuint 成功返回纹理 ID，失败返回 0
-     */
-    GLuint loadTextureFromFile(const char* path)
-    {
-        SDL_Surface* surface = IMG_Load(path);
-        if (!surface) return 0;
-
-        SDL_Surface* rgbaSurface = surface;
-        if (surface->format != SDL_PIXELFORMAT_RGBA32)
-        {
-            rgbaSurface = SDL_ConvertSurface(surface, SDL_PIXELFORMAT_RGBA32);
-            SDL_DestroySurface(surface);
-            if (!rgbaSurface) return 0;
-        }
-
-        GLuint texture = 0;
-        glGenTextures(1, &texture);
-        glBindTexture(GL_TEXTURE_2D, texture);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-        glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, rgbaSurface->w, rgbaSurface->h, 0, GL_RGBA, GL_UNSIGNED_BYTE, rgbaSurface->pixels);
-
-        SDL_DestroySurface(rgbaSurface);
-        return texture;
-    }
-
     /**
      * @brief 懒加载工具栏图标纹理（仅首次调用时执行）。
      *
@@ -58,23 +23,23 @@ namespace
      * @param circleFilledIcon 圆形填充图标纹理输出
      * @param loaded 图标是否已加载完成
      */
-    void ensureToolbarIconTextures(GLuint& brushIcon,
-                                   GLuint& eraserIcon,
-                                   GLuint& eyedropperIcon,
-                                   GLuint& fillIcon,
-                                   GLuint& rectSelectIcon,
-                                   GLuint& circleSelectIcon,
-                                   GLuint& magicWandSelectIcon,
-                                   GLuint& lassoSelectIcon,
-                                   GLuint& polygonLassoSelectIcon,
-                                   GLuint& lineIcon,
-                                   GLuint& curveIcon,
-                                   GLuint& rectIcon,
-                                   GLuint& rectFilledIcon,
-                                   GLuint& circleIcon,
-                                   GLuint& circleFilledIcon,
-                                   GLuint& symmetryLeftRightIcon,
-                                   GLuint& symmetryUpDownIcon,
+    void ensureToolbarIconTextures(unsigned int& brushIcon,
+                                   unsigned int& eraserIcon,
+                                   unsigned int& eyedropperIcon,
+                                   unsigned int& fillIcon,
+                                   unsigned int& rectSelectIcon,
+                                   unsigned int& circleSelectIcon,
+                                   unsigned int& magicWandSelectIcon,
+                                   unsigned int& lassoSelectIcon,
+                                   unsigned int& polygonLassoSelectIcon,
+                                   unsigned int& lineIcon,
+                                   unsigned int& curveIcon,
+                                   unsigned int& rectIcon,
+                                   unsigned int& rectFilledIcon,
+                                   unsigned int& circleIcon,
+                                   unsigned int& circleFilledIcon,
+                                   unsigned int& symmetryLeftRightIcon,
+                                   unsigned int& symmetryUpDownIcon,
                                    bool& loaded)
     {
         if (loaded) return;
@@ -97,23 +62,23 @@ namespace
         const char* symmetryLeftRightIconPath   =   { "../src/assets/Symmetry_Right&Left.png" };
         const char* symmetryUpDownIconPath      =   { "../src/assets/Symmetry_Up&Down.png" };
 
-        brushIcon = loadTextureFromFile(brushIconPath);
-        eraserIcon = loadTextureFromFile(eraserIconPath);
-        eyedropperIcon = loadTextureFromFile(eyedropperIconPath);
-        fillIcon = loadTextureFromFile(fillIconPath);
-        rectSelectIcon = loadTextureFromFile(rectSelectIconPath);
-        circleSelectIcon = loadTextureFromFile(circleSelectIconPath);
-        magicWandSelectIcon = loadTextureFromFile(magicWandSelectIconPath);
-        lassoSelectIcon = loadTextureFromFile(lassoSelectIconPath);
-        polygonLassoSelectIcon = loadTextureFromFile(polygonLassoSelectIconPath);
-        lineIcon = loadTextureFromFile(lineIconPath);
-        curveIcon = loadTextureFromFile(curveIconPath);
-        rectIcon = loadTextureFromFile(rectIconPath);
-        rectFilledIcon = loadTextureFromFile(rectFilledIconPath);
-        circleIcon = loadTextureFromFile(circleIconPath);
-        circleFilledIcon = loadTextureFromFile(circleFilledIconPath);
-        symmetryLeftRightIcon = loadTextureFromFile(symmetryLeftRightIconPath);
-        symmetryUpDownIcon = loadTextureFromFile(symmetryUpDownIconPath);
+        brushIcon = render::loadTextureFromFile(brushIconPath);
+        eraserIcon = render::loadTextureFromFile(eraserIconPath);
+        eyedropperIcon = render::loadTextureFromFile(eyedropperIconPath);
+        fillIcon = render::loadTextureFromFile(fillIconPath);
+        rectSelectIcon = render::loadTextureFromFile(rectSelectIconPath);
+        circleSelectIcon = render::loadTextureFromFile(circleSelectIconPath);
+        magicWandSelectIcon = render::loadTextureFromFile(magicWandSelectIconPath);
+        lassoSelectIcon = render::loadTextureFromFile(lassoSelectIconPath);
+        polygonLassoSelectIcon = render::loadTextureFromFile(polygonLassoSelectIconPath);
+        lineIcon = render::loadTextureFromFile(lineIconPath);
+        curveIcon = render::loadTextureFromFile(curveIconPath);
+        rectIcon = render::loadTextureFromFile(rectIconPath);
+        rectFilledIcon = render::loadTextureFromFile(rectFilledIconPath);
+        circleIcon = render::loadTextureFromFile(circleIconPath);
+        circleFilledIcon = render::loadTextureFromFile(circleFilledIconPath);
+        symmetryLeftRightIcon = render::loadTextureFromFile(symmetryLeftRightIconPath);
+        symmetryUpDownIcon = render::loadTextureFromFile(symmetryUpDownIconPath);
 
         loaded = true;
     }
@@ -135,24 +100,24 @@ void ProjectWindow::renderToolbarPanel()
 {
     // 确保工具图标纹理可用（首次进入时加载，后续复用）。
     ensureToolbarIconTextures(
-        toolbarState_.brushIconTexture,
-        toolbarState_.eraserIconTexture,
-        toolbarState_.eyedropperIconTexture,
-        toolbarState_.fillIconTexture,
-        toolbarState_.rectSelectIconTexture,
-        toolbarState_.circleSelectIconTexture,
-        toolbarState_.magicWandSelectIconTexture,
-        toolbarState_.lassoSelectIconTexture,
-        toolbarState_.polygonLassoSelectIconTexture,
-        toolbarState_.lineIconTexture,
-        toolbarState_.curveIconTexture,
-        toolbarState_.rectIconTexture,
-        toolbarState_.rectFilledIconTexture,
-        toolbarState_.circleIconTexture,
-        toolbarState_.circleFilledIconTexture,
-        toolbarState_.symmetryLeftRightIconTexture,
-        toolbarState_.symmetryUpDownIconTexture,
-        toolbarState_.iconsLoaded);
+        m_toolbarState.brushIconTexture,
+        m_toolbarState.eraserIconTexture,
+        m_toolbarState.eyedropperIconTexture,
+        m_toolbarState.fillIconTexture,
+        m_toolbarState.rectSelectIconTexture,
+        m_toolbarState.circleSelectIconTexture,
+        m_toolbarState.magicWandSelectIconTexture,
+        m_toolbarState.lassoSelectIconTexture,
+        m_toolbarState.polygonLassoSelectIconTexture,
+        m_toolbarState.lineIconTexture,
+        m_toolbarState.curveIconTexture,
+        m_toolbarState.rectIconTexture,
+        m_toolbarState.rectFilledIconTexture,
+        m_toolbarState.circleIconTexture,
+        m_toolbarState.circleFilledIconTexture,
+        m_toolbarState.symmetryLeftRightIconTexture,
+        m_toolbarState.symmetryUpDownIconTexture,
+        m_toolbarState.iconsLoaded);
 
     ImGui::TextUnformatted("Tools");
     ImGui::Separator();
@@ -160,13 +125,13 @@ void ProjectWindow::renderToolbarPanel()
     // 同步工具模式状态：确保切走其他工具后再回来时，能记住用户最近的选择
     if (context->getTool() == ToolType::Rect || context->getTool() == ToolType::RectFilled || 
         context->getTool() == ToolType::Circle || context->getTool() == ToolType::CircleFilled) {
-        toolbarState_.lastRectMode = context->getTool();
+        m_toolbarState.lastRectMode = context->getTool();
     }
     if (context->getTool() == ToolType::Line || context->getTool() == ToolType::Curve) {
-        toolbarState_.lastLineMode = context->getTool();
+        m_toolbarState.lastLineMode = context->getTool();
     }
     if (context->getTool() == ToolType::RectSelection) {
-        toolbarState_.lastSelectionShape = rectSelectionTool_.getSelectionShape();
+        m_toolbarState.lastSelectionShape = m_rectSelectionTool.getSelectionShape();
     }
     
     // ===== 矩形工具组状态 =====
@@ -174,45 +139,45 @@ void ProjectWindow::renderToolbarPanel()
                                context->getTool() == ToolType::Circle || context->getTool() == ToolType::CircleFilled);
     
     // 确定当前工具图标和标签
-    unsigned int currentRectModeIcon = toolbarState_.rectIconTexture;
+    unsigned int currentRectModeIcon = m_toolbarState.rectIconTexture;
     const char* currentRectModeLabel = "Rectangle (Outline)";
     
-    if (toolbarState_.lastRectMode == ToolType::RectFilled) {
-        currentRectModeIcon = toolbarState_.rectFilledIconTexture;
+    if (m_toolbarState.lastRectMode == ToolType::RectFilled) {
+        currentRectModeIcon = m_toolbarState.rectFilledIconTexture;
         currentRectModeLabel = "Rectangle (Filled)";
-    } else if (toolbarState_.lastRectMode == ToolType::Circle) {
-        currentRectModeIcon = toolbarState_.circleIconTexture;
+    } else if (m_toolbarState.lastRectMode == ToolType::Circle) {
+        currentRectModeIcon = m_toolbarState.circleIconTexture;
         currentRectModeLabel = "Circle (Outline)";
-    } else if (toolbarState_.lastRectMode == ToolType::CircleFilled) {
-        currentRectModeIcon = toolbarState_.circleFilledIconTexture;
+    } else if (m_toolbarState.lastRectMode == ToolType::CircleFilled) {
+        currentRectModeIcon = m_toolbarState.circleFilledIconTexture;
         currentRectModeLabel = "Circle (Filled)";
     }
     
     // ===== 线条工具组状态 =====
     const bool lineModeActive = (context->getTool() == ToolType::Line || context->getTool() == ToolType::Curve);
-    const bool curveMode = (toolbarState_.lastLineMode == ToolType::Curve);
-    const unsigned int currentLineModeIcon = curveMode && toolbarState_.curveIconTexture != 0
-        ? toolbarState_.curveIconTexture
-        : toolbarState_.lineIconTexture;
+    const bool curveMode = (m_toolbarState.lastLineMode == ToolType::Curve);
+    const unsigned int currentLineModeIcon = curveMode && m_toolbarState.curveIconTexture != 0
+        ? m_toolbarState.curveIconTexture
+        : m_toolbarState.lineIconTexture;
     const char* currentLineModeLabel = curveMode ? "Curve" : "Line";
     
     // ===== 框选工具组状态 =====
     const bool selectionModeActive = (context->getTool() == ToolType::RectSelection);
-    const bool selectionCircleMode = (toolbarState_.lastSelectionShape == RectSelectionTool::SelectionShape::Ellipse);
-    const bool selectionWandMode = (toolbarState_.lastSelectionShape == RectSelectionTool::SelectionShape::MagicWand);
-    const bool selectionLassoMode = (toolbarState_.lastSelectionShape == RectSelectionTool::SelectionShape::Lasso);
-    const bool selectionPolygonLassoMode = (toolbarState_.lastSelectionShape == RectSelectionTool::SelectionShape::PolygonLasso);
+    const bool selectionCircleMode = (m_toolbarState.lastSelectionShape == RectSelectionTool::SelectionShape::Ellipse);
+    const bool selectionWandMode = (m_toolbarState.lastSelectionShape == RectSelectionTool::SelectionShape::MagicWand);
+    const bool selectionLassoMode = (m_toolbarState.lastSelectionShape == RectSelectionTool::SelectionShape::Lasso);
+    const bool selectionPolygonLassoMode = (m_toolbarState.lastSelectionShape == RectSelectionTool::SelectionShape::PolygonLasso);
     
     // 确定当前框选工具图标
-    unsigned int currentSelectionModeIcon = toolbarState_.rectSelectIconTexture;
-    if (selectionPolygonLassoMode && toolbarState_.polygonLassoSelectIconTexture != 0) {
-        currentSelectionModeIcon = toolbarState_.polygonLassoSelectIconTexture;
-    } else if (selectionLassoMode && toolbarState_.lassoSelectIconTexture != 0) {
-        currentSelectionModeIcon = toolbarState_.lassoSelectIconTexture;
-    } else if (selectionWandMode && toolbarState_.magicWandSelectIconTexture != 0) {
-        currentSelectionModeIcon = toolbarState_.magicWandSelectIconTexture;
-    } else if (selectionCircleMode && toolbarState_.circleSelectIconTexture != 0) {
-        currentSelectionModeIcon = toolbarState_.circleSelectIconTexture;
+    unsigned int currentSelectionModeIcon = m_toolbarState.rectSelectIconTexture;
+    if (selectionPolygonLassoMode && m_toolbarState.polygonLassoSelectIconTexture != 0) {
+        currentSelectionModeIcon = m_toolbarState.polygonLassoSelectIconTexture;
+    } else if (selectionLassoMode && m_toolbarState.lassoSelectIconTexture != 0) {
+        currentSelectionModeIcon = m_toolbarState.lassoSelectIconTexture;
+    } else if (selectionWandMode && m_toolbarState.magicWandSelectIconTexture != 0) {
+        currentSelectionModeIcon = m_toolbarState.magicWandSelectIconTexture;
+    } else if (selectionCircleMode && m_toolbarState.circleSelectIconTexture != 0) {
+        currentSelectionModeIcon = m_toolbarState.circleSelectIconTexture;
     }
     
     // 确定当前框选工具标签
@@ -221,7 +186,7 @@ void ProjectWindow::renderToolbarPanel()
         currentSelectionModeLabel = "Polygon Lasso Selection";
     } else if (selectionLassoMode) {
         currentSelectionModeLabel = "Lasso Selection";
-    } else if (selectionWandMode && toolbarState_.magicWandSelectIconTexture != 0) {
+    } else if (selectionWandMode && m_toolbarState.magicWandSelectIconTexture != 0) {
         currentSelectionModeLabel = "Magic Wand Selection";
     } else if (selectionCircleMode) {
         currentSelectionModeLabel = "Circle Selection";
@@ -236,10 +201,10 @@ void ProjectWindow::renderToolbarPanel()
     };
 
     const ToolbarItem items[] = {
-        {ToolType::Brush, "Brush", toolbarState_.brushIconTexture},
-        {ToolType::Eraser, "Eraser", toolbarState_.eraserIconTexture},
-        {ToolType::Eyedropper, "Eyedropper", toolbarState_.eyedropperIconTexture},
-        {ToolType::Fill, "Fill", toolbarState_.fillIconTexture},
+        {ToolType::Brush, "Brush", m_toolbarState.brushIconTexture},
+        {ToolType::Eraser, "Eraser", m_toolbarState.eraserIconTexture},
+        {ToolType::Eyedropper, "Eyedropper", m_toolbarState.eyedropperIconTexture},
+        {ToolType::Fill, "Fill", m_toolbarState.fillIconTexture},
         {ToolType::RectSelection, currentSelectionModeLabel, currentSelectionModeIcon},
         {ToolType::Line, currentLineModeLabel, currentLineModeIcon},
         {ToolType::Rect, currentRectModeLabel, currentRectModeIcon}
@@ -302,11 +267,11 @@ void ProjectWindow::renderToolbarPanel()
 
             if (pressedOnRectButton)
             {
-                toolbarState_.selectionModeLongPressActive = true;
-                toolbarState_.selectionModeLongPressStart = now;
-                toolbarState_.selectionModePanelPosX = rectButtonMax.x + 6.0f;
-                toolbarState_.selectionModePanelPosY = rectButtonMin.y;
-                toolbarState_.selectionModePanelHasHover = false;
+                m_toolbarState.selectionModeLongPressActive = true;
+                m_toolbarState.selectionModeLongPressStart = now;
+                m_toolbarState.selectionModePanelPosX = rectButtonMax.x + 6.0f;
+                m_toolbarState.selectionModePanelPosY = rectButtonMin.y;
+                m_toolbarState.selectionModePanelHasHover = false;
 
                 if (!selectionModeActive)
                 {
@@ -314,16 +279,16 @@ void ProjectWindow::renderToolbarPanel()
                 }
             }
 
-            if (toolbarState_.selectionModeLongPressActive && leftMouseDown)
+            if (m_toolbarState.selectionModeLongPressActive && leftMouseDown)
             {
-                const double held = now - toolbarState_.selectionModeLongPressStart;
-                if (held >= static_cast<double>(toolbarState_.selectionModeLongPressThreshold))
+                const double held = now - m_toolbarState.selectionModeLongPressStart;
+                if (held >= static_cast<double>(m_toolbarState.selectionModeLongPressThreshold))
                 {
-                    toolbarState_.selectionModePopupVisible = true;
-                    toolbarState_.selectionModePanelHasHover = false;
+                    m_toolbarState.selectionModePopupVisible = true;
+                    m_toolbarState.selectionModePanelHasHover = false;
 
                     ImGui::SetNextWindowPos(
-                        ImVec2(toolbarState_.selectionModePanelPosX, toolbarState_.selectionModePanelPosY),
+                        ImVec2(m_toolbarState.selectionModePanelPosX, m_toolbarState.selectionModePanelPosY),
                         ImGuiCond_Always);
 
                     ImGuiWindowFlags panelFlags =
@@ -339,11 +304,11 @@ void ProjectWindow::renderToolbarPanel()
                         "##SelectionModePanel_" + std::to_string(reinterpret_cast<uintptr_t>(this));
                     if (ImGui::Begin(panelWindowName.c_str(), nullptr, panelFlags))
                     {
-                        const bool modeRect = (toolbarState_.lastSelectionShape == RectSelectionTool::SelectionShape::Rectangle);
-                        const bool modeCircle = (toolbarState_.lastSelectionShape == RectSelectionTool::SelectionShape::Ellipse);
-                        const bool modeWand = (toolbarState_.lastSelectionShape == RectSelectionTool::SelectionShape::MagicWand);
-                        const bool modeLasso = (toolbarState_.lastSelectionShape == RectSelectionTool::SelectionShape::Lasso);
-                        const bool modePolygonLasso = (toolbarState_.lastSelectionShape == RectSelectionTool::SelectionShape::PolygonLasso);
+                        const bool modeRect = (m_toolbarState.lastSelectionShape == RectSelectionTool::SelectionShape::Rectangle);
+                        const bool modeCircle = (m_toolbarState.lastSelectionShape == RectSelectionTool::SelectionShape::Ellipse);
+                        const bool modeWand = (m_toolbarState.lastSelectionShape == RectSelectionTool::SelectionShape::MagicWand);
+                        const bool modeLasso = (m_toolbarState.lastSelectionShape == RectSelectionTool::SelectionShape::Lasso);
+                        const bool modePolygonLasso = (m_toolbarState.lastSelectionShape == RectSelectionTool::SelectionShape::PolygonLasso);
                         const ImVec2 modeIconSize(24.0f, 24.0f);
                         const ImVec2 modeFramePad(3.0f, 3.0f);
 
@@ -351,11 +316,11 @@ void ProjectWindow::renderToolbarPanel()
                         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(4.0f, 4.0f));
 
                         if (modeRect) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.24f, 0.52f, 0.86f, 1.0f));
-                        if (toolbarState_.rectSelectIconTexture != 0)
+                        if (m_toolbarState.rectSelectIconTexture != 0)
                         {
                             ImGui::ImageButton(
                                 "##selection_mode_rect_panel",
-                                reinterpret_cast<ImTextureID>(static_cast<uintptr_t>(toolbarState_.rectSelectIconTexture)),
+                                reinterpret_cast<ImTextureID>(static_cast<uintptr_t>(m_toolbarState.rectSelectIconTexture)),
                                 modeIconSize);
                         }
                         else
@@ -370,8 +335,8 @@ void ProjectWindow::renderToolbarPanel()
                             mousePos.x < rectMax.x && mousePos.y < rectMax.y;
                         if (rectHovered)
                         {
-                            toolbarState_.selectionModePanelHasHover = true;
-                            toolbarState_.selectionModePanelHoverShape = RectSelectionTool::SelectionShape::Rectangle;
+                            m_toolbarState.selectionModePanelHasHover = true;
+                            m_toolbarState.selectionModePanelHoverShape = RectSelectionTool::SelectionShape::Rectangle;
                             ImGui::SetTooltip("%s", "Rect Selection");
                             ImGui::GetWindowDrawList()->AddRect(
                                 rectMin,
@@ -385,11 +350,11 @@ void ProjectWindow::renderToolbarPanel()
                         ImGui::SameLine();
 
                         if (modeCircle) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.24f, 0.52f, 0.86f, 1.0f));
-                        if (toolbarState_.circleSelectIconTexture != 0)
+                        if (m_toolbarState.circleSelectIconTexture != 0)
                         {
                             ImGui::ImageButton(
                                 "##selection_mode_circle_panel",
-                                reinterpret_cast<ImTextureID>(static_cast<uintptr_t>(toolbarState_.circleSelectIconTexture)),
+                                reinterpret_cast<ImTextureID>(static_cast<uintptr_t>(m_toolbarState.circleSelectIconTexture)),
                                 modeIconSize);
                         }
                         else
@@ -404,8 +369,8 @@ void ProjectWindow::renderToolbarPanel()
                             mousePos.x < circleMax.x && mousePos.y < circleMax.y;
                         if (circleHovered)
                         {
-                            toolbarState_.selectionModePanelHasHover = true;
-                            toolbarState_.selectionModePanelHoverShape = RectSelectionTool::SelectionShape::Ellipse;
+                            m_toolbarState.selectionModePanelHasHover = true;
+                            m_toolbarState.selectionModePanelHoverShape = RectSelectionTool::SelectionShape::Ellipse;
                             ImGui::SetTooltip("%s", "Circle Selection");
                             ImGui::GetWindowDrawList()->AddRect(
                                 circleMin,
@@ -419,11 +384,11 @@ void ProjectWindow::renderToolbarPanel()
                         ImGui::SameLine();
 
                         if (modeWand) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.24f, 0.52f, 0.86f, 1.0f));
-                        if (toolbarState_.magicWandSelectIconTexture != 0)
+                        if (m_toolbarState.magicWandSelectIconTexture != 0)
                         {
                             ImGui::ImageButton(
                                 "##selection_mode_wand_panel",
-                                reinterpret_cast<ImTextureID>(static_cast<uintptr_t>(toolbarState_.magicWandSelectIconTexture)),
+                                reinterpret_cast<ImTextureID>(static_cast<uintptr_t>(m_toolbarState.magicWandSelectIconTexture)),
                                 modeIconSize);
                         }
                         else
@@ -438,8 +403,8 @@ void ProjectWindow::renderToolbarPanel()
                             mousePos.x < wandMax.x && mousePos.y < wandMax.y;
                         if (wandHovered)
                         {
-                            toolbarState_.selectionModePanelHasHover = true;
-                            toolbarState_.selectionModePanelHoverShape = RectSelectionTool::SelectionShape::MagicWand;
+                            m_toolbarState.selectionModePanelHasHover = true;
+                            m_toolbarState.selectionModePanelHoverShape = RectSelectionTool::SelectionShape::MagicWand;
                             ImGui::SetTooltip("%s", "Magic Wand Selection");
                             ImGui::GetWindowDrawList()->AddRect(
                                 wandMin,
@@ -453,11 +418,11 @@ void ProjectWindow::renderToolbarPanel()
                         ImGui::SameLine();
 
                         if (modeLasso) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.24f, 0.52f, 0.86f, 1.0f));
-                        if (toolbarState_.lassoSelectIconTexture != 0)
+                        if (m_toolbarState.lassoSelectIconTexture != 0)
                         {
                             ImGui::ImageButton(
                                 "##selection_mode_lasso_panel",
-                                reinterpret_cast<ImTextureID>(static_cast<uintptr_t>(toolbarState_.lassoSelectIconTexture)),
+                                reinterpret_cast<ImTextureID>(static_cast<uintptr_t>(m_toolbarState.lassoSelectIconTexture)),
                                 modeIconSize);
                         }
                         else
@@ -472,8 +437,8 @@ void ProjectWindow::renderToolbarPanel()
                             mousePos.x < lassoMax.x && mousePos.y < lassoMax.y;
                         if (lassoHovered)
                         {
-                            toolbarState_.selectionModePanelHasHover = true;
-                            toolbarState_.selectionModePanelHoverShape = RectSelectionTool::SelectionShape::Lasso;
+                            m_toolbarState.selectionModePanelHasHover = true;
+                            m_toolbarState.selectionModePanelHoverShape = RectSelectionTool::SelectionShape::Lasso;
                             ImGui::SetTooltip("%s", "Lasso Selection");
                             ImGui::GetWindowDrawList()->AddRect(
                                 lassoMin,
@@ -487,11 +452,11 @@ void ProjectWindow::renderToolbarPanel()
                         ImGui::SameLine();
 
                         if (modePolygonLasso) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.24f, 0.52f, 0.86f, 1.0f));
-                        if (toolbarState_.polygonLassoSelectIconTexture != 0)
+                        if (m_toolbarState.polygonLassoSelectIconTexture != 0)
                         {
                             ImGui::ImageButton(
                                 "##selection_mode_polygon_lasso_panel",
-                                reinterpret_cast<ImTextureID>(static_cast<uintptr_t>(toolbarState_.polygonLassoSelectIconTexture)),
+                                reinterpret_cast<ImTextureID>(static_cast<uintptr_t>(m_toolbarState.polygonLassoSelectIconTexture)),
                                 modeIconSize);
                         }
                         else
@@ -506,8 +471,8 @@ void ProjectWindow::renderToolbarPanel()
                             mousePos.x < polyMax.x && mousePos.y < polyMax.y;
                         if (polyHovered)
                         {
-                            toolbarState_.selectionModePanelHasHover = true;
-                            toolbarState_.selectionModePanelHoverShape = RectSelectionTool::SelectionShape::PolygonLasso;
+                            m_toolbarState.selectionModePanelHasHover = true;
+                            m_toolbarState.selectionModePanelHoverShape = RectSelectionTool::SelectionShape::PolygonLasso;
                             ImGui::SetTooltip("%s", "Polygon Lasso Selection");
                             ImGui::GetWindowDrawList()->AddRect(
                                 polyMin,
@@ -524,17 +489,17 @@ void ProjectWindow::renderToolbarPanel()
                 }
             }
 
-            if (toolbarState_.selectionModeLongPressActive && !leftMouseDown)
+            if (m_toolbarState.selectionModeLongPressActive && !leftMouseDown)
             {
-                if (toolbarState_.selectionModePopupVisible && toolbarState_.selectionModePanelHasHover)
+                if (m_toolbarState.selectionModePopupVisible && m_toolbarState.selectionModePanelHasHover)
                 {
-                    toolbarState_.lastSelectionShape = toolbarState_.selectionModePanelHoverShape;
-                    rectSelectionTool_.setSelectionShape(toolbarState_.lastSelectionShape);
+                    m_toolbarState.lastSelectionShape = m_toolbarState.selectionModePanelHoverShape;
+                    m_rectSelectionTool.setSelectionShape(m_toolbarState.lastSelectionShape);
                     context->setTool(ToolType::RectSelection);
                 }
-                toolbarState_.selectionModeLongPressActive = false;
-                toolbarState_.selectionModePopupVisible = false;
-                toolbarState_.selectionModePanelHasHover = false;
+                m_toolbarState.selectionModeLongPressActive = false;
+                m_toolbarState.selectionModePopupVisible = false;
+                m_toolbarState.selectionModePanelHasHover = false;
             }
         }
 
@@ -547,24 +512,24 @@ void ProjectWindow::renderToolbarPanel()
 
             if (pressedOnLineButton)
             {
-                toolbarState_.lineModeLongPressActive = true;
-                toolbarState_.lineModeLongPressStart = now;
-                toolbarState_.lineModePanelPosX = lineButtonMax.x + 6.0f;
-                toolbarState_.lineModePanelPosY = lineButtonMin.y;
-                toolbarState_.lineModePanelHasHover = false;
-                if (!lineModeActive) context->setTool(toolbarState_.lastLineMode);
+                m_toolbarState.lineModeLongPressActive = true;
+                m_toolbarState.lineModeLongPressStart = now;
+                m_toolbarState.lineModePanelPosX = lineButtonMax.x + 6.0f;
+                m_toolbarState.lineModePanelPosY = lineButtonMin.y;
+                m_toolbarState.lineModePanelHasHover = false;
+                if (!lineModeActive) context->setTool(m_toolbarState.lastLineMode);
             }
 
-            if (toolbarState_.lineModeLongPressActive && leftMouseDown)
+            if (m_toolbarState.lineModeLongPressActive && leftMouseDown)
             {
-                const double held = now - toolbarState_.lineModeLongPressStart;
-                if (held >= static_cast<double>(toolbarState_.lineModeLongPressThreshold))
+                const double held = now - m_toolbarState.lineModeLongPressStart;
+                if (held >= static_cast<double>(m_toolbarState.lineModeLongPressThreshold))
                 {
-                    toolbarState_.lineModePopupVisible = true;
-                    toolbarState_.lineModePanelHasHover = false;
+                    m_toolbarState.lineModePopupVisible = true;
+                    m_toolbarState.lineModePanelHasHover = false;
 
                     ImGui::SetNextWindowPos(
-                        ImVec2(toolbarState_.lineModePanelPosX, toolbarState_.lineModePanelPosY),
+                        ImVec2(m_toolbarState.lineModePanelPosX, m_toolbarState.lineModePanelPosY),
                         ImGuiCond_Always);
 
                     ImGuiWindowFlags panelFlags =
@@ -580,8 +545,8 @@ void ProjectWindow::renderToolbarPanel()
                         "##LineModePanel_" + std::to_string(reinterpret_cast<uintptr_t>(this));
                     if (ImGui::Begin(panelWindowName.c_str(), nullptr, panelFlags))
                     {
-                        const bool modeLine = (toolbarState_.lastLineMode == ToolType::Line);
-                        const bool modeCurve = (toolbarState_.lastLineMode == ToolType::Curve);
+                        const bool modeLine = (m_toolbarState.lastLineMode == ToolType::Line);
+                        const bool modeCurve = (m_toolbarState.lastLineMode == ToolType::Curve);
                         const ImVec2 modeIconSize(24.0f, 24.0f);
                         const ImVec2 modeFramePad(3.0f, 3.0f);
 
@@ -589,11 +554,11 @@ void ProjectWindow::renderToolbarPanel()
                         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(4.0f, 4.0f));
 
                         if (modeLine) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.24f, 0.52f, 0.86f, 1.0f));
-                        if (toolbarState_.lineIconTexture != 0)
+                        if (m_toolbarState.lineIconTexture != 0)
                         {
                             ImGui::ImageButton(
                                 "##line_mode_line_panel",
-                                reinterpret_cast<ImTextureID>(static_cast<uintptr_t>(toolbarState_.lineIconTexture)),
+                                reinterpret_cast<ImTextureID>(static_cast<uintptr_t>(m_toolbarState.lineIconTexture)),
                                 modeIconSize);
                         }
                         else
@@ -608,8 +573,8 @@ void ProjectWindow::renderToolbarPanel()
                             mousePos.x < lineMax.x && mousePos.y < lineMax.y;
                         if (lineHovered)
                         {
-                            toolbarState_.lineModePanelHasHover = true;
-                            toolbarState_.lineModePanelHoverMode = ToolType::Line;
+                            m_toolbarState.lineModePanelHasHover = true;
+                            m_toolbarState.lineModePanelHoverMode = ToolType::Line;
                             ImGui::SetTooltip("%s", "Line");
                             ImGui::GetWindowDrawList()->AddRect(
                                 lineMin,
@@ -623,11 +588,11 @@ void ProjectWindow::renderToolbarPanel()
                         ImGui::SameLine();
 
                         if (modeCurve) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.24f, 0.52f, 0.86f, 1.0f));
-                        if (toolbarState_.curveIconTexture != 0)
+                        if (m_toolbarState.curveIconTexture != 0)
                         {
                             ImGui::ImageButton(
                                 "##line_mode_curve_panel",
-                                reinterpret_cast<ImTextureID>(static_cast<uintptr_t>(toolbarState_.curveIconTexture)),
+                                reinterpret_cast<ImTextureID>(static_cast<uintptr_t>(m_toolbarState.curveIconTexture)),
                                 modeIconSize);
                         }
                         else
@@ -642,8 +607,8 @@ void ProjectWindow::renderToolbarPanel()
                             mousePos.x < curveMax.x && mousePos.y < curveMax.y;
                         if (curveHovered)
                         {
-                            toolbarState_.lineModePanelHasHover = true;
-                            toolbarState_.lineModePanelHoverMode = ToolType::Curve;
+                            m_toolbarState.lineModePanelHasHover = true;
+                            m_toolbarState.lineModePanelHoverMode = ToolType::Curve;
                             ImGui::SetTooltip("%s", "Curve");
                             ImGui::GetWindowDrawList()->AddRect(
                                 curveMin,
@@ -660,16 +625,16 @@ void ProjectWindow::renderToolbarPanel()
                 }
             }
 
-            if (toolbarState_.lineModeLongPressActive && !leftMouseDown)
+            if (m_toolbarState.lineModeLongPressActive && !leftMouseDown)
             {
-                if (toolbarState_.lineModePopupVisible && toolbarState_.lineModePanelHasHover)
+                if (m_toolbarState.lineModePopupVisible && m_toolbarState.lineModePanelHasHover)
                 {
-                    toolbarState_.lastLineMode = toolbarState_.lineModePanelHoverMode;
-                    context->setTool(toolbarState_.lastLineMode);
+                    m_toolbarState.lastLineMode = m_toolbarState.lineModePanelHoverMode;
+                    context->setTool(m_toolbarState.lastLineMode);
                 }
-                toolbarState_.lineModeLongPressActive = false;
-                toolbarState_.lineModePopupVisible = false;
-                toolbarState_.lineModePanelHasHover = false;
+                m_toolbarState.lineModeLongPressActive = false;
+                m_toolbarState.lineModePopupVisible = false;
+                m_toolbarState.lineModePanelHasHover = false;
             }
         }
 
@@ -687,29 +652,29 @@ void ProjectWindow::renderToolbarPanel()
             if (pressedOnRectButton)
             {
                 // 进入 Pressing 态：记录长按起点时间 + 面板锚点位置。
-                toolbarState_.rectModeLongPressActive = true;
-                toolbarState_.rectModeLongPressStart = now;
-                toolbarState_.rectModePanelPosX = rectButtonMax.x + 6.0f;
-                toolbarState_.rectModePanelPosY = rectButtonMin.y;
-                toolbarState_.rectModePanelHasHover = false;
+                m_toolbarState.rectModeLongPressActive = true;
+                m_toolbarState.rectModeLongPressStart = now;
+                m_toolbarState.rectModePanelPosX = rectButtonMax.x + 6.0f;
+                m_toolbarState.rectModePanelPosY = rectButtonMin.y;
+                m_toolbarState.rectModePanelHasHover = false;
 
                 // 短按时也应切到 Rectangle 工具（沿用上一次模式）。
-                if (!rectModeActive) context->setTool(toolbarState_.lastRectMode);
+                if (!rectModeActive) context->setTool(m_toolbarState.lastRectMode);
             }
 
-            if (toolbarState_.rectModeLongPressActive && leftMouseDown)
+            if (m_toolbarState.rectModeLongPressActive && leftMouseDown)
             {
-                const double held = now - toolbarState_.rectModeLongPressStart;
-                if (held >= static_cast<double>(toolbarState_.rectModeLongPressThreshold))
+                const double held = now - m_toolbarState.rectModeLongPressStart;
+                if (held >= static_cast<double>(m_toolbarState.rectModeLongPressThreshold))
                 {
                     // 达到阈值，进入 PanelVisible 态。
-                    toolbarState_.rectModePopupVisible = true;
+                    m_toolbarState.rectModePopupVisible = true;
                     // 仅在“按住过程”内重置并重新计算悬停目标，
                     // 松开当帧保留上一帧的悬停结果用于确认选择。
-                    toolbarState_.rectModePanelHasHover = false;
+                    m_toolbarState.rectModePanelHasHover = false;
 
                     ImGui::SetNextWindowPos(
-                        ImVec2(toolbarState_.rectModePanelPosX, toolbarState_.rectModePanelPosY),
+                        ImVec2(m_toolbarState.rectModePanelPosX, m_toolbarState.rectModePanelPosY),
                         ImGuiCond_Always);
 
                     ImGuiWindowFlags panelFlags =
@@ -727,10 +692,10 @@ void ProjectWindow::renderToolbarPanel()
                     if (ImGui::Begin(panelWindowName.c_str(), nullptr, panelFlags))
                     {
                         // 面板内四个候选模式。lastRectMode 决定默认高亮。
-                        const bool modeRect = (toolbarState_.lastRectMode == ToolType::Rect);
-                        const bool modeRectFilled = (toolbarState_.lastRectMode == ToolType::RectFilled);
-                        const bool modeCircle = (toolbarState_.lastRectMode == ToolType::Circle);
-                        const bool modeCircleFilled = (toolbarState_.lastRectMode == ToolType::CircleFilled);
+                        const bool modeRect = (m_toolbarState.lastRectMode == ToolType::Rect);
+                        const bool modeRectFilled = (m_toolbarState.lastRectMode == ToolType::RectFilled);
+                        const bool modeCircle = (m_toolbarState.lastRectMode == ToolType::Circle);
+                        const bool modeCircleFilled = (m_toolbarState.lastRectMode == ToolType::CircleFilled);
                         const ImVec2 modeIconSize(24.0f, 24.0f);
                         const ImVec2 modeFramePad(3.0f, 3.0f);
 
@@ -739,11 +704,11 @@ void ProjectWindow::renderToolbarPanel()
 
                         // 矩形（描边）
                         if (modeRect) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.24f, 0.52f, 0.86f, 1.0f));
-                        if (toolbarState_.rectIconTexture != 0)
+                        if (m_toolbarState.rectIconTexture != 0)
                         {
                             ImGui::ImageButton(
                                 "##rect_mode_outline_panel",
-                                reinterpret_cast<ImTextureID>(static_cast<uintptr_t>(toolbarState_.rectIconTexture)),
+                                reinterpret_cast<ImTextureID>(static_cast<uintptr_t>(m_toolbarState.rectIconTexture)),
                                 modeIconSize);
                         }
                         else
@@ -758,8 +723,8 @@ void ProjectWindow::renderToolbarPanel()
                             mousePos.x < outlineMax.x && mousePos.y < outlineMax.y;
                         if (outlineHovered)
                         {
-                            toolbarState_.rectModePanelHasHover = true;
-                            toolbarState_.rectModePanelHoverMode = ToolType::Rect;
+                            m_toolbarState.rectModePanelHasHover = true;
+                            m_toolbarState.rectModePanelHoverMode = ToolType::Rect;
                             ImGui::SetTooltip("%s", "Outline Rectangle");
                             ImGui::GetWindowDrawList()->AddRect(
                                 outlineMin,
@@ -774,11 +739,11 @@ void ProjectWindow::renderToolbarPanel()
 
                         // 矩形（填充）
                         if (modeRectFilled) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.24f, 0.52f, 0.86f, 1.0f));
-                        if (toolbarState_.rectFilledIconTexture != 0)
+                        if (m_toolbarState.rectFilledIconTexture != 0)
                         {
                             ImGui::ImageButton(
                                 "##rect_mode_filled_panel",
-                                reinterpret_cast<ImTextureID>(static_cast<uintptr_t>(toolbarState_.rectFilledIconTexture)),
+                                reinterpret_cast<ImTextureID>(static_cast<uintptr_t>(m_toolbarState.rectFilledIconTexture)),
                                 modeIconSize);
                         }
                         else
@@ -793,8 +758,8 @@ void ProjectWindow::renderToolbarPanel()
                             mousePos.x < filledMax.x && mousePos.y < filledMax.y;
                         if (filledHovered)
                         {
-                            toolbarState_.rectModePanelHasHover = true;
-                            toolbarState_.rectModePanelHoverMode = ToolType::RectFilled;
+                            m_toolbarState.rectModePanelHasHover = true;
+                            m_toolbarState.rectModePanelHoverMode = ToolType::RectFilled;
                             ImGui::SetTooltip("%s", "Filled Rectangle");
                             ImGui::GetWindowDrawList()->AddRect(
                                 filledMin,
@@ -809,11 +774,11 @@ void ProjectWindow::renderToolbarPanel()
 
                         // 圆形（描边）
                         if (modeCircle) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.24f, 0.52f, 0.86f, 1.0f));
-                        if (toolbarState_.circleIconTexture != 0)
+                        if (m_toolbarState.circleIconTexture != 0)
                         {
                             ImGui::ImageButton(
                                 "##circle_mode_outline_panel",
-                                reinterpret_cast<ImTextureID>(static_cast<uintptr_t>(toolbarState_.circleIconTexture)),
+                                reinterpret_cast<ImTextureID>(static_cast<uintptr_t>(m_toolbarState.circleIconTexture)),
                                 modeIconSize);
                         }
                         else
@@ -828,8 +793,8 @@ void ProjectWindow::renderToolbarPanel()
                             mousePos.x < circleOutlineMax.x && mousePos.y < circleOutlineMax.y;
                         if (circleOutlineHovered)
                         {
-                            toolbarState_.rectModePanelHasHover = true;
-                            toolbarState_.rectModePanelHoverMode = ToolType::Circle;
+                            m_toolbarState.rectModePanelHasHover = true;
+                            m_toolbarState.rectModePanelHoverMode = ToolType::Circle;
                             ImGui::SetTooltip("%s", "Outline Circle");
                             ImGui::GetWindowDrawList()->AddRect(
                                 circleOutlineMin,
@@ -844,11 +809,11 @@ void ProjectWindow::renderToolbarPanel()
 
                         // 圆形（填充）
                         if (modeCircleFilled) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.24f, 0.52f, 0.86f, 1.0f));
-                        if (toolbarState_.circleFilledIconTexture != 0)
+                        if (m_toolbarState.circleFilledIconTexture != 0)
                         {
                             ImGui::ImageButton(
                                 "##circle_mode_filled_panel",
-                                reinterpret_cast<ImTextureID>(static_cast<uintptr_t>(toolbarState_.circleFilledIconTexture)),
+                                reinterpret_cast<ImTextureID>(static_cast<uintptr_t>(m_toolbarState.circleFilledIconTexture)),
                                 modeIconSize);
                         }
                         else
@@ -863,8 +828,8 @@ void ProjectWindow::renderToolbarPanel()
                             mousePos.x < circleFilledMax.x && mousePos.y < circleFilledMax.y;
                         if (circleFilledHovered)
                         {
-                            toolbarState_.rectModePanelHasHover = true;
-                            toolbarState_.rectModePanelHoverMode = ToolType::CircleFilled;
+                            m_toolbarState.rectModePanelHasHover = true;
+                            m_toolbarState.rectModePanelHoverMode = ToolType::CircleFilled;
                             ImGui::SetTooltip("%s", "Filled Circle");
                             ImGui::GetWindowDrawList()->AddRect(
                                 circleFilledMin,
@@ -885,15 +850,15 @@ void ProjectWindow::renderToolbarPanel()
             // - 若面板已显示且悬停某模式图标：确认该模式；
             // - 无悬停则保持当前模式不变；
             // - 最后自动关闭面板。
-            if (toolbarState_.rectModeLongPressActive && !leftMouseDown)
+            if (m_toolbarState.rectModeLongPressActive && !leftMouseDown)
             {
                 // Commit 阶段：只要释放时有有效 hover 目标，就提交模式切换。
-                if (toolbarState_.rectModePopupVisible && toolbarState_.rectModePanelHasHover) toolbarState_.lastRectMode = toolbarState_.rectModePanelHoverMode;
-                if (toolbarState_.rectModePopupVisible && toolbarState_.rectModePanelHasHover) context->setTool(toolbarState_.lastRectMode);
+                if (m_toolbarState.rectModePopupVisible && m_toolbarState.rectModePanelHasHover) m_toolbarState.lastRectMode = m_toolbarState.rectModePanelHoverMode;
+                if (m_toolbarState.rectModePopupVisible && m_toolbarState.rectModePanelHasHover) context->setTool(m_toolbarState.lastRectMode);
                 // 无论是否切换，松开后都要清理会话状态，回到 Idle。
-                toolbarState_.rectModeLongPressActive = false;
-                toolbarState_.rectModePopupVisible = false;
-                toolbarState_.rectModePanelHasHover = false;
+                m_toolbarState.rectModeLongPressActive = false;
+                m_toolbarState.rectModePopupVisible = false;
+                m_toolbarState.rectModePanelHasHover = false;
             }
         }
 
@@ -901,3 +866,5 @@ void ProjectWindow::renderToolbarPanel()
     }
 
 }
+
+

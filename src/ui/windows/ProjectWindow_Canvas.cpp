@@ -1,4 +1,4 @@
-#include "ProjectWindow.h"
+﻿#include "ProjectWindow.h"
 
 #include "commands/PixelClipboardCommands.h"
 #include "core/AppContext.h"
@@ -313,14 +313,14 @@ void ProjectWindow::renderCanvasPanel(Project* project)
     const ImVec2 panelAvail = ImGui::GetContentRegionAvail();
 
     // 画布尺寸变化时自动适配一个可视化更合理的缩放，并重置平移。
-    if (width != lastCanvasWidth_ || height != lastCanvasHeight_)
+    if (width != m_lastCanvasWidth || height != m_lastCanvasHeight)
     {
         const int fitZoom = computeFitZoomForPanel(width, height, panelAvail);
         context->setCanvasZoom(fitZoom);
         context->setCanvasPan(0.0f, 0.0f);
         zoom = context->getCanvasZoom();
-        lastCanvasWidth_ = width;
-        lastCanvasHeight_ = height;
+        m_lastCanvasWidth = width;
+        m_lastCanvasHeight = height;
     }
 
     // 同步选区掩码尺寸，确保画布尺寸变化后选区状态一致。
@@ -562,7 +562,7 @@ void ProjectWindow::renderCanvasPanel(Project* project)
     }
 
     drawList->AddImage(
-        reinterpret_cast<ImTextureID>(static_cast<uintptr_t>(canvasTexture_.texture)),
+        reinterpret_cast<ImTextureID>(static_cast<uintptr_t>(m_canvasTexture.id())),
         imageMin,
         imageMax,
         ImVec2(0, 0),
@@ -589,7 +589,7 @@ void ProjectWindow::renderCanvasPanel(Project* project)
 
     const bool anyPopupOpen = ImGui::IsPopupOpen(nullptr, ImGuiPopupFlags_AnyPopupId);
     // 矩形模式切换弹窗是“非阻塞 popup”：打开时不应禁用窗口内其它功能。
-    const bool blockingPopupOpen = anyPopupOpen && !toolbarState_.rectModePopupVisible && !toolbarState_.lineModePopupVisible;
+    const bool blockingPopupOpen = anyPopupOpen && !m_toolbarState.rectModePopupVisible && !m_toolbarState.lineModePopupVisible;
     const bool hovered =
         mousePos.x >= imagePos.x &&
         mousePos.y >= imagePos.y &&
@@ -606,10 +606,10 @@ void ProjectWindow::renderCanvasPanel(Project* project)
     // - 预览期间暂停普通绘图输入，防止误画。
     const bool activeLayerLocked = project->isActiveLayerLocked();
     bool blockNormalToolInput = activeLayerLocked;
-    if (pastePreviewState_.active)
+    if (m_pastePreviewState.active)
     {
         blockNormalToolInput = true;
-        if (!pastePreviewState_.clipboard.isValid())
+        if (!m_pastePreviewState.clipboard.isValid())
         {
             cancelPastePreview();
             blockNormalToolInput = false;
@@ -618,8 +618,8 @@ void ProjectWindow::renderCanvasPanel(Project* project)
         {
             if (hovered)
             {
-                pastePreviewState_.originX = mousePixelX;
-                pastePreviewState_.originY = mousePixelY;
+                m_pastePreviewState.originX = mousePixelX;
+                m_pastePreviewState.originY = mousePixelY;
             }
 
             if (ImGui::IsKeyPressed(ImGuiKey_Escape, false)
@@ -637,10 +637,10 @@ void ProjectWindow::renderCanvasPanel(Project* project)
                 std::string pasteError;
                 if (commands::PasteSelectionCommand::execute(
                         *context,
-                        pastePreviewState_.clipboard,
+                        m_pastePreviewState.clipboard,
                         &pasteError,
-                        pastePreviewState_.originX,
-                        pastePreviewState_.originY))
+                        m_pastePreviewState.originX,
+                        m_pastePreviewState.originY))
                 {
                     if (context->hasMultiFrameSelection()) context->setSingleFrameSelection(frameIndex, frameCount);
                     context->setProjectDirty(true, "Paste");
@@ -662,20 +662,20 @@ void ProjectWindow::renderCanvasPanel(Project* project)
 
     if (symmetryShouldTrackEdit && ImGui::IsMouseClicked(ImGuiMouseButton_Left))
     {
-        symmetryEditState_.active = true;
-        symmetryEditState_.basePixels = frame.pixels;
+        m_symmetryEditState.active = true;
+        m_symmetryEditState.basePixels = frame.pixels;
     }
     if (!context->isAnySymmetryEnabled())
     {
-        symmetryEditState_.active = false;
-        symmetryEditState_.basePixels.clear();
+        m_symmetryEditState.active = false;
+        m_symmetryEditState.basePixels.clear();
     }
 
     // 将矩形框选工具作为独立类处理输入与叠加渲染。
     if (!blockNormalToolInput && context->getTool() == ToolType::RectSelection)
     {
         bool selectionPixelsChanged = false;
-        rectSelectionTool_.handleInteraction(
+        m_rectSelectionTool.handleInteraction(
             *context,
             frame,
             mousePos,
@@ -698,14 +698,14 @@ void ProjectWindow::renderCanvasPanel(Project* project)
     else
     {
         // 切换到其它工具时，清理框选交互临时态，避免残留拖拽预览。
-        rectSelectionTool_.resetInteractionState();
+        m_rectSelectionTool.resetInteractionState();
     }
 
     // 将直线工具作为独立类处理输入与实时预览。
     if (!blockNormalToolInput && context->getTool() == ToolType::Line)
     {
         bool linePixelsCommitted = false;
-        lineTool_.handleInteraction(
+        m_lineTool.handleInteraction(
             *context,
             frame,
             canvasHitboxHovered,
@@ -725,14 +725,14 @@ void ProjectWindow::renderCanvasPanel(Project* project)
     else
     {
         // 切换到其它工具时，清理直线工具预览状态并恢复快照（若有）。
-        lineTool_.resetInteractionState(&frame);
+        m_lineTool.resetInteractionState(&frame);
     }
 
     // 将曲线工具作为独立类处理输入与实时预览。
     if (!blockNormalToolInput && context->getTool() == ToolType::Curve)
     {
         bool curvePixelsCommitted = false;
-        curveTool_.handleInteraction(
+        m_curveTool.handleInteraction(
             *context,
             frame,
             canvasHitboxHovered,
@@ -751,14 +751,14 @@ void ProjectWindow::renderCanvasPanel(Project* project)
     }
     else
     {
-        curveTool_.resetInteractionState(&frame);
+        m_curveTool.resetInteractionState(&frame);
     }
 
     // 将矩形描边工具作为独立类处理输入与实时预览。
     if (!blockNormalToolInput && context->getTool() == ToolType::Rect)
     {
         bool rectPixelsCommitted = false;
-        rectangleTool_.handleInteraction(
+        m_rectangleTool.handleInteraction(
             *context,
             frame,
             canvasHitboxHovered,
@@ -777,14 +777,14 @@ void ProjectWindow::renderCanvasPanel(Project* project)
     }
     else
     {
-        rectangleTool_.resetInteractionState(&frame);
+        m_rectangleTool.resetInteractionState(&frame);
     }
 
     // 将填充矩形工具作为独立类处理输入与实时预览。
     if (!blockNormalToolInput && context->getTool() == ToolType::RectFilled)
     {
         bool rectFilledPixelsCommitted = false;
-        rectFilledTool_.handleInteraction(
+        m_rectFilledTool.handleInteraction(
             *context,
             frame,
             canvasHitboxHovered,
@@ -803,14 +803,14 @@ void ProjectWindow::renderCanvasPanel(Project* project)
     }
     else
     {
-        rectFilledTool_.resetInteractionState(&frame);
+        m_rectFilledTool.resetInteractionState(&frame);
     }
 
     // 将圆形描边工具作为独立类处理输入与实时预览。
     if (!blockNormalToolInput && context->getTool() == ToolType::Circle)
     {
         bool circlePixelsCommitted = false;
-        circleTool_.handleInteraction(
+        m_circleTool.handleInteraction(
             *context,
             frame,
             canvasHitboxHovered,
@@ -830,14 +830,14 @@ void ProjectWindow::renderCanvasPanel(Project* project)
     else
     {
         // 切换到其它工具时，清理圆形工具预览状态并恢复快照（若有）。
-        circleTool_.resetInteractionState(&frame);
+        m_circleTool.resetInteractionState(&frame);
     }
 
     // 将填充圆形工具作为独立类处理输入与实时预览。
     if (!blockNormalToolInput && context->getTool() == ToolType::CircleFilled)
     {
         bool circleFilledPixelsCommitted = false;
-        circleFilledTool_.handleInteraction(
+        m_circleFilledTool.handleInteraction(
             *context,
             frame,
             canvasHitboxHovered,
@@ -857,7 +857,7 @@ void ProjectWindow::renderCanvasPanel(Project* project)
     else
     {
         // 切换到其它工具时，清理填充圆形工具预览状态并恢复快照（若有）。
-        circleFilledTool_.resetInteractionState(&frame);
+        m_circleFilledTool.resetInteractionState(&frame);
     }
 
     // 常规像素编辑工具仅在非 RectSelection 下处理。
@@ -889,13 +889,13 @@ void ProjectWindow::renderCanvasPanel(Project* project)
                  * - 首帧：初始化笔划锚点并正常落笔；
                  * - 后续帧：在上一点与当前点之间插值补点，避免快速拖拽断线。
                  */
-                if (!strokeState_.active || justClicked || strokeState_.tool != activeTool)
+                if (!m_strokeState.active || justClicked || m_strokeState.tool != activeTool)
                 {
-                    strokeState_.active = true;
-                    strokeState_.changedDuringStroke = false;
-                    strokeState_.lastX = mousePixelX;
-                    strokeState_.lastY = mousePixelY;
-                    strokeState_.tool = activeTool;
+                    m_strokeState.active = true;
+                    m_strokeState.changedDuringStroke = false;
+                    m_strokeState.lastX = mousePixelX;
+                    m_strokeState.lastY = mousePixelY;
+                    m_strokeState.tool = activeTool;
                 }
 
                 changed = applyInterpolatedStroke(
@@ -903,16 +903,16 @@ void ProjectWindow::renderCanvasPanel(Project* project)
                     frame,
                     width,
                     height,
-                    strokeState_.lastX,
-                    strokeState_.lastY,
+                    m_strokeState.lastX,
+                    m_strokeState.lastY,
                     mousePixelX,
                     mousePixelY,
                     *context,
                     justClicked);
 
-                if (changed) strokeState_.changedDuringStroke = true;
-                strokeState_.lastX = mousePixelX;
-                strokeState_.lastY = mousePixelY;
+                if (changed) m_strokeState.changedDuringStroke = true;
+                m_strokeState.lastX = mousePixelX;
+                m_strokeState.lastY = mousePixelY;
             }
             else
             {
@@ -940,46 +940,46 @@ void ProjectWindow::renderCanvasPanel(Project* project)
     else
     {
         // 鼠标抬起时，把本次连续拖拽作为一个原子操作提交历史。
-        if (!ImGui::IsMouseDown(ImGuiMouseButton_Left) && strokeState_.active && strokeState_.changedDuringStroke)
+        if (!ImGui::IsMouseDown(ImGuiMouseButton_Left) && m_strokeState.active && m_strokeState.changedDuringStroke)
         {
-            const char* actionLabel = (strokeState_.tool == ToolType::Eraser) ? "Eraser Stroke" : "Brush Stroke";
+            const char* actionLabel = (m_strokeState.tool == ToolType::Eraser) ? "Eraser Stroke" : "Brush Stroke";
             context->setProjectDirty(true, actionLabel);
         }
 
         // 鼠标抬起或切换到其它逻辑分支时，结束连续笔划会话。
         if (!ImGui::IsMouseDown(ImGuiMouseButton_Left) || !isBrushLikeTool)
         {
-            strokeState_.active = false;
-            strokeState_.changedDuringStroke = false;
+            m_strokeState.active = false;
+            m_strokeState.changedDuringStroke = false;
         }
     }
 
-    if (symmetryEditState_.active)
+    if (m_symmetryEditState.active)
     {
-        mirrorPixelDiffsFromBase(symmetryEditState_.basePixels, frame, width, height, *context);
+        mirrorPixelDiffsFromBase(m_symmetryEditState.basePixels, frame, width, height, *context);
         if (!ImGui::IsMouseDown(ImGuiMouseButton_Left))
         {
-            symmetryEditState_.active = false;
-            symmetryEditState_.basePixels.clear();
+            m_symmetryEditState.active = false;
+            m_symmetryEditState.basePixels.clear();
         }
     }
 
     // 选区叠加层（包含蚂蚁线）由框选工具类负责绘制。
-    rectSelectionTool_.renderOverlay(*context, drawList, imagePos, zoom, blockingPopupOpen);
+    m_rectSelectionTool.renderOverlay(*context, drawList, imagePos, zoom, blockingPopupOpen);
     // 直线工具叠加层（拖拽辅助线）由直线工具类负责绘制。
-    // lineTool_.renderOverlay(*context, drawList, imagePos, zoom, blockingPopupOpen);
+    // m_lineTool.renderOverlay(*context, drawList, imagePos, zoom, blockingPopupOpen);
     // 矩形工具叠加层（当前为空实现，预留扩展）。
-    // rectangleTool_.renderOverlay(*context, drawList, imagePos, zoom, blockingPopupOpen);
-    // rectFilledTool_.renderOverlay(*context, drawList, imagePos, zoom, blockingPopupOpen);
+    // m_rectangleTool.renderOverlay(*context, drawList, imagePos, zoom, blockingPopupOpen);
+    // m_rectFilledTool.renderOverlay(*context, drawList, imagePos, zoom, blockingPopupOpen);
 
     // 粘贴预览叠加层：显示剪贴板像素的半透明结果与目标边界。
-    if (pastePreviewState_.active && pastePreviewState_.clipboard.isValid())
+    if (m_pastePreviewState.active && m_pastePreviewState.clipboard.isValid())
     {
         drawList->PushClipRect(imageMin, imageMax, true);
-        const commands::PixelClipboardData& clip = pastePreviewState_.clipboard;
+        const commands::PixelClipboardData& clip = m_pastePreviewState.clipboard;
         for (int ly = 0; ly < clip.height; ++ly)
         {
-            const int dy = pastePreviewState_.originY + ly;
+            const int dy = m_pastePreviewState.originY + ly;
             if (dy < 0 || dy >= height) continue;
 
             for (int lx = 0; lx < clip.width; ++lx)
@@ -987,7 +987,7 @@ void ProjectWindow::renderCanvasPanel(Project* project)
                 const size_t srcIndex = static_cast<size_t>(ly) * static_cast<size_t>(clip.width) + static_cast<size_t>(lx);
                 if (clip.mask[srcIndex] == 0) continue;
 
-                const int dx = pastePreviewState_.originX + lx;
+                const int dx = m_pastePreviewState.originX + lx;
                 if (dx < 0 || dx >= width) continue;
 
                 const ImVec2 p0(
@@ -1001,11 +1001,11 @@ void ProjectWindow::renderCanvasPanel(Project* project)
         }
 
         const ImVec2 previewMin(
-            imagePos.x + static_cast<float>(pastePreviewState_.originX * zoom),
-            imagePos.y + static_cast<float>(pastePreviewState_.originY * zoom));
+            imagePos.x + static_cast<float>(m_pastePreviewState.originX * zoom),
+            imagePos.y + static_cast<float>(m_pastePreviewState.originY * zoom));
         const ImVec2 previewMax(
-            imagePos.x + static_cast<float>((pastePreviewState_.originX + clip.width) * zoom),
-            imagePos.y + static_cast<float>((pastePreviewState_.originY + clip.height) * zoom));
+            imagePos.x + static_cast<float>((m_pastePreviewState.originX + clip.width) * zoom),
+            imagePos.y + static_cast<float>((m_pastePreviewState.originY + clip.height) * zoom));
         drawList->AddRect(previewMin, previewMax, IM_COL32(255, 255, 255, 220), 0.0f, 0, 1.0f);
         drawList->PopClipRect();
 
@@ -1014,7 +1014,7 @@ void ProjectWindow::renderCanvasPanel(Project* project)
     }
 
     // 鼠标高亮框（弹窗期间隐藏）。
-    if (!pastePreviewState_.active
+    if (!m_pastePreviewState.active
         && !blockingPopupOpen
         && canvasHitboxHovered
         && hovered
@@ -1057,3 +1057,5 @@ void ProjectWindow::renderCanvasPanel(Project* project)
         drawList->PopClipRect();
     }
 }
+
+

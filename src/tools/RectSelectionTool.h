@@ -37,8 +37,8 @@ public:
 
     ToolType type() const override { return ToolType::RectSelection; }
 
-    SelectionShape getSelectionShape() const { return selectionShape_; }
-    void setSelectionShape(SelectionShape shape) { selectionShape_ = shape; }
+    SelectionShape getSelectionShape() const { return m_selectionShape; }
+    void setSelectionShape(SelectionShape shape) { m_selectionShape = shape; }
 
     /**
      * @brief 与 Tool 接口保持一致；矩形框选不通过该入口改像素，因此固定返回 false。
@@ -125,14 +125,16 @@ private:
         int hoverMouseY = 0; // 多边形套索预览线的当前鼠标 Y
     };
 
-    InteractionState state_;
+    InteractionState m_state;
 
     // 非破坏性变换缓存：
-    std::vector<uint32_t> sourceFramePixels_;       // 首次变换时的像素基准
-    std::vector<uint8_t> sourceSelectionMask_;      // 与基准对应的选区掩码
-    AppContext::PixelRect sourceBounds_;            // 基准选区外接框
-    AppContext::PixelRect lastCommittedBounds_;     // 上一次提交后的选区外接框（用于判断缓存是否仍可复用）
-    bool sourceCacheValid_ = false;
-    SelectionShape selectionShape_ = SelectionShape::Rectangle;
-    MagicWandSelectionTool magicWandTool_; // 魔棒选区模块（独立类，负责连通域拾取）
+    std::vector<uint32_t> m_sourceFramePixels;       // 首次变换时的像素基准
+    std::vector<uint8_t> m_sourceSelectionMask;      // 与基准对应的选区掩码
+    AppContext::PixelRect m_sourceBounds;            // 基准选区外接框
+    AppContext::PixelRect m_lastCommittedBounds;     // 上一次提交后的选区外接框（用于判断缓存是否仍可复用）
+    bool m_sourceCacheValid = false;
+    SelectionShape m_selectionShape = SelectionShape::Rectangle;
+    MagicWandSelectionTool m_magicWandTool; // 魔棒选区模块（独立类，负责连通域拾取）
 };
+
+

@@ -22,43 +22,43 @@ Menu_File::Menu_File(Menu* menu,
                      const std::function<void()>& onCloseProjectCallback,
                      const std::function<void()>& onCloseAllProjectsCallback)
     : MenuOptionBase(menu),
-      context_(context),
-      onExitCallback_(onExitCallback),
-      onNewProjectCallback_(onNewProjectCallback),
-      onOpenProjectCallback_(onOpenProjectCallback),
-      onSaveProjectCallback_(onSaveProjectCallback),
-      onSaveAsBinaryProjectCallback_(onSaveAsBinaryProjectCallback),
-      onSaveAsJsonProjectCallback_(onSaveAsJsonProjectCallback),
-      onExportCurrentFramePngCallback_(onExportCurrentFramePngCallback),
-      onExportSpriteSheetConfigCallback_(onExportSpriteSheetConfigCallback),
-      onImportSingleFramePngCallback_(onImportSingleFramePngCallback),
-      onImportSpriteSheetPngCallback_(onImportSpriteSheetPngCallback),
-      onOpenRecentProjectByPathCallback_(onOpenRecentProjectByPathCallback),
-      onCloseProjectCallback_(onCloseProjectCallback),
-      onCloseAllProjectsCallback_(onCloseAllProjectsCallback) {}
+      m_context(context),
+      m_onExitCallback(onExitCallback),
+      m_onNewProjectCallback(onNewProjectCallback),
+      m_onOpenProjectCallback(onOpenProjectCallback),
+      m_onSaveProjectCallback(onSaveProjectCallback),
+      m_onSaveAsBinaryProjectCallback(onSaveAsBinaryProjectCallback),
+      m_onSaveAsJsonProjectCallback(onSaveAsJsonProjectCallback),
+      m_onExportCurrentFramePngCallback(onExportCurrentFramePngCallback),
+      m_onExportSpriteSheetConfigCallback(onExportSpriteSheetConfigCallback),
+      m_onImportSingleFramePngCallback(onImportSingleFramePngCallback),
+      m_onImportSpriteSheetPngCallback(onImportSpriteSheetPngCallback),
+      m_onOpenRecentProjectByPathCallback(onOpenRecentProjectByPathCallback),
+      m_onCloseProjectCallback(onCloseProjectCallback),
+      m_onCloseAllProjectsCallback(onCloseAllProjectsCallback) {}
 
 void Menu_File::initialize() {
     MenuItem* newItem = getMenu()->addItem("New...", "Ctrl+N");
     newItem->setCallback([this]() {
-        if (onNewProjectCallback_) {
-            onNewProjectCallback_();
+        if (m_onNewProjectCallback) {
+            m_onNewProjectCallback();
         }
     });
 
     MenuItem* openItem = getMenu()->addItem("Open...", "Ctrl+O");
     openItem->setCallback([this]() {
-        if (onOpenProjectCallback_) onOpenProjectCallback_();
+        if (m_onOpenProjectCallback) m_onOpenProjectCallback();
     });
 
-    openRecentMenu_ = new Menu("Open Recent");
-    getMenu()->addItem("Open Recent", openRecentMenu_);
+    m_openRecentMenu = new Menu("Open Recent");
+    getMenu()->addItem("Open Recent", m_openRecentMenu);
     rebuildOpenRecentMenu();
 
     getMenu()->addSeparator();
 
     MenuItem* saveItem = getMenu()->addItem("Save", "Ctrl+S");
     saveItem->setCallback([this]() {
-        if (onSaveProjectCallback_) onSaveProjectCallback_();
+        if (m_onSaveProjectCallback) m_onSaveProjectCallback();
     });
 
     Menu* saveAsMenu = new Menu("Save As...");
@@ -66,27 +66,27 @@ void Menu_File::initialize() {
 
     MenuItem* saveAsBinaryItem = saveAsMenu->addItem("Binary (*.pxanim)");
     saveAsBinaryItem->setCallback([this]() {
-        if (onSaveAsBinaryProjectCallback_) onSaveAsBinaryProjectCallback_();
+        if (m_onSaveAsBinaryProjectCallback) m_onSaveAsBinaryProjectCallback();
     });
 
     MenuItem* saveAsJsonItem = saveAsMenu->addItem("JSON (*.pxanim.json)");
     saveAsJsonItem->setCallback([this]() {
-        if (onSaveAsJsonProjectCallback_) onSaveAsJsonProjectCallback_();
+        if (m_onSaveAsJsonProjectCallback) m_onSaveAsJsonProjectCallback();
     });
 
     getMenu()->addSeparator();
 
     MenuItem* closeItem = getMenu()->addItem("Close", "Ctrl+W");
     closeItem->setCallback([this]() {
-        if (onCloseProjectCallback_) {
-            onCloseProjectCallback_();
+        if (m_onCloseProjectCallback) {
+            m_onCloseProjectCallback();
         }
     });
 
     MenuItem* closeAllItem = getMenu()->addItem("Close All", "Ctrl+Shift+W");
     closeAllItem->setCallback([this]() {
-        if (onCloseAllProjectsCallback_) {
-            onCloseAllProjectsCallback_();
+        if (m_onCloseAllProjectsCallback) {
+            m_onCloseAllProjectsCallback();
         }
     });
 
@@ -98,14 +98,14 @@ void Menu_File::initialize() {
     // 单帧导出保持独立入口，方便快速导出当前帧。
     MenuItem* exportCurrentFramePng = exportMenu->addItem("Current Frame (PNG)...");
     exportCurrentFramePng->setCallback([this]() {
-        if (onExportCurrentFramePngCallback_) onExportCurrentFramePngCallback_();
+        if (m_onExportCurrentFramePngCallback) m_onExportCurrentFramePngCallback();
     });
 
     // 精灵图导出合并为“单入口”：
     // 点击后由 App 弹出配置对话框，用户在弹窗里选择行/列/行列模式及其它参数。
     MenuItem* exportSpriteSheetPng = exportMenu->addItem("Sprite Sheet (PNG)...");
     exportSpriteSheetPng->setCallback([this]() {
-        if (onExportSpriteSheetConfigCallback_) onExportSpriteSheetConfigCallback_();
+        if (m_onExportSpriteSheetConfigCallback) m_onExportSpriteSheetConfigCallback();
     });
 
     Menu* importMenu = new Menu("Import");
@@ -114,97 +114,97 @@ void Menu_File::initialize() {
     // 与导出入口对称：提供单帧导入和精灵图导入两种入口。
     MenuItem* importSingleFramePng = importMenu->addItem("Current Frame (PNG)...");
     importSingleFramePng->setCallback([this]() {
-        if (onImportSingleFramePngCallback_) onImportSingleFramePngCallback_();
+        if (m_onImportSingleFramePngCallback) m_onImportSingleFramePngCallback();
     });
 
     MenuItem* importSpriteSheetPng = importMenu->addItem("Sprite Sheet (PNG)...");
     importSpriteSheetPng->setCallback([this]() {
-        if (onImportSpriteSheetPngCallback_) onImportSpriteSheetPngCallback_();
+        if (m_onImportSpriteSheetPngCallback) m_onImportSpriteSheetPngCallback();
     });
 
     getMenu()->addSeparator();
 
     MenuItem* exitItem = getMenu()->addItem("Exit", "Ctrl+Q");
-    if (onExitCallback_) {
-        exitItem->setCallback(onExitCallback_);
+    if (m_onExitCallback) {
+        exitItem->setCallback(m_onExitCallback);
     }
 }
 
 void Menu_File::setOnExitCallback(const std::function<void()>& callback) {
-    onExitCallback_ = callback;
+    m_onExitCallback = callback;
 }
 
 void Menu_File::setOnNewProjectCallback(const std::function<void()>& callback) {
-    onNewProjectCallback_ = callback;
+    m_onNewProjectCallback = callback;
 }
 
 void Menu_File::setOnOpenProjectCallback(const std::function<void()>& callback) {
-    onOpenProjectCallback_ = callback;
+    m_onOpenProjectCallback = callback;
 }
 
 void Menu_File::setOnSaveProjectCallback(const std::function<void()>& callback) {
-    onSaveProjectCallback_ = callback;
+    m_onSaveProjectCallback = callback;
 }
 
 void Menu_File::setOnSaveAsBinaryProjectCallback(const std::function<void()>& callback) {
-    onSaveAsBinaryProjectCallback_ = callback;
+    m_onSaveAsBinaryProjectCallback = callback;
 }
 
 void Menu_File::setOnSaveAsJsonProjectCallback(const std::function<void()>& callback) {
-    onSaveAsJsonProjectCallback_ = callback;
+    m_onSaveAsJsonProjectCallback = callback;
 }
 
 void Menu_File::setOnExportCurrentFramePngCallback(const std::function<void()>& callback) {
-    onExportCurrentFramePngCallback_ = callback;
+    m_onExportCurrentFramePngCallback = callback;
 }
 
 void Menu_File::setOnExportSpriteSheetConfigCallback(const std::function<void()>& callback) {
-    onExportSpriteSheetConfigCallback_ = callback;
+    m_onExportSpriteSheetConfigCallback = callback;
 }
 
 void Menu_File::setOnImportSingleFramePngCallback(const std::function<void()>& callback) {
-    onImportSingleFramePngCallback_ = callback;
+    m_onImportSingleFramePngCallback = callback;
 }
 
 void Menu_File::setOnImportSpriteSheetPngCallback(const std::function<void()>& callback) {
-    onImportSpriteSheetPngCallback_ = callback;
+    m_onImportSpriteSheetPngCallback = callback;
 }
 
 void Menu_File::setOnOpenRecentProjectByPathCallback(const std::function<void(const std::string&)>& callback)
 {
-    onOpenRecentProjectByPathCallback_ = callback;
+    m_onOpenRecentProjectByPathCallback = callback;
     rebuildOpenRecentMenu();
 }
 
 void Menu_File::setOnCloseProjectCallback(const std::function<void()>& callback) {
-    onCloseProjectCallback_ = callback;
+    m_onCloseProjectCallback = callback;
 }
 
 void Menu_File::setOnCloseAllProjectsCallback(const std::function<void()>& callback) {
-    onCloseAllProjectsCallback_ = callback;
+    m_onCloseAllProjectsCallback = callback;
 }
 
 void Menu_File::setRecentProjectPaths(const std::vector<std::string>& paths)
 {
-    recentProjectPaths_ = paths;
+    m_recentProjectPaths = paths;
     rebuildOpenRecentMenu();
 }
 
 void Menu_File::rebuildOpenRecentMenu()
 {
-    if (!openRecentMenu_) return;
+    if (!m_openRecentMenu) return;
 
-    openRecentMenu_->clearItems();
-    if (recentProjectPaths_.empty())
+    m_openRecentMenu->clearItems();
+    if (m_recentProjectPaths.empty())
     {
         // 空列表时给一个禁用占位项，避免子菜单看起来“点开无内容”。
-        openRecentMenu_->addItem("(Empty)", "", nullptr, false);
+        m_openRecentMenu->addItem("(Empty)", "", nullptr, false);
         return;
     }
 
-    for (size_t i = 0; i < recentProjectPaths_.size(); ++i)
+    for (size_t i = 0; i < m_recentProjectPaths.size(); ++i)
     {
-        const std::string& path = recentProjectPaths_[i];
+        const std::string& path = m_recentProjectPaths[i];
         std::string filename = path;
         try
         {
@@ -217,9 +217,10 @@ void Menu_File::rebuildOpenRecentMenu()
 
         // 菜单显示“序号 + 文件名”，并把完整路径放在快捷键列中，兼顾可读性和信息量。
         const std::string label = std::to_string(i + 1) + ". " + filename;
-        MenuItem* item = openRecentMenu_->addItem(label, path);
+        MenuItem* item = m_openRecentMenu->addItem(label, path);
         item->setCallback([this, path]() {
-            if (onOpenRecentProjectByPathCallback_) onOpenRecentProjectByPathCallback_(path);
+            if (m_onOpenRecentProjectByPathCallback) m_onOpenRecentProjectByPathCallback(path);
         });
     }
 }
+

@@ -1,223 +1,78 @@
-#include "ProjectWindow.h"
+﻿#include "ProjectWindow.h"
 
 #include "core/AppContext.h"
 #include "core/Project.h"
 #include "imgui.h"
-
-#include <SDL3/SDL_opengl.h>
+#include "render/Texture.h"
 
 #include <algorithm>
 #include <vector>
 
 ProjectWindow::~ProjectWindow()
 {
-    auto deleteTexture = [](unsigned int& texture) {
-        if (texture != 0)
-        {
-            glDeleteTextures(1, &texture);
-            texture = 0;
-        }
-    };
-
-    if (canvasTexture_.texture != 0)
-    {
-        glDeleteTextures(1, &canvasTexture_.texture);
-        canvasTexture_.texture = 0;
-    }
-    if (timelineState_.playIconTexture != 0)
-    {
-        glDeleteTextures(1, &timelineState_.playIconTexture);
-        timelineState_.playIconTexture = 0;
-    }
-    if (timelineState_.pauseIconTexture != 0)
-    {
-        glDeleteTextures(1, &timelineState_.pauseIconTexture);
-        timelineState_.pauseIconTexture = 0;
-    }
-    if (toolbarState_.brushIconTexture != 0)
-    {
-        glDeleteTextures(1, &toolbarState_.brushIconTexture);
-        toolbarState_.brushIconTexture = 0;
-    }
-    if (toolbarState_.eraserIconTexture != 0)
-    {
-        glDeleteTextures(1, &toolbarState_.eraserIconTexture);
-        toolbarState_.eraserIconTexture = 0;
-    }
-    if (toolbarState_.eyedropperIconTexture != 0)
-    {
-        glDeleteTextures(1, &toolbarState_.eyedropperIconTexture);
-        toolbarState_.eyedropperIconTexture = 0;
-    }
-    if (toolbarState_.fillIconTexture != 0)
-    {
-        glDeleteTextures(1, &toolbarState_.fillIconTexture);
-        toolbarState_.fillIconTexture = 0;
-    }
-    if (toolbarState_.rectSelectIconTexture != 0)
-    {
-        glDeleteTextures(1, &toolbarState_.rectSelectIconTexture);
-        toolbarState_.rectSelectIconTexture = 0;
-    }
-    if (toolbarState_.circleSelectIconTexture != 0)
-    {
-        glDeleteTextures(1, &toolbarState_.circleSelectIconTexture);
-        toolbarState_.circleSelectIconTexture = 0;
-    }
-    if (toolbarState_.magicWandSelectIconTexture != 0)
-    {
-        glDeleteTextures(1, &toolbarState_.magicWandSelectIconTexture);
-        toolbarState_.magicWandSelectIconTexture = 0;
-    }
-    if (toolbarState_.lassoSelectIconTexture != 0)
-    {
-        glDeleteTextures(1, &toolbarState_.lassoSelectIconTexture);
-        toolbarState_.lassoSelectIconTexture = 0;
-    }
-    if (toolbarState_.polygonLassoSelectIconTexture != 0)
-    {
-        glDeleteTextures(1, &toolbarState_.polygonLassoSelectIconTexture);
-        toolbarState_.polygonLassoSelectIconTexture = 0;
-    }
-    if (toolbarState_.lineIconTexture != 0)
-    {
-        glDeleteTextures(1, &toolbarState_.lineIconTexture);
-        toolbarState_.lineIconTexture = 0;
-    }
-    if (toolbarState_.curveIconTexture != 0)
-    {
-        glDeleteTextures(1, &toolbarState_.curveIconTexture);
-        toolbarState_.curveIconTexture = 0;
-    }
-    if (toolbarState_.rectIconTexture != 0)
-    {
-        glDeleteTextures(1, &toolbarState_.rectIconTexture);
-        toolbarState_.rectIconTexture = 0;
-    }
-    if (toolbarState_.rectFilledIconTexture != 0)
-    {
-        glDeleteTextures(1, &toolbarState_.rectFilledIconTexture);
-        toolbarState_.rectFilledIconTexture = 0;
-    }
-    if (toolbarState_.circleIconTexture != 0)
-    {
-        glDeleteTextures(1, &toolbarState_.circleIconTexture);
-        toolbarState_.circleIconTexture = 0;
-    }
-    if (toolbarState_.circleFilledIconTexture != 0)
-    {
-        glDeleteTextures(1, &toolbarState_.circleFilledIconTexture);
-        toolbarState_.circleFilledIconTexture = 0;
-    }
-    deleteTexture(toolbarState_.symmetryLeftRightIconTexture);
-    deleteTexture(toolbarState_.symmetryUpDownIconTexture);
-    deleteTexture(layerPanelState_.newLayerIconTexture);
-    deleteTexture(layerPanelState_.deleteIconTexture);
-    deleteTexture(layerPanelState_.upIconTexture);
-    deleteTexture(layerPanelState_.downIconTexture);
-    deleteTexture(layerPanelState_.showIconTexture);
-    deleteTexture(layerPanelState_.hideIconTexture);
-    deleteTexture(layerPanelState_.lockIconTexture);
-    deleteTexture(layerPanelState_.unlockIconTexture);
+    m_canvasTexture.release();
+    render::deleteTexture(m_timelineState.playIconTexture);
+    render::deleteTexture(m_timelineState.pauseIconTexture);
+    render::deleteTexture(m_toolbarState.brushIconTexture);
+    render::deleteTexture(m_toolbarState.eraserIconTexture);
+    render::deleteTexture(m_toolbarState.eyedropperIconTexture);
+    render::deleteTexture(m_toolbarState.fillIconTexture);
+    render::deleteTexture(m_toolbarState.rectSelectIconTexture);
+    render::deleteTexture(m_toolbarState.circleSelectIconTexture);
+    render::deleteTexture(m_toolbarState.magicWandSelectIconTexture);
+    render::deleteTexture(m_toolbarState.lassoSelectIconTexture);
+    render::deleteTexture(m_toolbarState.polygonLassoSelectIconTexture);
+    render::deleteTexture(m_toolbarState.lineIconTexture);
+    render::deleteTexture(m_toolbarState.curveIconTexture);
+    render::deleteTexture(m_toolbarState.rectIconTexture);
+    render::deleteTexture(m_toolbarState.rectFilledIconTexture);
+    render::deleteTexture(m_toolbarState.circleIconTexture);
+    render::deleteTexture(m_toolbarState.circleFilledIconTexture);
+    render::deleteTexture(m_toolbarState.symmetryLeftRightIconTexture);
+    render::deleteTexture(m_toolbarState.symmetryUpDownIconTexture);
+    m_layerPanel.releaseTextures();
 }
 
 void ProjectWindow::beginPastePreview(const commands::PixelClipboardData& clipboard)
 {
     if (!clipboard.isValid())
     {
-        pastePreviewState_.active = false;
-        pastePreviewState_.clipboard.clear();
-        pastePreviewState_.originX = 0;
-        pastePreviewState_.originY = 0;
+        m_pastePreviewState.active = false;
+        m_pastePreviewState.clipboard.clear();
+        m_pastePreviewState.originX = 0;
+        m_pastePreviewState.originY = 0;
         return;
     }
 
-    pastePreviewState_.active = true;
-    pastePreviewState_.clipboard = clipboard;
-    pastePreviewState_.originX = 0;
-    pastePreviewState_.originY = 0;
+    m_pastePreviewState.active = true;
+    m_pastePreviewState.clipboard = clipboard;
+    m_pastePreviewState.originX = 0;
+    m_pastePreviewState.originY = 0;
 }
 
 bool ProjectWindow::isPastePreviewActive() const
 {
-    return pastePreviewState_.active;
+    return m_pastePreviewState.active;
 }
 
 void ProjectWindow::cancelPastePreview()
 {
-    pastePreviewState_.active = false;
-    pastePreviewState_.clipboard.clear();
-    pastePreviewState_.originX = 0;
-    pastePreviewState_.originY = 0;
+    m_pastePreviewState.active = false;
+    m_pastePreviewState.clipboard.clear();
+    m_pastePreviewState.originX = 0;
+    m_pastePreviewState.originY = 0;
 }
 
-/**
- * @brief 确保画布纹理已创建并具有指定的尺寸。
- * 
- * 该函数用于初始化或更新画布纹理。如果纹理尚未创建，则会生成一个新的纹理对象并设置其参数；
- * 如果纹理已存在但尺寸与指定的宽度和高度不匹配，则会重新分配纹理内存以适应新的尺寸。
- * 
- * @param width 纹理的宽度（像素）。
- * @param height 纹理的高度（像素）。
- */
+// 确保画布纹理存在并匹配当前画布尺寸。
 void ProjectWindow::ensureCanvasTexture(int width, int height)
 {
-    // 如果纹理未创建，则生成一个新的纹理对象并设置基本参数
-    if (canvasTexture_.texture == 0)
-    {
-        glGenTextures(1, &canvasTexture_.texture);
-        glBindTexture(GL_TEXTURE_2D, canvasTexture_.texture);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    }
-
-    // 如果纹理尺寸与当前指定的尺寸不一致，则重新分配纹理内存
-    if (width != canvasTexture_.width || height != canvasTexture_.height)
-    {
-        canvasTexture_.width = width;
-        canvasTexture_.height = height;
-        glBindTexture(GL_TEXTURE_2D, canvasTexture_.texture);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
-    }
+    m_canvasTexture.ensureSize(width, height);
 }
 
-/**
- * @brief 将像素数据上传到画布纹理中
- * 
- * 该函数将给定的像素数据上传到OpenGL纹理对象中，用于更新画布的显示内容。
- * 像素数据以RGBA格式存储，每个像素占用4个字节（uint32_t）。
- * 
- * @param pixels 包含RGBA像素数据的向量，数据按行优先顺序排列
- */
+// 上传合成后的画布像素，供 ImGui 画布区域显示。
 void ProjectWindow::uploadCanvasPixels(const std::vector<uint32_t>& pixels) const
 {
-    // 绑定画布纹理对象，后续操作将针对此纹理进行
-    glBindTexture(GL_TEXTURE_2D, canvasTexture_.texture);
-
-    // 设置像素存储模式，确保数据按1字节对齐，避免因对齐问题导致的数据错误
-    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-
-    // 将像素数据上传到纹理中，替换纹理的全部内容
-    // 参数说明：
-    // - GL_TEXTURE_2D: 指定目标纹理类型为2D纹理
-    // - 0: 指定纹理的mipmap级别为0（基础级别）
-    // - 0, 0: 指定纹理更新的起始坐标为(0, 0)
-    // - canvasTexture_.width, canvasTexture_.height: 指定更新区域的宽度和高度
-    // - GL_RGBA: 指定像素数据的格式为RGBA
-    // - GL_UNSIGNED_BYTE: 指定每个颜色分量的数据类型为无符号字节
-    // - pixels.data(): 指向像素数据的指针
-    glTexSubImage2D(
-        GL_TEXTURE_2D,
-        0,
-        0,
-        0,
-        canvasTexture_.width,
-        canvasTexture_.height,
-        GL_RGBA,
-        GL_UNSIGNED_BYTE,
-        pixels.data());
+    m_canvasTexture.uploadPixels(pixels);
 }
 
 /**
@@ -240,7 +95,7 @@ void ProjectWindow::render()
     if (!visible) return;
 
     // 获取窗口标签，如果未设置则使用默认名称
-    const char* label = windowLabel_.empty() ? name : windowLabel_.c_str();
+    const char* label = m_windowLabel.empty() ? name : m_windowLabel.c_str();
     
     // 尝试开始ImGui窗口，如果失败则结束并返回
     if (!ImGui::Begin(label, &visible))
@@ -250,9 +105,9 @@ void ProjectWindow::render()
     }
 
     // 如果窗口获得焦点且存在焦点回调函数，则调用回调函数
-    if (onFocused_ && ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows))
+    if (m_onFocused && ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows))
     {
-        onFocused_(context);
+        m_onFocused(context);
     }
 
     // 如果上下文为空或没有加载项目，则显示提示信息并结束渲染
@@ -272,8 +127,8 @@ void ProjectWindow::render()
     const float minTimelineHeight = 80.0f;
     const float availableHeight = ImGui::GetContentRegionAvail().y;
     const float maxTimelineHeight = std::max(minTimelineHeight, availableHeight - minTopHeight - splitterHeight);
-    timelineState_.height = std::clamp(timelineState_.height, minTimelineHeight, maxTimelineHeight);
-    const float topHeight = std::max(minTopHeight, availableHeight - timelineState_.height - splitterHeight);
+    m_timelineState.height = std::clamp(m_timelineState.height, minTimelineHeight, maxTimelineHeight);
+    const float topHeight = std::max(minTopHeight, availableHeight - m_timelineState.height - splitterHeight);
 
     // 开始渲染顶部区域的子窗口
     if (ImGui::BeginChild("##ProjectTopRegion", ImVec2(0.0f, topHeight), false))
@@ -338,7 +193,7 @@ void ProjectWindow::render()
     if (ImGui::IsItemActive() && ImGui::IsMouseDragging(ImGuiMouseButton_Left))
     {
         const float deltaY = ImGui::GetIO().MouseDelta.y;
-        timelineState_.height = std::clamp(timelineState_.height - deltaY, minTimelineHeight, maxTimelineHeight);
+        m_timelineState.height = std::clamp(m_timelineState.height - deltaY, minTimelineHeight, maxTimelineHeight);
     }
 
     // 当鼠标悬停在分割器上时，更改光标样式为垂直调整大小
@@ -358,3 +213,5 @@ void ProjectWindow::render()
     // 结束ImGui窗口
     ImGui::End();
 }
+
+

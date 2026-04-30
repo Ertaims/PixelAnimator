@@ -126,29 +126,29 @@ void LineTool::handleInteraction(AppContext& context,
     // 鼠标按下：开始一条新线段拖拽，记录起点并捕获像素快照。
     if (canvasHitboxHovered && hoveredOnImage && ImGui::IsMouseClicked(ImGuiMouseButton_Left))
     {
-        state_.drawing = true;
-        state_.startX = mousePixelX;
-        state_.startY = mousePixelY;
-        state_.endX = mousePixelX;
-        state_.endY = mousePixelY;
-        state_.basePixels = frame.pixels;
-        state_.hasBasePixels = true;
+        m_state.drawing = true;
+        m_state.startX = mousePixelX;
+        m_state.startY = mousePixelY;
+        m_state.endX = mousePixelX;
+        m_state.endY = mousePixelY;
+        m_state.basePixels = frame.pixels;
+        m_state.hasBasePixels = true;
     }
 
-    if (!state_.drawing || !state_.hasBasePixels) return;
+    if (!m_state.drawing || !m_state.hasBasePixels) return;
 
     // 拖拽期间实时更新终点并基于快照重算预览。
-    state_.endX = mousePixelX;
-    state_.endY = mousePixelY;
+    m_state.endX = mousePixelX;
+    m_state.endY = mousePixelY;
 
-    std::vector<uint32_t> previewPixels = state_.basePixels;
+    std::vector<uint32_t> previewPixels = m_state.basePixels;
     rasterizeLine(previewPixels,
                   canvasWidth,
                   canvasHeight,
-                  state_.startX,
-                  state_.startY,
-                  state_.endX,
-                  state_.endY,
+                  m_state.startX,
+                  m_state.startY,
+                  m_state.endX,
+                  m_state.endY,
                   context.getBrushSize(),
                   context.getColorRGBA(),
                   context);
@@ -157,8 +157,8 @@ void LineTool::handleInteraction(AppContext& context,
     // 鼠标抬起：结束拖拽并提交结果。
     if (!ImGui::IsMouseDown(ImGuiMouseButton_Left))
     {
-        outPixelsCommitted = (frame.pixels != state_.basePixels);
-        state_ = {};
+        outPixelsCommitted = (frame.pixels != m_state.basePixels);
+        m_state = {};
     }
 }
 
@@ -169,15 +169,15 @@ void LineTool::renderOverlay(const AppContext& context,
                              bool anyPopupOpen) const
 {
     (void)context;
-    if (anyPopupOpen || !drawList || !state_.drawing) return;
+    if (anyPopupOpen || !drawList || !m_state.drawing) return;
 
     // 叠加层辅助线：用于明确显示当前拖拽方向与终点。
     const ImVec2 p0(
-        imagePos.x + (static_cast<float>(state_.startX) + 0.5f) * static_cast<float>(zoom),
-        imagePos.y + (static_cast<float>(state_.startY) + 0.5f) * static_cast<float>(zoom));
+        imagePos.x + (static_cast<float>(m_state.startX) + 0.5f) * static_cast<float>(zoom),
+        imagePos.y + (static_cast<float>(m_state.startY) + 0.5f) * static_cast<float>(zoom));
     const ImVec2 p1(
-        imagePos.x + (static_cast<float>(state_.endX) + 0.5f) * static_cast<float>(zoom),
-        imagePos.y + (static_cast<float>(state_.endY) + 0.5f) * static_cast<float>(zoom));
+        imagePos.x + (static_cast<float>(m_state.endX) + 0.5f) * static_cast<float>(zoom),
+        imagePos.y + (static_cast<float>(m_state.endY) + 0.5f) * static_cast<float>(zoom));
 
     drawList->AddLine(p0, p1, IM_COL32(255, 240, 80, 220), 1.5f);
 }
@@ -185,9 +185,10 @@ void LineTool::renderOverlay(const AppContext& context,
 void LineTool::resetInteractionState(Project::Frame* frame)
 {
     // 若当前正处于预览拖拽中，且提供了帧指针，则恢复到快照避免“半成品残留”。
-    if (frame && state_.drawing && state_.hasBasePixels)
+    if (frame && m_state.drawing && m_state.hasBasePixels)
     {
-        frame->pixels = state_.basePixels;
+        frame->pixels = m_state.basePixels;
     }
-    state_ = {};
+    m_state = {};
 }
+

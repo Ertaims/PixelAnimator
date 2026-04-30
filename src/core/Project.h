@@ -365,7 +365,7 @@ public:
     void setTimelineFps(int fps);
 
 private:
-    // 按当前 width_/height_ 创建指定数量的帧并填充像素
+    // 按当前 m_width/m_height 创建指定数量的帧并填充像素
     void createFrames(int count, uint32_t fillColor);
     void createDefaultLayer();
     size_t getPixelCount() const;
@@ -385,3 +385,4 @@ private:
     // 帧列表
     std::vector<Frame> m_frames;
 };
+

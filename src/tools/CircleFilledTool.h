@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "Tool.h"
 #include "imgui.h"
@@ -68,5 +68,6 @@ private:
         bool hasBasePixels = false;
     };
 
-    InteractionState state_;
+    InteractionState m_state;
 };
+
