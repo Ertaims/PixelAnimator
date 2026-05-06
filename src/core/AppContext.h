@@ -446,6 +446,20 @@ public:
     bool hasPixelSelection() const;
 
     /**
+     * @brief 当前选区 mask 是否与指定画布尺寸匹配。
+     *
+     * 渲染层可用它安全复用内部 mask，避免为了显示选区每帧逐像素重新拷贝查询。
+     */
+    bool isPixelSelectionMaskCompatible(int canvasWidth, int canvasHeight) const;
+
+    /**
+     * @brief 获取当前选区 mask 的只读引用。
+     *
+     * 调用前建议先用 isPixelSelectionMaskCompatible(...) 校验尺寸。
+     */
+    const std::vector<uint8_t>& getPixelSelectionMask() const;
+
+    /**
      * @brief 清空整张画布的像素选区。
      */
     void clearPixelSelection();
@@ -652,6 +666,18 @@ public:
         m_onionSkinEnabled = enabled;
     }
 
+    // 是否保留前后帧原本颜色，仅通过透明度显示洋葱皮。
+    bool isOnionSkinPreserveOriginalColors() const
+    {
+        return m_onionSkinPreserveOriginalColors;
+    }
+
+    // 设置洋葱皮原色透明模式；关闭时使用前/后帧 tint 颜色辅助区分方向。
+    void setOnionSkinPreserveOriginalColors(bool enabled)
+    {
+        m_onionSkinPreserveOriginalColors = enabled;
+    }
+
     // 洋葱皮前帧显示数量
     int getOnionSkinPreviousFrames() const
     {
@@ -773,6 +799,7 @@ private:
     void applyUndoHistoryEntry(const UndoHistoryEntry& entry);
     bool isEquivalentToCurrentState(const UndoHistoryEntry& entry) const;
     void trimUndoHistoryToLimit();
+    void rebuildPixelSelectionMeta();
 
     // 项目与文档
     Project* m_project = nullptr;
@@ -802,6 +829,7 @@ private:
     int m_pixelSelectionCanvasHeight = 0;
     std::vector<uint8_t> m_pixelSelectionMask;
     bool m_pixelSelectionHasAny = false;
+    PixelRect m_pixelSelectionBounds;
 
     // 撤销/重做（不拥有所有权，由外部创建与释放）
     CommandStack* m_commandStack = nullptr;
@@ -815,6 +843,7 @@ private:
     // 视图选项
     bool m_gridVisible = false;
     bool m_onionSkinEnabled = false;
+    bool m_onionSkinPreserveOriginalColors = false;
     int m_onionSkinPreviousFrames = 3;
     int m_onionSkinNextFrames = 3;
     int m_onionSkinPreviousAlpha = 50;

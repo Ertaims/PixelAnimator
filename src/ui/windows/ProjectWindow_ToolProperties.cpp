@@ -188,6 +188,16 @@ void ProjectWindow::renderRightPanel(Project* project)
     if (onionSkin)
     {
         ImGui::Indent();
+
+        bool preserveOriginalColors = context->isOnionSkinPreserveOriginalColors();
+        if (ImGui::Checkbox("Preserve Original Colors", &preserveOriginalColors))
+        {
+            context->setOnionSkinPreserveOriginalColors(preserveOriginalColors);
+        }
+        if (ImGui::IsItemHovered())
+        {
+            ImGui::SetTooltip("Show onion skin frames with their original colors and only reduce alpha.");
+        }
         
         // 前帧设置
         ImGui::TextUnformatted("Previous Frames:");

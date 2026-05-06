@@ -122,6 +122,21 @@ namespace render
         }
     }
 
+    void drawPixelRectSolidOutline(ImDrawList* drawList,
+                                   const AppContext::PixelRect& rect,
+                                   const ImVec2& imagePos,
+                                   int zoom,
+                                   ImU32 color,
+                                   float thickness)
+    {
+        if (!drawList || zoom <= 0 || rect.width <= 0 || rect.height <= 0) return;
+
+        ImVec2 minP(0.0f, 0.0f);
+        ImVec2 maxP(0.0f, 0.0f);
+        pixelRectToScreen(rect, imagePos, zoom, minP, maxP);
+        drawList->AddRect(minP, maxP, color, 0.0f, 0, thickness);
+    }
+
     void drawMarchingAntsMask(ImDrawList* drawList,
                               const std::vector<uint8_t>& mask,
                               int canvasWidth,
@@ -161,6 +176,30 @@ namespace render
         }
     }
 
+    void drawMarchingAntsPixelRect(ImDrawList* drawList,
+                                   const AppContext::PixelRect& rect,
+                                   const ImVec2& imagePos,
+                                   int zoom,
+                                   float segmentLength,
+                                   float timePhase)
+    {
+        if (!drawList || zoom <= 0 || rect.width <= 0 || rect.height <= 0) return;
+
+        ImVec2 minP(0.0f, 0.0f);
+        ImVec2 maxP(0.0f, 0.0f);
+        pixelRectToScreen(rect, imagePos, zoom, minP, maxP);
+
+        const float width = std::max(0.0f, maxP.x - minP.x);
+        const float height = std::max(0.0f, maxP.y - minP.y);
+        if (width <= 0.0f || height <= 0.0f) return;
+
+        // 四条边顺着矩形一圈连续计算偏移，让蚂蚁线动画看起来更连贯。
+        drawMarchingAntsEdge(drawList, minP, ImVec2(maxP.x, minP.y), width, segmentLength, timePhase, 0.0f);
+        drawMarchingAntsEdge(drawList, ImVec2(maxP.x, minP.y), maxP, height, segmentLength, timePhase, width);
+        drawMarchingAntsEdge(drawList, maxP, ImVec2(minP.x, maxP.y), width, segmentLength, timePhase, width + height);
+        drawMarchingAntsEdge(drawList, ImVec2(minP.x, maxP.y), minP, height, segmentLength, timePhase, width * 2.0f + height);
+    }
+
     void drawSelectionHandles(ImDrawList* drawList,
                               const AppContext::PixelRect& rect,
                               const ImVec2& imagePos,
@@ -180,6 +219,42 @@ namespace render
                 ImVec2(c.x - handleHalfSize, c.y - handleHalfSize),
                 ImVec2(c.x + handleHalfSize, c.y + handleHalfSize),
                 IM_COL32(255, 255, 255, 255));
+        }
+    }
+
+    void drawPixelLassoGuide(ImDrawList* drawList,
+                             const std::vector<ImVec2>& pathPixels,
+                             const ImVec2& imagePos,
+                             int zoom)
+    {
+        if (!drawList || zoom <= 0 || pathPixels.size() < 2) return;
+
+        const ImU32 guideColor = IM_COL32(0, 0, 0, 255);
+        const float zoomF = static_cast<float>(zoom);
+        const auto pixelCenter = [&](int x, int y) {
+            return ImVec2(imagePos.x + (static_cast<float>(x) + 0.5f) * zoomF,
+                          imagePos.y + (static_cast<float>(y) + 0.5f) * zoomF);
+        };
+
+        for (size_t i = 1; i < pathPixels.size(); ++i)
+        {
+            const int x0 = static_cast<int>(pathPixels[i - 1].x);
+            const int y0 = static_cast<int>(pathPixels[i - 1].y);
+            const int x1 = static_cast<int>(pathPixels[i].x);
+            const int y1 = static_cast<int>(pathPixels[i].y);
+            const ImVec2 p0 = pixelCenter(x0, y0);
+            const ImVec2 p1 = pixelCenter(x1, y1);
+
+            if (x0 != x1 && y0 != y1)
+            {
+                // 斜向相邻像素用“横向一步 + 纵向一步”表示，避免辅助线出现斜边。
+                const ImVec2 corner = pixelCenter(x1, y0);
+                drawList->AddLine(p0, corner, guideColor, 1.0f);
+                drawList->AddLine(corner, p1, guideColor, 1.0f);
+                continue;
+            }
+
+            drawList->AddLine(p0, p1, guideColor, 1.0f);
         }
     }
 

@@ -35,6 +35,19 @@ namespace render
                               float thickness);
 
     /**
+     * @brief 直接按像素矩形绘制实线轮廓。
+     *
+     * 矩形框选拖拽预览不需要先生成整张 mask；直接画外框可以避免大画布下
+     * 每帧分配/扫描整张选区掩码造成卡顿。
+     */
+    void drawPixelRectSolidOutline(ImDrawList* drawList,
+                                   const AppContext::PixelRect& rect,
+                                   const ImVec2& imagePos,
+                                   int zoom,
+                                   ImU32 color,
+                                   float thickness);
+
+    /**
      * @brief 按选区 mask 绘制黑白交替的蚂蚁线轮廓。
      *
      * timePhase 控制动画偏移；segmentLength 控制条纹长度。
@@ -49,6 +62,19 @@ namespace render
                               float timePhase);
 
     /**
+     * @brief 直接按像素矩形绘制黑白交替蚂蚁线。
+     *
+     * 用于矩形选区的实时预览/已提交矩形选区显示，复杂度接近矩形周长，
+     * 避免对整张 mask 做逐像素边界扫描。
+     */
+    void drawMarchingAntsPixelRect(ImDrawList* drawList,
+                                   const AppContext::PixelRect& rect,
+                                   const ImVec2& imagePos,
+                                   int zoom,
+                                   float segmentLength,
+                                   float timePhase);
+
+    /**
      * @brief 绘制选区八个缩放手柄。
      *
      * 该函数只负责视觉绘制；命中测试复用 getSelectionHandleCenters。
@@ -58,6 +84,17 @@ namespace render
                               const ImVec2& imagePos,
                               int zoom,
                               float handleHalfSize);
+
+    /**
+     * @brief 绘制自由套索的像素化路径辅助线。
+     *
+     * 自由套索路径已经按像素补点；这里遇到斜向相邻像素时会拆成横线+竖线，
+     * 避免预览中出现不符合像素工具观感的斜线。
+     */
+    void drawPixelLassoGuide(ImDrawList* drawList,
+                             const std::vector<ImVec2>& pathPixels,
+                             const ImVec2& imagePos,
+                             int zoom);
 
     /**
      * @brief 绘制多边形套索的辅助线与固定顶点。

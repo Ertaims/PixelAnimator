@@ -6,15 +6,24 @@
 #include <cstdint>
 #include <vector>
 
+/*
+ * mask其实就是一张选区地图，用于记录选区。
+ * 0：这个像素没有被选中
+ * 1：这个像素被选中了
+*/
 namespace selection
 {
     /**
-     * @brief 判断 mask 中是否至少存在一个选中像素。
+     * @brief 检查当前选区里有没有格子被选中
      */
     bool maskHasAnySelected(const std::vector<uint8_t>& mask);
 
     /**
      * @brief 将矩形选区按 Replace/Add/Remove 写入目标 mask。
+     * 它支持三种操作：
+     * Replace：用这个矩形替换原来的选区
+     * Add：把这个矩形加到原选区里
+     * Remove：从原选区里减掉这个矩形
      *
      * rect 会先裁剪到画布范围，避免越界访问。
      */
@@ -36,11 +45,15 @@ namespace selection
                               AppContext::PixelSelectionOp op);
 
     /**
-     * @brief 将 applyMask 按 Replace/Add/Remove 合并到目标 mask。
+     * @brief 将一张选区 mask 合并到另一张选区 mask。
+     *
+     * targetMask 是被修改的目标选区；
+     * sourceMask 是本次要合并进来的新选区；
+     * operation 决定是替换、添加，还是从目标选区里扣除。
      */
-    void applyMaskOpToMask(std::vector<uint8_t>& ioMask,
-                           const std::vector<uint8_t>& applyMask,
-                           AppContext::PixelSelectionOp op);
+    void mergeMaskIntoSelection(std::vector<uint8_t>& targetMask,
+                                const std::vector<uint8_t>& sourceMask,
+                                AppContext::PixelSelectionOp operation);
 
     /**
      * @brief 给路径补上一段整数像素线。

@@ -89,8 +89,13 @@ private:
         int control1Y = 0;                 // 控制点1 Y
         int control2X = 0;                 // 控制点2 X
         int control2Y = 0;                 // 控制点2 Y
+        int control2AnchorX = 0;           // 进入控制点2阶段时的鼠标 X，用于避免刚确认控制点1时预览跳变
+        int control2AnchorY = 0;           // 进入控制点2阶段时的鼠标 Y
+        int control2StartX = 0;            // 控制点2开始调整前的位置，用于按鼠标位移平滑移动
+        int control2StartY = 0;            // 控制点2开始调整前的位置，用于按鼠标位移平滑移动
         std::vector<uint32_t> basePixels;  // 交互开始时像素快照（所有预览都基于它）
         bool hasBasePixels = false;        // 是否已有有效快照
+        bool waitingForControl2Move = false; // 控制点1刚确认后，等待鼠标真正移动再更新控制点2
     };
 
     InteractionState m_state;

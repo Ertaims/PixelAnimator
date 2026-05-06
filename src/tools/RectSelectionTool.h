@@ -63,7 +63,7 @@ public:
      * @param zoom 当前缩放倍率
      * @param canvasWidth 画布像素宽
      * @param canvasHeight 画布像素高
-     * @param outPixelsChanged 输出参数，表示本帧是否对像素数据产生改动
+     * @param outPixelsCommitted 输出参数，表示鼠标松开后是否完成一次最终变换提交
      */
     void handleInteraction(AppContext& context,
                            Project::Frame& frame,
@@ -75,7 +75,7 @@ public:
                            int zoom,
                            int canvasWidth,
                            int canvasHeight,
-                           bool& outPixelsChanged);
+                           bool& outPixelsCommitted);
 
     /**
      * @brief 绘制选区叠加层（外接框、蚂蚁线、8 个手柄）。

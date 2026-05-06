@@ -142,20 +142,26 @@ namespace
         return a.x == b.x && a.y == b.y && a.width == b.width && a.height == b.height;
     }
 
-    void captureSelectionMaskFromContext(const AppContext& context,
-                                         int canvasWidth,
-                                         int canvasHeight,
-                                         std::vector<uint8_t>& outMask)
+    bool isMaskSolidInsideRect(const std::vector<uint8_t>& mask,
+                               int canvasWidth,
+                               int canvasHeight,
+                               const AppContext::PixelRect& rect)
     {
-        outMask.assign(static_cast<size_t>(canvasWidth) * static_cast<size_t>(canvasHeight), static_cast<uint8_t>(0));
-        for (int y = 0; y < canvasHeight; ++y)
+        if (rect.width <= 0 || rect.height <= 0) return false;
+        if (mask.size() != static_cast<size_t>(canvasWidth) * static_cast<size_t>(canvasHeight)) return false;
+        if (rect.x < 0 || rect.y < 0 || rect.x + rect.width > canvasWidth || rect.y + rect.height > canvasHeight) return false;
+
+        // bounds 来自选区自身，外部不会有选中像素；
+        // 这里只确认 bounds 内部是否完全填满，填满时可以用快速矩形轮廓绘制。
+        for (int y = rect.y; y < rect.y + rect.height; ++y)
         {
             const size_t rowOffset = static_cast<size_t>(y) * static_cast<size_t>(canvasWidth);
-            for (int x = 0; x < canvasWidth; ++x)
+            for (int x = rect.x; x < rect.x + rect.width; ++x)
             {
-                if (context.isPixelSelected(x, y, canvasWidth, canvasHeight)) outMask[rowOffset + static_cast<size_t>(x)] = 1;
+                if (mask[rowOffset + static_cast<size_t>(x)] == 0) return false;
             }
         }
+        return true;
     }
 
     void applySelectionShapeOpToMask(std::vector<uint8_t>& ioMask,
@@ -209,9 +215,9 @@ void RectSelectionTool::handleInteraction(AppContext& context,
                                           int zoom,
                                           int canvasWidth,
                                           int canvasHeight,
-                                          bool& outPixelsChanged)
+                                          bool& outPixelsCommitted)
 {
-    outPixelsChanged = false;
+    outPixelsCommitted = false;
 
     if (anyPopupOpen)
     {
@@ -574,13 +580,14 @@ void RectSelectionTool::handleInteraction(AppContext& context,
             if (frame.pixels != previewPixels)
             {
                 frame.pixels.swap(previewPixels);
-                outPixelsChanged = true;
             }
         }
 
         if (!stillDown)
         {
-            context.movePixelSelection(dx, dy);
+            const bool selectionChanged = context.movePixelSelection(dx, dy);
+            const bool pixelsChanged = m_sourceCacheValid && frame.pixels != m_sourceFramePixels;
+            outPixelsCommitted = selectionChanged || pixelsChanged;
             m_lastCommittedBounds = m_state.previewBounds;
             m_state = {};
         }
@@ -621,17 +628,18 @@ void RectSelectionTool::handleInteraction(AppContext& context,
             if (frame.pixels != previewPixels)
             {
                 frame.pixels.swap(previewPixels);
-                outPixelsChanged = true;
             }
         }
 
         if (!stillDown)
         {
-            context.transformPixelSelectionByRect(
+            const bool selectionChanged = context.transformPixelSelectionByRect(
                 m_state.initialBounds,
                 m_state.previewBounds,
                 m_state.previewFlipX,
                 m_state.previewFlipY);
+            const bool pixelsChanged = m_sourceCacheValid && frame.pixels != m_sourceFramePixels;
+            outPixelsCommitted = selectionChanged || pixelsChanged;
             m_lastCommittedBounds = m_state.previewBounds;
             m_state = {};
         }
@@ -701,19 +709,77 @@ void RectSelectionTool::renderOverlay(const AppContext& context,
     const int canvasWidth = std::max(1, project->getWidth());
     const int canvasHeight = std::max(1, project->getHeight());
 
-    std::vector<uint8_t> committedMask;
-    captureSelectionMaskFromContext(context, canvasWidth, canvasHeight, committedMask);
+    static const std::vector<uint8_t> emptyMask;
+    const bool hasCommittedSelection =
+        context.hasPixelSelection()
+        && context.isPixelSelectionMaskCompatible(canvasWidth, canvasHeight);
+    const std::vector<uint8_t>& committedMask =
+        hasCommittedSelection ? context.getPixelSelectionMask() : emptyMask;
+
+    AppContext::PixelRect currentBounds;
+    const bool hasCurrentBounds = context.getPixelSelectionBounds(currentBounds);
+
+    const auto makeWorkingMask = [&]() {
+        std::vector<uint8_t> mask;
+        if (hasCommittedSelection) mask = committedMask;
+        else mask.assign(static_cast<size_t>(canvasWidth) * static_cast<size_t>(canvasHeight), static_cast<uint8_t>(0));
+        return mask;
+    };
+
+    const auto drawCommittedReferenceOutline = [&]() {
+        if (!hasCommittedSelection) return;
+
+        if (hasCurrentBounds && isMaskSolidInsideRect(committedMask, canvasWidth, canvasHeight, currentBounds))
+        {
+            render::drawPixelRectSolidOutline(
+                drawList,
+                currentBounds,
+                imagePos,
+                zoom,
+                IM_COL32(190, 170, 80, 180),
+                1.0f);
+            return;
+        }
+
+        render::drawMaskSolidOutline(
+            drawList,
+            committedMask,
+            canvasWidth,
+            canvasHeight,
+            imagePos,
+            zoom,
+            IM_COL32(190, 170, 80, 180),
+            1.0f);
+    };
 
     // displayMask 表示当前帧真正要显示的“选区轮廓依据”：
     // - 空闲：已提交选区；
     // - 框选：布尔运算后的临时结果（并可保留旧轮廓参考）；
     // - 平移/缩放：实时变换后的临时结果（不保留原始轮廓）。
-    std::vector<uint8_t> displayMask = committedMask;
+    std::vector<uint8_t> displayMask;
+    if (hasCommittedSelection) displayMask = committedMask;
     ImU32 displayColor = IM_COL32(255, 210, 80, 255);
 
     if (m_state.mode == InteractionState::Mode::BoxSelecting && m_state.previewBoundsValid)
     {
-        std::vector<uint8_t> previewMask = committedMask;
+        if (m_state.previewOp == AppContext::PixelSelectionOp::Add) displayColor = IM_COL32(90, 230, 140, 255);
+        else if (m_state.previewOp == AppContext::PixelSelectionOp::Remove)
+            displayColor = IM_COL32(255, 120, 120, 255);
+        else
+            displayColor = IM_COL32(80, 220, 255, 255);
+
+        if (m_selectionShape == SelectionShape::Rectangle)
+        {
+            // 矩形拖拽预览只需要显示一个操作外框，不必每帧生成整张临时 mask。
+            // 大画布下这能避免“分配 mask -> 写入矩形 -> 全画布扫描边界”的卡顿链路。
+            drawCommittedReferenceOutline();
+
+            render::drawPixelRectSolidOutline(drawList, m_state.previewBounds, imagePos, zoom, displayColor, 1.2f);
+            render::drawMarchingAntsPixelRect(drawList, m_state.previewBounds, imagePos, zoom, segmentLength, timePhase);
+            return;
+        }
+
+        std::vector<uint8_t> previewMask = makeWorkingMask();
         applySelectionShapeOpToMask(
             previewMask,
             canvasWidth,
@@ -723,32 +789,16 @@ void RectSelectionTool::renderOverlay(const AppContext& context,
             m_selectionShape);
         displayMask.swap(previewMask);
 
-        if (m_state.previewOp == AppContext::PixelSelectionOp::Add) displayColor = IM_COL32(90, 230, 140, 255);
-        else if (m_state.previewOp == AppContext::PixelSelectionOp::Remove)
-            displayColor = IM_COL32(255, 120, 120, 255);
-        else
-            displayColor = IM_COL32(80, 220, 255, 255);
-
         // 仅在框选阶段保留旧轮廓参考（用户此前明确希望此行为）。
-        if (selection::maskHasAnySelected(committedMask)) render::drawMaskSolidOutline(drawList, committedMask, canvasWidth, canvasHeight, imagePos, zoom, IM_COL32(190, 170, 80, 180), 1.0f);
+        drawCommittedReferenceOutline();
     }
     else if (m_state.mode == InteractionState::Mode::LassoSelecting && m_state.lassoPathPixels.size() >= 2)
     {
-        std::vector<uint8_t> lassoMask;
-        if (selection::buildLassoMaskFromPath(m_state.lassoPathPixels, canvasWidth, canvasHeight, lassoMask))
-        {
-            std::vector<uint8_t> previewMask = committedMask;
-            selection::applyMaskOpToMask(previewMask, lassoMask, m_state.previewOp);
-            displayMask.swap(previewMask);
-
-            if (m_state.previewOp == AppContext::PixelSelectionOp::Add) displayColor = IM_COL32(90, 230, 140, 255);
-            else if (m_state.previewOp == AppContext::PixelSelectionOp::Remove)
-                displayColor = IM_COL32(255, 120, 120, 255);
-            else
-                displayColor = IM_COL32(80, 220, 255, 255);
-
-            if (selection::maskHasAnySelected(committedMask)) render::drawMaskSolidOutline(drawList, committedMask, canvasWidth, canvasHeight, imagePos, zoom, IM_COL32(190, 170, 80, 180), 1.0f);
-        }
+        // 套索拖拽过程中只画路径线，不实时生成闭合选区 mask。
+        // 真正的 mask 会在鼠标松开时一次性生成，避免大区域拖拽时每帧做点内判断。
+        drawCommittedReferenceOutline();
+        render::drawPixelLassoGuide(drawList, m_state.lassoPathPixels, imagePos, zoom);
+        return;
     }
     else if (m_state.mode == InteractionState::Mode::PolygonLassoSelecting && !m_state.lassoPathPixels.empty())
     {
@@ -760,26 +810,11 @@ void RectSelectionTool::renderOverlay(const AppContext& context,
         if (lastX != hoverX || lastY != hoverY)
             previewVertices.emplace_back(static_cast<float>(hoverX), static_cast<float>(hoverY));
 
-        if (previewVertices.size() >= 3)
-        {
-            std::vector<uint8_t> polygonMask;
-            if (selection::buildPolygonMaskFromVertices(previewVertices, canvasWidth, canvasHeight, polygonMask))
-            {
-                std::vector<uint8_t> previewMask = committedMask;
-                selection::applyMaskOpToMask(previewMask, polygonMask, m_state.previewOp);
-                displayMask.swap(previewMask);
-
-                if (m_state.previewOp == AppContext::PixelSelectionOp::Add) displayColor = IM_COL32(90, 230, 140, 255);
-                else if (m_state.previewOp == AppContext::PixelSelectionOp::Remove)
-                    displayColor = IM_COL32(255, 120, 120, 255);
-                else
-                    displayColor = IM_COL32(80, 220, 255, 255);
-
-                if (selection::maskHasAnySelected(committedMask)) render::drawMaskSolidOutline(drawList, committedMask, canvasWidth, canvasHeight, imagePos, zoom, IM_COL32(190, 170, 80, 180), 1.0f);
-            }
-        }
-
+        // 多边形套索在“移动鼠标预览下一条边”时也只画辅助线；
+        // 闭合点击发生后再生成最终 mask，避免鼠标移动时反复填充大多边形。
+        drawCommittedReferenceOutline();
         render::drawPolygonLassoGuide(drawList, previewVertices, m_state.lassoPathPixels, imagePos, zoom);
+        return;
     }
     else if (m_state.mode == InteractionState::Mode::Moving && m_state.previewBoundsValid && m_sourceCacheValid)
     {
@@ -802,13 +837,25 @@ void RectSelectionTool::renderOverlay(const AppContext& context,
         displayColor = IM_COL32(80, 220, 255, 255);
     }
 
-    if (!selection::maskHasAnySelected(displayMask)) return;
+    if (displayMask.empty()) return;
+    if (!hasCommittedSelection && !selection::maskHasAnySelected(displayMask)) return;
 
-    render::drawMaskSolidOutline(drawList, displayMask, canvasWidth, canvasHeight, imagePos, zoom, displayColor, 1.2f);
-    render::drawMarchingAntsMask(drawList, displayMask, canvasWidth, canvasHeight, imagePos, zoom, segmentLength, timePhase);
+    const bool canUseCommittedRectFastPath =
+        m_state.mode == InteractionState::Mode::None
+        && hasCurrentBounds
+        && isMaskSolidInsideRect(displayMask, canvasWidth, canvasHeight, currentBounds);
 
-    AppContext::PixelRect currentBounds;
-    const bool hasCurrentBounds = context.getPixelSelectionBounds(currentBounds);
+    if (canUseCommittedRectFastPath)
+    {
+        // 已提交的纯矩形选区也走快速路径，避免空闲状态下每帧重复扫描 mask 画边。
+        render::drawPixelRectSolidOutline(drawList, currentBounds, imagePos, zoom, displayColor, 1.2f);
+        render::drawMarchingAntsPixelRect(drawList, currentBounds, imagePos, zoom, segmentLength, timePhase);
+    }
+    else
+    {
+        render::drawMaskSolidOutline(drawList, displayMask, canvasWidth, canvasHeight, imagePos, zoom, displayColor, 1.2f);
+        render::drawMarchingAntsMask(drawList, displayMask, canvasWidth, canvasHeight, imagePos, zoom, segmentLength, timePhase);
+    }
 
     /**
      * 8 手柄显示策略：

@@ -68,6 +68,62 @@ namespace
         }
         return -1;
     }
+
+    std::vector<int> buildPlaybackFramesForCurrentFrame(const std::vector<AppContext::FrameGroup>& groups,
+                                                        int currentFrame,
+                                                        int frameCount)
+    {
+        std::vector<int> playbackFrames;
+        if (frameCount <= 0) return playbackFrames;
+
+        const int groupIndex = findFrameGroupIndex(groups, currentFrame);
+        if (groupIndex < 0)
+        {
+            // 当前帧不属于任何分组时，保持旧行为：播放完整时间轴。
+            playbackFrames.reserve(static_cast<size_t>(frameCount));
+            for (int i = 0; i < frameCount; ++i) playbackFrames.push_back(i);
+            return playbackFrames;
+        }
+
+        // 当前帧属于某个分组时，只播放该组内帧。
+        // 这里按时间轴索引排序，避免 Ctrl 多选的点击顺序影响播放顺序。
+        playbackFrames = groups[static_cast<size_t>(groupIndex)].frameIndices;
+        playbackFrames.erase(
+            std::remove_if(
+                playbackFrames.begin(),
+                playbackFrames.end(),
+                [frameCount](int index) { return index < 0 || index >= frameCount; }),
+            playbackFrames.end());
+        std::sort(playbackFrames.begin(), playbackFrames.end());
+        playbackFrames.erase(std::unique(playbackFrames.begin(), playbackFrames.end()), playbackFrames.end());
+
+        if (playbackFrames.empty()) playbackFrames.push_back(std::clamp(currentFrame, 0, frameCount - 1));
+        return playbackFrames;
+    }
+
+    int findNextPlaybackFrame(const std::vector<int>& playbackFrames,
+                              int currentFrame,
+                              bool loopEnabled,
+                              bool& outReachedEnd)
+    {
+        outReachedEnd = false;
+        if (playbackFrames.empty()) return currentFrame;
+
+        const auto currentIt = std::lower_bound(playbackFrames.begin(), playbackFrames.end(), currentFrame);
+        if (currentIt != playbackFrames.end() && *currentIt == currentFrame)
+        {
+            const auto nextIt = currentIt + 1;
+            if (nextIt != playbackFrames.end()) return *nextIt;
+        }
+        else if (currentIt != playbackFrames.end())
+        {
+            // 当前帧不在播放集合但位于集合中间时，前进到后面的第一个合法帧。
+            return *currentIt;
+        }
+
+        outReachedEnd = true;
+        return loopEnabled ? playbackFrames.front() : playbackFrames.back();
+    }
 } // namespace
 
 void ProjectWindow::renderTimelinePanel(Project* project)
@@ -217,19 +273,20 @@ void ProjectWindow::renderTimelinePanel(Project* project)
         while (m_timelineState.accumulator >= frameDuration)
         {
             m_timelineState.accumulator -= frameDuration;
-            int next = context->getCurrentFrameIndex() + 1;
-            if (next >= frameCount)
+            const std::vector<int> playbackFrames = buildPlaybackFramesForCurrentFrame(
+                frameGroups,
+                context->getCurrentFrameIndex(),
+                frameCount);
+            bool reachedEnd = false;
+            const int next = findNextPlaybackFrame(
+                playbackFrames,
+                context->getCurrentFrameIndex(),
+                m_timelineState.loopEnabled,
+                reachedEnd);
+            if (reachedEnd && !m_timelineState.loopEnabled)
             {
-                if (m_timelineState.loopEnabled)
-                {
-                    next = 0;
-                }
-                else
-                {
-                    next = frameCount - 1;
-                    m_timelineState.isPlaying = false;
-                    m_timelineState.accumulator = 0.0;
-                }
+                m_timelineState.isPlaying = false;
+                m_timelineState.accumulator = 0.0;
             }
             // 播放切帧属于“显示帧切换”，同步为单选，避免与手动多选语义冲突。
             context->setSingleFrameSelection(next, frameCount);
@@ -241,15 +298,19 @@ void ProjectWindow::renderTimelinePanel(Project* project)
     const float headerH = 18.0f;
     for (int i = 0; i < frameCount; ++i)
     {
-        ImGui::PushID(1000 + i);
-        ImGui::BeginGroup();
-        ImGui::Text(" %d", i + 1);
-        ImGui::EndGroup();
-        ImGui::PopID();
-        ImGui::SameLine(0.0f, cellW - 8.0f);
+        // 帧号按单元格宽度手动居中绘制，避免 1 位数/2 位数宽度不同导致视觉偏移。
+        const ImVec2 cellPos = ImGui::GetCursorScreenPos();
+        const std::string label = std::to_string(i + 1);
+        const ImVec2 textSize = ImGui::CalcTextSize(label.c_str());
+        ImGui::GetWindowDrawList()->AddText(
+            ImVec2(
+                cellPos.x + (cellW - textSize.x) * 0.5f,
+                cellPos.y + (headerH - textSize.y) * 0.5f),
+            ImGui::GetColorU32(ImGuiCol_Text),
+            label.c_str());
+        ImGui::Dummy(ImVec2(cellW, headerH));
+        if (i + 1 < frameCount) ImGui::SameLine();
     }
-
-    ImGui::Dummy(ImVec2(0.0f, headerH));
 
     // 由于下面会遍历 frameGroups 引用，为避免遍历期间直接修改容器导致引用失效，
     // 分组删除操作采用“延迟执行”策略：先记录索引，循环结束后再真正删除。

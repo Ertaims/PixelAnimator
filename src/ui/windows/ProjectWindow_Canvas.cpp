@@ -121,6 +121,28 @@ namespace
         return IM_COL32(r, g, b, a);
     }
 
+    ImU32 makeOnionSkinPixelColor(uint32_t pixel,
+                                  uint32_t tintColor,
+                                  int previewAlpha,
+                                  bool preserveOriginalColors)
+    {
+        const int pixelR = static_cast<int>(pixel & 0xFFu);
+        const int pixelG = static_cast<int>((pixel >> 8) & 0xFFu);
+        const int pixelB = static_cast<int>((pixel >> 16) & 0xFFu);
+        const int pixelA = static_cast<int>((pixel >> 24) & 0xFFu);
+        const int alpha = std::clamp((pixelA * std::clamp(previewAlpha, 0, 255)) / 255, 0, 255);
+
+        if (preserveOriginalColors)
+        {
+            return IM_COL32(pixelR, pixelG, pixelB, alpha);
+        }
+
+        const int tintR = static_cast<int>(tintColor & 0xFFu);
+        const int tintG = static_cast<int>((tintColor >> 8) & 0xFFu);
+        const int tintB = static_cast<int>((tintColor >> 16) & 0xFFu);
+        return IM_COL32((pixelR + tintR) / 2, (pixelG + tintG) / 2, (pixelB + tintB) / 2, alpha);
+    }
+
     /**
      * @brief 根据当前对称开关生成“原始点 + 镜像点”列表。
      *
@@ -440,12 +462,8 @@ void ProjectWindow::renderCanvasPanel(Project* project)
                 const int tileX = tx / tilePixels;
                 const int tileY = ty / tilePixels;
                 const ImU32 col = ((tileX + tileY) % 2 == 0) ? c1 : c2;
-                const ImVec2 p0(
-                    imageMin.x + static_cast<float>(tx * zoom),
-                    imageMin.y + static_cast<float>(ty * zoom));
-                const ImVec2 p1(
-                    imageMin.x + static_cast<float>(nextX * zoom),
-                    imageMin.y + static_cast<float>(nextY * zoom));
+                const ImVec2 p0(imageMin.x + static_cast<float>(tx * zoom), imageMin.y + static_cast<float>(ty * zoom));
+                const ImVec2 p1(imageMin.x + static_cast<float>(nextX * zoom), imageMin.y + static_cast<float>(nextY * zoom));
                 drawList->AddRectFilled(p0, p1, col);
             }
         }
@@ -465,16 +483,7 @@ void ProjectWindow::renderCanvasPanel(Project* project)
         const int baseNextAlpha = context->getOnionSkinNextAlpha();
         const uint32_t previousColor = context->getOnionSkinPreviousColor();
         const uint32_t nextColor = context->getOnionSkinNextColor();
-
-        // 提取前帧颜色通道
-        const int prevR = static_cast<int>(previousColor & 0xFFu);
-        const int prevG = static_cast<int>((previousColor >> 8) & 0xFFu);
-        const int prevB = static_cast<int>((previousColor >> 16) & 0xFFu);
-
-        // 提取后帧颜色通道
-        const int nextR = static_cast<int>(nextColor & 0xFFu);
-        const int nextG = static_cast<int>((nextColor >> 8) & 0xFFu);
-        const int nextB = static_cast<int>((nextColor >> 16) & 0xFFu);
+        const bool preserveOriginalColors = context->isOnionSkinPreserveOriginalColors();
 
         // 渲染之前的帧
         for (int i = 1; i <= previousFrames; ++i)
@@ -494,18 +503,9 @@ void ProjectWindow::renderCanvasPanel(Project* project)
                 {
                     const size_t index = static_cast<size_t>(y) * static_cast<size_t>(width) + static_cast<size_t>(x);
                     const uint32_t pixel = prevPixels[index];
-                    if (pixel == 0) continue; // 跳过透明像素
+                    if (((pixel >> 24) & 0xFFu) == 0) continue; // 跳过透明像素
 
-                    // 提取像素颜色并与前帧颜色混合
-                    const int r = static_cast<int>(pixel & 0xFFu);
-                    const int g = static_cast<int>((pixel >> 8) & 0xFFu);
-                    const int b = static_cast<int>((pixel >> 16) & 0xFFu);
-
-                    // 颜色混合：使用前帧颜色作为滤镜
-                    const int mixedR = (r + prevR) / 2;
-                    const int mixedG = (g + prevG) / 2;
-                    const int mixedB = (b + prevB) / 2;
-                    const ImU32 color = IM_COL32(mixedR, mixedG, mixedB, alpha);
+                    const ImU32 color = makeOnionSkinPixelColor(pixel, previousColor, alpha, preserveOriginalColors);
 
                     const ImVec2 p0(
                         imagePos.x + static_cast<float>(x * zoom),
@@ -536,18 +536,9 @@ void ProjectWindow::renderCanvasPanel(Project* project)
                 {
                     const size_t index = static_cast<size_t>(y) * static_cast<size_t>(width) + static_cast<size_t>(x);
                     const uint32_t pixel = nextPixels[index];
-                    if (pixel == 0) continue; // 跳过透明像素
+                    if (((pixel >> 24) & 0xFFu) == 0) continue; // 跳过透明像素
 
-                    // 提取像素颜色并与后帧颜色混合
-                    const int r = static_cast<int>(pixel & 0xFFu);
-                    const int g = static_cast<int>((pixel >> 8) & 0xFFu);
-                    const int b = static_cast<int>((pixel >> 16) & 0xFFu);
-
-                    // 颜色混合：使用后帧颜色作为滤镜
-                    const int mixedR = (r + nextR) / 2;
-                    const int mixedG = (g + nextG) / 2;
-                    const int mixedB = (b + nextB) / 2;
-                    const ImU32 color = IM_COL32(mixedR, mixedG, mixedB, alpha);
+                    const ImU32 color = makeOnionSkinPixelColor(pixel, nextColor, alpha, preserveOriginalColors);
 
                     const ImVec2 p0(
                         imagePos.x + static_cast<float>(x * zoom),
@@ -674,7 +665,7 @@ void ProjectWindow::renderCanvasPanel(Project* project)
     // 将矩形框选工具作为独立类处理输入与叠加渲染。
     if (!blockNormalToolInput && context->getTool() == ToolType::RectSelection)
     {
-        bool selectionPixelsChanged = false;
+        bool selectionTransformCommitted = false;
         m_rectSelectionTool.handleInteraction(
             *context,
             frame,
@@ -686,10 +677,10 @@ void ProjectWindow::renderCanvasPanel(Project* project)
             zoom,
             width,
             height,
-            selectionPixelsChanged);
+            selectionTransformCommitted);
 
-        // 框选工具对像素产生变换（平移/缩放）后，同样需要标记项目已修改。
-        if (selectionPixelsChanged)
+        // 框选平移/缩放的拖拽过程只是实时预览；鼠标松开完成提交后才记录一次 Undo。
+        if (selectionTransformCommitted)
         {
             if (context->hasMultiFrameSelection()) context->setSingleFrameSelection(frameIndex, frameCount);
             context->setProjectDirty(true, "Selection Transform");
@@ -1057,5 +1048,4 @@ void ProjectWindow::renderCanvasPanel(Project* project)
         drawList->PopClipRect();
     }
 }
-
 

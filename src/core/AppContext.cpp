@@ -53,11 +53,6 @@ namespace
         return true;
     }
 
-    bool containsSelectedPixel(const std::vector<uint8_t>& mask)
-    {
-        return std::find(mask.begin(), mask.end(), static_cast<uint8_t>(1)) != mask.end();
-    }
-
     int roundHalfUp(double value)
     {
         return static_cast<int>(std::floor(value + 0.5));
@@ -292,6 +287,44 @@ void AppContext::setCanvasZoom(int zoom)
     // 非法值忽略，或 clamp 到最近
 }
 
+void AppContext::rebuildPixelSelectionMeta()
+{
+    m_pixelSelectionHasAny = false;
+    m_pixelSelectionBounds = {};
+
+    if (m_pixelSelectionCanvasWidth <= 0 || m_pixelSelectionCanvasHeight <= 0 || m_pixelSelectionMask.empty()) return;
+
+    int minX = m_pixelSelectionCanvasWidth;
+    int minY = m_pixelSelectionCanvasHeight;
+    int maxX = -1;
+    int maxY = -1;
+
+    // 选区内容变化后集中扫描一次，缓存“是否有选区”和外接矩形。
+    // 这样渲染层每帧取 bounds 时不再重复全画布扫描。
+    for (int y = 0; y < m_pixelSelectionCanvasHeight; ++y)
+    {
+        const size_t rowOffset = static_cast<size_t>(y) * static_cast<size_t>(m_pixelSelectionCanvasWidth);
+        for (int x = 0; x < m_pixelSelectionCanvasWidth; ++x)
+        {
+            const size_t index = rowOffset + static_cast<size_t>(x);
+            if (m_pixelSelectionMask[index] == 0) continue;
+
+            m_pixelSelectionHasAny = true;
+            minX = std::min(minX, x);
+            minY = std::min(minY, y);
+            maxX = std::max(maxX, x);
+            maxY = std::max(maxY, y);
+        }
+    }
+
+    if (!m_pixelSelectionHasAny) return;
+
+    m_pixelSelectionBounds.x = minX;
+    m_pixelSelectionBounds.y = minY;
+    m_pixelSelectionBounds.width = maxX - minX + 1;
+    m_pixelSelectionBounds.height = maxY - minY + 1;
+}
+
 void AppContext::ensurePixelSelectionCanvasSize(int canvasWidth, int canvasHeight)
 {
     if (canvasWidth <= 0 || canvasHeight <= 0)
@@ -300,6 +333,7 @@ void AppContext::ensurePixelSelectionCanvasSize(int canvasWidth, int canvasHeigh
         m_pixelSelectionCanvasHeight = 0;
         m_pixelSelectionMask.clear();
         m_pixelSelectionHasAny = false;
+        m_pixelSelectionBounds = {};
         return;
     }
 
@@ -314,6 +348,7 @@ void AppContext::ensurePixelSelectionCanvasSize(int canvasWidth, int canvasHeigh
     m_pixelSelectionCanvasHeight = canvasHeight;
     m_pixelSelectionMask.assign(static_cast<size_t>(canvasWidth) * static_cast<size_t>(canvasHeight), static_cast<uint8_t>(0));
     m_pixelSelectionHasAny = false;
+    m_pixelSelectionBounds = {};
 }
 
 bool AppContext::hasPixelSelection() const
@@ -321,10 +356,25 @@ bool AppContext::hasPixelSelection() const
     return m_pixelSelectionHasAny;
 }
 
+bool AppContext::isPixelSelectionMaskCompatible(int canvasWidth, int canvasHeight) const
+{
+    return canvasWidth > 0
+        && canvasHeight > 0
+        && m_pixelSelectionCanvasWidth == canvasWidth
+        && m_pixelSelectionCanvasHeight == canvasHeight
+        && m_pixelSelectionMask.size() == static_cast<size_t>(canvasWidth) * static_cast<size_t>(canvasHeight);
+}
+
+const std::vector<uint8_t>& AppContext::getPixelSelectionMask() const
+{
+    return m_pixelSelectionMask;
+}
+
 void AppContext::clearPixelSelection()
 {
     std::fill(m_pixelSelectionMask.begin(), m_pixelSelectionMask.end(), static_cast<uint8_t>(0));
     m_pixelSelectionHasAny = false;
+    m_pixelSelectionBounds = {};
 }
 
 bool AppContext::isPixelSelected(int x, int y, int canvasWidth, int canvasHeight) const
@@ -378,7 +428,7 @@ bool AppContext::applyRectPixelSelection(int x0,
         }
     }
 
-    m_pixelSelectionHasAny = containsSelectedPixel(m_pixelSelectionMask);
+    rebuildPixelSelectionMeta();
     return m_pixelSelectionMask != beforeMask;
 }
 
@@ -402,7 +452,7 @@ bool AppContext::applyEllipsePixelSelection(int x0,
     const std::vector<uint8_t> beforeMask = m_pixelSelectionMask;
     applyEllipseSelectionToMask(m_pixelSelectionMask, canvasWidth, canvasHeight, rect, op);
 
-    m_pixelSelectionHasAny = containsSelectedPixel(m_pixelSelectionMask);
+    rebuildPixelSelectionMeta();
     return m_pixelSelectionMask != beforeMask;
 }
 
@@ -428,41 +478,14 @@ bool AppContext::applyMaskPixelSelection(const std::vector<uint8_t>& inputMask,
             m_pixelSelectionMask[i] = 1;
     }
 
-    m_pixelSelectionHasAny = containsSelectedPixel(m_pixelSelectionMask);
+    rebuildPixelSelectionMeta();
     return m_pixelSelectionMask != beforeMask;
 }
 
 bool AppContext::getPixelSelectionBounds(PixelRect& outRect) const
 {
-    if (m_pixelSelectionCanvasWidth <= 0 || m_pixelSelectionCanvasHeight <= 0 || m_pixelSelectionMask.empty()) return false;
-
-    int minX = m_pixelSelectionCanvasWidth;
-    int minY = m_pixelSelectionCanvasHeight;
-    int maxX = -1;
-    int maxY = -1;
-    bool found = false;
-
-    for (int y = 0; y < m_pixelSelectionCanvasHeight; ++y)
-    {
-        const size_t rowOffset = static_cast<size_t>(y) * static_cast<size_t>(m_pixelSelectionCanvasWidth);
-        for (int x = 0; x < m_pixelSelectionCanvasWidth; ++x)
-        {
-            const size_t index = rowOffset + static_cast<size_t>(x);
-            if (m_pixelSelectionMask[index] == 0) continue;
-            found = true;
-            minX = std::min(minX, x);
-            minY = std::min(minY, y);
-            maxX = std::max(maxX, x);
-            maxY = std::max(maxY, y);
-        }
-    }
-
-    if (!found) return false;
-
-    outRect.x = minX;
-    outRect.y = minY;
-    outRect.width = maxX - minX + 1;
-    outRect.height = maxY - minY + 1;
+    if (!m_pixelSelectionHasAny) return false;
+    outRect = m_pixelSelectionBounds;
     return true;
 }
 
@@ -493,7 +516,7 @@ bool AppContext::movePixelSelection(int dx, int dy)
     }
 
     m_pixelSelectionMask.swap(movedMask);
-    m_pixelSelectionHasAny = containsSelectedPixel(m_pixelSelectionMask);
+    rebuildPixelSelectionMeta();
     return m_pixelSelectionMask != beforeMask;
 }
 
@@ -555,7 +578,7 @@ bool AppContext::transformPixelSelectionByRect(const PixelRect& fromRect,
     }
 
     m_pixelSelectionMask.swap(transformedMask);
-    m_pixelSelectionHasAny = containsSelectedPixel(m_pixelSelectionMask);
+    rebuildPixelSelectionMeta();
     return m_pixelSelectionMask != beforeMask;
 }
 
@@ -932,6 +955,7 @@ void AppContext::applyUndoHistoryEntry(const UndoHistoryEntry& entry)
     m_pixelSelectionCanvasHeight = entry.selectionCanvasHeight;
     m_pixelSelectionMask = entry.selectionMask;
     m_pixelSelectionHasAny = entry.selectionHasAny;
+    rebuildPixelSelectionMeta();
 
     // 恢复后做一次统一校正，避免索引因历史差异越界。
     sanitizeFrameSelection(m_project->getFrameCount(), m_currentFrameIndex);
