@@ -90,6 +90,17 @@ namespace
       - for frame in frames
       -   for layer in layers
       -     layerPixels[width*height] (uint32_t RGBA8888)
+
+    V4 layout
+    ---------
+    在 V3 的 frame/layer pixels 后追加：
+    - frameGroupCount(u32)
+    - repeated frame group metadata:
+      - nameLength(u32)
+      - frameIndexCount(u32)
+      - colorRGBA(u32)
+      - groupNameBytes[nameLength]
+      - frameIndices[frameIndexCount] (u32, 0-based)
     *************************************************************************************/
 
     // 文件头（固定区）：
@@ -119,6 +130,8 @@ namespace
     constexpr uint32_t kVersionV2 = 2;
     // v3：基础头 + 项目名长度 + 图层信息 + 多图层帧像素
     constexpr uint32_t kVersionV3 = 3;
+    // v4：在 v3 基础上追加时间轴帧分组
+    constexpr uint32_t kVersionV4 = 4;
 
     struct FileHeaderV3LayerBlock
     {
@@ -133,9 +146,60 @@ namespace
         uint32_t locked;
         float opacity;
     };
+
+    struct FileHeaderV4FrameGroupBlock
+    {
+        uint32_t groupCount;
+    };
+
+    struct FileHeaderV4FrameGroupEntry
+    {
+        uint32_t nameLength;
+        uint32_t frameIndexCount;
+        uint32_t colorRGBA;
+    };
+
+    std::vector<ProjectSerializer::FrameGroupInfo> normalizeFrameGroupsForSave(
+        const std::vector<ProjectSerializer::FrameGroupInfo>& frameGroups,
+        int frameCount)
+    {
+        std::vector<ProjectSerializer::FrameGroupInfo> normalizedGroups;
+        normalizedGroups.reserve(frameGroups.size());
+
+        for (const ProjectSerializer::FrameGroupInfo& group : frameGroups)
+        {
+            ProjectSerializer::FrameGroupInfo normalized;
+            normalized.name = group.name;
+            normalized.colorRGBA = group.colorRGBA;
+
+            for (int frameIndex : group.frameIndices)
+            {
+                if (frameIndex < 0 || frameIndex >= frameCount) continue;
+                if (std::find(normalized.frameIndices.begin(), normalized.frameIndices.end(), frameIndex)
+                    != normalized.frameIndices.end())
+                {
+                    continue;
+                }
+                normalized.frameIndices.push_back(frameIndex);
+            }
+
+            if (!normalized.frameIndices.empty()) normalizedGroups.push_back(std::move(normalized));
+        }
+
+        return normalizedGroups;
+    }
 } // namespace
 
 bool ProjectSerializer::save(const Project& project, const std::string& path, std::string* errorMessage)
+{
+    const std::vector<FrameGroupInfo> emptyFrameGroups;
+    return save(project, emptyFrameGroups, path, errorMessage);
+}
+
+bool ProjectSerializer::save(const Project& project,
+                             const std::vector<FrameGroupInfo>& frameGroups,
+                             const std::string& path,
+                             std::string* errorMessage)
 {
     // 打开输出流（二进制）。失败通常是路径无效或目录不存在/无权限。
     std::ofstream out(path, std::ios::binary);
@@ -146,10 +210,10 @@ bool ProjectSerializer::save(const Project& project, const std::string& path, st
     }
 
     // 组装头信息。
-    // 当前保存一律写为 v3，把图层结构与多图层像素一并持久化。
+    // 当前保存一律写为 v4，把图层结构、多图层像素与时间轴帧分组一并持久化。
     FileHeader header{};
     std::copy(kMagic.begin(), kMagic.end(), header.magic);
-    header.version = kVersionV3;
+    header.version = kVersionV4;
     header.width = static_cast<uint32_t>(project.getWidth());
     header.height = static_cast<uint32_t>(project.getHeight());
     header.frameCount = static_cast<uint32_t>(project.getFrameCount());
@@ -239,11 +303,69 @@ bool ProjectSerializer::save(const Project& project, const std::string& path, st
         }
     }
 
+    // 写 v4 时间轴帧分组。
+    const std::vector<FrameGroupInfo> normalizedGroups =
+        normalizeFrameGroupsForSave(frameGroups, project.getFrameCount());
+    const FileHeaderV4FrameGroupBlock frameGroupBlock{
+        static_cast<uint32_t>(normalizedGroups.size())
+    };
+    out.write(reinterpret_cast<const char*>(&frameGroupBlock), sizeof(frameGroupBlock));
+    if (!out)
+    {
+        if (errorMessage) *errorMessage = "Failed to write frame group block.";
+        return false;
+    }
+
+    for (const FrameGroupInfo& group : normalizedGroups)
+    {
+        const FileHeaderV4FrameGroupEntry groupEntry{
+            static_cast<uint32_t>(group.name.size()),
+            static_cast<uint32_t>(group.frameIndices.size()),
+            group.colorRGBA
+        };
+        out.write(reinterpret_cast<const char*>(&groupEntry), sizeof(groupEntry));
+        if (!out)
+        {
+            if (errorMessage) *errorMessage = "Failed to write frame group metadata.";
+            return false;
+        }
+
+        if (groupEntry.nameLength > 0)
+        {
+            out.write(group.name.data(), static_cast<std::streamsize>(groupEntry.nameLength));
+            if (!out)
+            {
+                if (errorMessage) *errorMessage = "Failed to write frame group name.";
+                return false;
+            }
+        }
+
+        for (int frameIndex : group.frameIndices)
+        {
+            const uint32_t storedFrameIndex = static_cast<uint32_t>(frameIndex);
+            out.write(reinterpret_cast<const char*>(&storedFrameIndex), sizeof(storedFrameIndex));
+            if (!out)
+            {
+                if (errorMessage) *errorMessage = "Failed to write frame group indices.";
+                return false;
+            }
+        }
+    }
+
     return true;
 }
 
 std::unique_ptr<Project> ProjectSerializer::load(const std::string& path, std::string* errorMessage)
 {
+    return load(path, nullptr, errorMessage);
+}
+
+std::unique_ptr<Project> ProjectSerializer::load(const std::string& path,
+                                                 std::vector<FrameGroupInfo>* outFrameGroups,
+                                                 std::string* errorMessage)
+{
+    if (outFrameGroups) outFrameGroups->clear();
+
     // 打开输入流（二进制）。
     std::ifstream in(path, std::ios::binary);
     if (!in)
@@ -268,10 +390,10 @@ std::unique_ptr<Project> ProjectSerializer::load(const std::string& path, std::s
         return nullptr;
     }
 
-    // 当前支持历史 v2（单图层）与 v3（多图层）。
-    if (header.version != kVersionV2 && header.version != kVersionV3)
+    // 当前支持历史 v2（单图层）、v3（多图层）与 v4（帧分组）。
+    if (header.version != kVersionV2 && header.version != kVersionV3 && header.version != kVersionV4)
     {
-        if (errorMessage) *errorMessage = "Unsupported file version. Only v2/v3 are supported.";
+        if (errorMessage) *errorMessage = "Unsupported file version. Only v2/v3/v4 are supported.";
         return nullptr;
     }
 
@@ -396,6 +518,70 @@ std::unique_ptr<Project> ProjectSerializer::load(const std::string& path, std::s
                 return nullptr;
             }
         }
+    }
+
+    // v4：读取时间轴帧分组。旧 v3 文件没有该尾部块，直接返回空分组即可。
+    if (header.version == kVersionV4)
+    {
+        FileHeaderV4FrameGroupBlock frameGroupBlock{};
+        in.read(reinterpret_cast<char*>(&frameGroupBlock), sizeof(frameGroupBlock));
+        if (!in)
+        {
+            if (errorMessage) *errorMessage = "Failed to read frame group block.";
+            return nullptr;
+        }
+
+        std::vector<FrameGroupInfo> loadedGroups;
+        loadedGroups.reserve(frameGroupBlock.groupCount);
+        for (uint32_t groupIndex = 0; groupIndex < frameGroupBlock.groupCount; ++groupIndex)
+        {
+            FileHeaderV4FrameGroupEntry groupEntry{};
+            in.read(reinterpret_cast<char*>(&groupEntry), sizeof(groupEntry));
+            if (!in)
+            {
+                if (errorMessage) *errorMessage = "Failed to read frame group metadata.";
+                return nullptr;
+            }
+
+            FrameGroupInfo group;
+            group.colorRGBA = groupEntry.colorRGBA;
+            if (groupEntry.nameLength > 0)
+            {
+                std::vector<char> nameBytes(groupEntry.nameLength);
+                in.read(nameBytes.data(), static_cast<std::streamsize>(nameBytes.size()));
+                if (!in)
+                {
+                    if (errorMessage) *errorMessage = "Failed to read frame group name.";
+                    return nullptr;
+                }
+                group.name.assign(nameBytes.begin(), nameBytes.end());
+            }
+
+            for (uint32_t i = 0; i < groupEntry.frameIndexCount; ++i)
+            {
+                uint32_t storedFrameIndex = 0;
+                in.read(reinterpret_cast<char*>(&storedFrameIndex), sizeof(storedFrameIndex));
+                if (!in)
+                {
+                    if (errorMessage) *errorMessage = "Failed to read frame group indices.";
+                    return nullptr;
+                }
+
+                if (storedFrameIndex >= header.frameCount) continue;
+                const int frameIndex = static_cast<int>(storedFrameIndex);
+                if (std::find(group.frameIndices.begin(), group.frameIndices.end(), frameIndex)
+                    != group.frameIndices.end())
+                {
+                    continue;
+                }
+                group.frameIndices.push_back(frameIndex);
+            }
+
+            if (group.name.empty()) group.name = "Group " + std::to_string(loadedGroups.size() + 1);
+            if (!group.frameIndices.empty()) loadedGroups.push_back(std::move(group));
+        }
+
+        if (outFrameGroups) *outFrameGroups = std::move(loadedGroups);
     }
 
     return project;

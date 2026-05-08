@@ -18,9 +18,42 @@
 #include <fstream>
 #include <mutex>
 #include <string_view>
+#include <utility>
 
 namespace
 {
+    std::vector<ProjectSerializer::FrameGroupInfo> toSerializerFrameGroups(
+        const std::vector<AppContext::FrameGroup>& frameGroups)
+    {
+        std::vector<ProjectSerializer::FrameGroupInfo> result;
+        result.reserve(frameGroups.size());
+        for (const AppContext::FrameGroup& group : frameGroups)
+        {
+            ProjectSerializer::FrameGroupInfo info;
+            info.name = group.name;
+            info.frameIndices = group.frameIndices;
+            info.colorRGBA = group.colorRGBA;
+            result.push_back(std::move(info));
+        }
+        return result;
+    }
+
+    std::vector<AppContext::FrameGroup> fromSerializerFrameGroups(
+        const std::vector<ProjectSerializer::FrameGroupInfo>& frameGroups)
+    {
+        std::vector<AppContext::FrameGroup> result;
+        result.reserve(frameGroups.size());
+        for (const ProjectSerializer::FrameGroupInfo& info : frameGroups)
+        {
+            AppContext::FrameGroup group;
+            group.name = info.name;
+            group.frameIndices = info.frameIndices;
+            group.colorRGBA = info.colorRGBA;
+            result.push_back(std::move(group));
+        }
+        return result;
+    }
+
     /**
      * @brief 返回字符串的小写副本。
      *
@@ -269,7 +302,7 @@ bool App::saveProjectAs(AppContext* context, const std::string& path, ProjectFil
     std::string error;
     const bool ok = preferredFormat == ProjectFileFormat::Json
         ? ProjectJsonSerializer::save(*project, finalPath, &error)
-        : ProjectSerializer::save(*project, finalPath, &error);
+        : ProjectSerializer::save(*project, toSerializerFrameGroups(context->getFrameGroups()), finalPath, &error);
     if (!ok)
     {
         showError(error.empty() ? "Failed to save project." : error);
@@ -315,9 +348,10 @@ bool App::openProjectFromPath(const std::string& path)
 
     std::string error;
     const ProjectFileFormat format = detectFormatFromPath(path);
+    std::vector<ProjectSerializer::FrameGroupInfo> loadedFrameGroups;
     std::unique_ptr<Project> loadedProject = format == ProjectFileFormat::Json
         ? ProjectJsonSerializer::load(path, &error)
-        : ProjectSerializer::load(path, &error);
+        : ProjectSerializer::load(path, &loadedFrameGroups, &error);
     if (!loadedProject)
     {
         showError(error.empty() ? "Failed to open project." : error);
@@ -326,7 +360,14 @@ bool App::openProjectFromPath(const std::string& path)
 
     if (loadedProject->getName().empty()) loadedProject->setName(projectNameFromPath(path));
 
+    const int loadedFrameCount = loadedProject->getFrameCount();
     createSessionFromProject(std::move(loadedProject), path);
+    if (format == ProjectFileFormat::Binary && m_activeContext)
+    {
+        m_activeContext->setFrameGroups(fromSerializerFrameGroups(loadedFrameGroups), loadedFrameCount);
+        // 帧分组属于撤销快照的一部分；恢复后重建打开基线，避免 Undo History 漏掉分组状态。
+        m_activeContext->resetUndoRedoHistory("Open Project");
+    }
     addRecentProjectPath(path);
     return true;
 }

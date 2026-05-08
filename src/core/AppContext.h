@@ -255,6 +255,14 @@ public:
     }
 
     /**
+     * @brief 直接恢复帧分组列表。
+     *
+     * 主要用于项目文件读取：先把文件中的分组数据放回上下文，
+     * 再按当前帧数清理越界成员，避免损坏文件造成非法索引。
+     */
+    void setFrameGroups(const std::vector<FrameGroup>& frameGroups, int frameCount);
+
+    /**
      * @brief 使用给定帧列表创建一个新分组。
      *
      * 行为约定：

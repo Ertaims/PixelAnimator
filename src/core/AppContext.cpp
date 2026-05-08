@@ -731,6 +731,12 @@ void AppContext::sanitizeFrameGroups(int frameCount)
         m_frameGroups.end());
 }
 
+void AppContext::setFrameGroups(const std::vector<FrameGroup>& frameGroups, int frameCount)
+{
+    m_frameGroups = frameGroups;
+    sanitizeFrameGroups(frameCount);
+}
+
 void AppContext::onFrameInserted(int insertedFrameIndex, int anchorFrameIndex, int frameCount)
 {
     if (insertedFrameIndex < 0) return;
