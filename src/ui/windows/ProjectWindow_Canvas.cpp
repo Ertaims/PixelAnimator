@@ -121,26 +121,70 @@ namespace
         return IM_COL32(r, g, b, a);
     }
 
-    ImU32 makeOnionSkinPixelColor(uint32_t pixel,
-                                  uint32_t tintColor,
-                                  int previewAlpha,
-                                  bool preserveOriginalColors)
+    uint8_t rgbaChannel(uint32_t color, int shift)
     {
-        const int pixelR = static_cast<int>(pixel & 0xFFu);
-        const int pixelG = static_cast<int>((pixel >> 8) & 0xFFu);
-        const int pixelB = static_cast<int>((pixel >> 16) & 0xFFu);
+        return static_cast<uint8_t>((color >> shift) & 0xFFu);
+    }
+
+    uint32_t packRgba(uint8_t r, uint8_t g, uint8_t b, uint8_t a)
+    {
+        return static_cast<uint32_t>(r) |
+               (static_cast<uint32_t>(g) << 8) |
+               (static_cast<uint32_t>(b) << 16) |
+               (static_cast<uint32_t>(a) << 24);
+    }
+
+    uint8_t toByte(float value)
+    {
+        return static_cast<uint8_t>(std::clamp(std::lround(value), 0L, 255L));
+    }
+
+    uint32_t alphaBlendPixel(uint32_t dst, uint32_t src)
+    {
+        const float srcAlpha = static_cast<float>(rgbaChannel(src, 24)) / 255.0f;
+        if (srcAlpha <= 0.0f) return dst;
+        if (srcAlpha >= 1.0f) return (src & 0x00FFFFFFu) | (0xFFu << 24);
+
+        const float dstAlpha = static_cast<float>(rgbaChannel(dst, 24)) / 255.0f;
+        const float outAlpha = srcAlpha + dstAlpha * (1.0f - srcAlpha);
+        if (outAlpha <= 0.0f) return 0x00000000;
+
+        const float dstWeight = dstAlpha * (1.0f - srcAlpha);
+        const float outR = (static_cast<float>(rgbaChannel(src, 0)) * srcAlpha +
+                            static_cast<float>(rgbaChannel(dst, 0)) * dstWeight) / outAlpha;
+        const float outG = (static_cast<float>(rgbaChannel(src, 8)) * srcAlpha +
+                            static_cast<float>(rgbaChannel(dst, 8)) * dstWeight) / outAlpha;
+        const float outB = (static_cast<float>(rgbaChannel(src, 16)) * srcAlpha +
+                            static_cast<float>(rgbaChannel(dst, 16)) * dstWeight) / outAlpha;
+
+        return packRgba(toByte(outR), toByte(outG), toByte(outB), toByte(outAlpha * 255.0f));
+    }
+
+    uint32_t makeOnionSkinOverlayPixel(uint32_t pixel,
+                                       uint32_t tintColor,
+                                       int previewAlpha,
+                                       bool preserveOriginalColors)
+    {
         const int pixelA = static_cast<int>((pixel >> 24) & 0xFFu);
         const int alpha = std::clamp((pixelA * std::clamp(previewAlpha, 0, 255)) / 255, 0, 255);
+        if (alpha <= 0) return 0x00000000;
 
+        const uint8_t pixelR = rgbaChannel(pixel, 0);
+        const uint8_t pixelG = rgbaChannel(pixel, 8);
+        const uint8_t pixelB = rgbaChannel(pixel, 16);
         if (preserveOriginalColors)
         {
-            return IM_COL32(pixelR, pixelG, pixelB, alpha);
+            return packRgba(pixelR, pixelG, pixelB, static_cast<uint8_t>(alpha));
         }
 
-        const int tintR = static_cast<int>(tintColor & 0xFFu);
-        const int tintG = static_cast<int>((tintColor >> 8) & 0xFFu);
-        const int tintB = static_cast<int>((tintColor >> 16) & 0xFFu);
-        return IM_COL32((pixelR + tintR) / 2, (pixelG + tintG) / 2, (pixelB + tintB) / 2, alpha);
+        // 非原色模式保留旧逻辑：用前/后帧 tint 色轻微混合，方便区分时间方向。
+        const uint8_t tintR = rgbaChannel(tintColor, 0);
+        const uint8_t tintG = rgbaChannel(tintColor, 8);
+        const uint8_t tintB = rgbaChannel(tintColor, 16);
+        return packRgba(static_cast<uint8_t>((static_cast<int>(pixelR) + static_cast<int>(tintR)) / 2),
+                        static_cast<uint8_t>((static_cast<int>(pixelG) + static_cast<int>(tintG)) / 2),
+                        static_cast<uint8_t>((static_cast<int>(pixelB) + static_cast<int>(tintB)) / 2),
+                        static_cast<uint8_t>(alpha));
     }
 
     /**
@@ -357,8 +401,6 @@ void ProjectWindow::renderCanvasPanel(Project* project)
 
     Project::Frame& frame = project->getFrame(frameIndex);
     ensureCanvasTexture(width, height);
-    const std::vector<uint32_t> composedFrame = project->composeFrame(frameIndex);
-    uploadCanvasPixels(composedFrame);
 
     auto computeImageMetrics = [&](int zoomValue, float panX, float panY, float& outImageW, float& outImageH, ImVec2& outCenterOffset, ImVec2& outImagePos) {
         outImageW = static_cast<float>(width * zoomValue);
@@ -444,6 +486,30 @@ void ProjectWindow::renderCanvasPanel(Project* project)
     const ImVec2 imageMin = imagePos;
     const ImVec2 imageMax(imagePos.x + imageW, imagePos.y + imageH);
 
+    const uint64_t contentRevision = context->getProjectContentRevision();
+    const bool canvasPixelInputActive =
+        ImGui::IsMouseDown(ImGuiMouseButton_Left) || ImGui::IsMouseDown(ImGuiMouseButton_Right);
+    const bool canvasLivePreviewActive =
+        context->getTool() == ToolType::Curve && m_curveTool.hasActiveInteraction();
+    const bool needsCanvasUpload =
+        canvasPixelInputActive ||
+        canvasLivePreviewActive ||
+        m_canvasCompositionCache.width != width ||
+        m_canvasCompositionCache.height != height ||
+        m_canvasCompositionCache.frameIndex != frameIndex ||
+        m_canvasCompositionCache.contentRevision != contentRevision ||
+        m_canvasCompositionCache.pixels.empty();
+    if (needsCanvasUpload)
+    {
+        // 大画布下不要每帧重复合成/上传；只有内容版本或交互预览变化时才刷新纹理。
+        m_canvasCompositionCache.pixels = project->composeFrame(frameIndex);
+        uploadCanvasPixels(m_canvasCompositionCache.pixels);
+        m_canvasCompositionCache.width = width;
+        m_canvasCompositionCache.height = height;
+        m_canvasCompositionCache.frameIndex = frameIndex;
+        m_canvasCompositionCache.contentRevision = contentRevision;
+    }
+
     if (context->isCheckerboardBackgroundEnabled())
     {
         const ImU32 c1 = IM_COL32(70, 70, 70, 255);
@@ -473,10 +539,9 @@ void ProjectWindow::renderCanvasPanel(Project* project)
         drawList->AddRectFilled(imageMin, imageMax, IM_COL32(255, 255, 255, 255));
     }
 
-    // 洋葱皮功能：渲染前后帧的半透明预览
+    // 洋葱皮功能：先合成到一张纹理，再一次性绘制，避免大画布提交海量 ImGui 矩形。
     if (context->isOnionSkinEnabled() && frameCount > 1)
     {
-        // 获取洋葱皮设置
         const int previousFrames = context->getOnionSkinPreviousFrames();
         const int nextFrames = context->getOnionSkinNextFrames();
         const int basePreviousAlpha = context->getOnionSkinPreviousAlpha();
@@ -484,72 +549,97 @@ void ProjectWindow::renderCanvasPanel(Project* project)
         const uint32_t previousColor = context->getOnionSkinPreviousColor();
         const uint32_t nextColor = context->getOnionSkinNextColor();
         const bool preserveOriginalColors = context->isOnionSkinPreserveOriginalColors();
+        const bool needsOnionUpload =
+            m_onionSkinOverlayCache.width != width ||
+            m_onionSkinOverlayCache.height != height ||
+            m_onionSkinOverlayCache.frameIndex != frameIndex ||
+            m_onionSkinOverlayCache.frameCount != frameCount ||
+            m_onionSkinOverlayCache.previousFrames != previousFrames ||
+            m_onionSkinOverlayCache.nextFrames != nextFrames ||
+            m_onionSkinOverlayCache.previousAlpha != basePreviousAlpha ||
+            m_onionSkinOverlayCache.nextAlpha != baseNextAlpha ||
+            m_onionSkinOverlayCache.previousColor != previousColor ||
+            m_onionSkinOverlayCache.nextColor != nextColor ||
+            m_onionSkinOverlayCache.preserveOriginalColors != preserveOriginalColors ||
+            m_onionSkinOverlayCache.contentRevision != contentRevision ||
+            m_onionSkinOverlayCache.pixels.empty();
 
-        // 渲染之前的帧
-        for (int i = 1; i <= previousFrames; ++i)
+        if (needsOnionUpload)
         {
-            const int prevFrameIndex = frameIndex - i;
-            if (prevFrameIndex < 0) break;
+            const size_t pixelCount = static_cast<size_t>(width) * static_cast<size_t>(height);
+            m_onionSkinOverlayCache.pixels.assign(pixelCount, 0x00000000);
+            bool hasVisiblePixels = false;
 
-            const std::vector<uint32_t> prevPixels = project->composeFrame(prevFrameIndex);
-            // 透明度渐变：离当前帧越远，透明度越低
-            const float alphaFactor = static_cast<float>(previousFrames - i + 1) / static_cast<float>(previousFrames + 1);
-            const int alpha = static_cast<int>(basePreviousAlpha * alphaFactor);
-
-            // 渲染前帧的半透明像素
-            for (int y = 0; y < height; ++y)
-            {
-                for (int x = 0; x < width; ++x)
+            auto blendFrameIntoOverlay = [&](int sourceFrameIndex, int alpha, uint32_t tintColor) {
+                const std::vector<uint32_t> sourcePixels = project->composeFrame(sourceFrameIndex);
+                const size_t count = std::min(m_onionSkinOverlayCache.pixels.size(), sourcePixels.size());
+                for (size_t index = 0; index < count; ++index)
                 {
-                    const size_t index = static_cast<size_t>(y) * static_cast<size_t>(width) + static_cast<size_t>(x);
-                    const uint32_t pixel = prevPixels[index];
-                    if (((pixel >> 24) & 0xFFu) == 0) continue; // 跳过透明像素
+                    const uint32_t sourcePixel = sourcePixels[index];
+                    if (((sourcePixel >> 24) & 0xFFu) == 0) continue;
 
-                    const ImU32 color = makeOnionSkinPixelColor(pixel, previousColor, alpha, preserveOriginalColors);
+                    const uint32_t overlayPixel =
+                        makeOnionSkinOverlayPixel(sourcePixel, tintColor, alpha, preserveOriginalColors);
+                    if (((overlayPixel >> 24) & 0xFFu) == 0) continue;
 
-                    const ImVec2 p0(
-                        imagePos.x + static_cast<float>(x * zoom),
-                        imagePos.y + static_cast<float>(y * zoom));
-                    const ImVec2 p1(
-                        imagePos.x + static_cast<float>((x + 1) * zoom),
-                        imagePos.y + static_cast<float>((y + 1) * zoom));
-                    drawList->AddRectFilled(p0, p1, color);
+                    m_onionSkinOverlayCache.pixels[index] =
+                        alphaBlendPixel(m_onionSkinOverlayCache.pixels[index], overlayPixel);
+                    hasVisiblePixels = true;
                 }
+            };
+
+            for (int i = previousFrames; i >= 1; --i)
+            {
+                const int prevFrameIndex = frameIndex - i;
+                if (prevFrameIndex < 0) continue;
+
+                // 越靠近当前帧越明显；远处帧先混合，近处帧后混合，视觉上更自然。
+                const float alphaFactor = static_cast<float>(previousFrames - i + 1) /
+                                          static_cast<float>(previousFrames + 1);
+                blendFrameIntoOverlay(prevFrameIndex, static_cast<int>(basePreviousAlpha * alphaFactor), previousColor);
             }
+
+            for (int i = nextFrames; i >= 1; --i)
+            {
+                const int nextFrameIndex = frameIndex + i;
+                if (nextFrameIndex >= frameCount) continue;
+
+                const float alphaFactor = static_cast<float>(nextFrames - i + 1) /
+                                          static_cast<float>(nextFrames + 1);
+                blendFrameIntoOverlay(nextFrameIndex, static_cast<int>(baseNextAlpha * alphaFactor), nextColor);
+            }
+
+            m_onionSkinTexture.ensureSize(width, height);
+            if (hasVisiblePixels) m_onionSkinTexture.uploadPixels(m_onionSkinOverlayCache.pixels);
+
+            m_onionSkinOverlayCache.width = width;
+            m_onionSkinOverlayCache.height = height;
+            m_onionSkinOverlayCache.frameIndex = frameIndex;
+            m_onionSkinOverlayCache.frameCount = frameCount;
+            m_onionSkinOverlayCache.previousFrames = previousFrames;
+            m_onionSkinOverlayCache.nextFrames = nextFrames;
+            m_onionSkinOverlayCache.previousAlpha = basePreviousAlpha;
+            m_onionSkinOverlayCache.nextAlpha = baseNextAlpha;
+            m_onionSkinOverlayCache.previousColor = previousColor;
+            m_onionSkinOverlayCache.nextColor = nextColor;
+            m_onionSkinOverlayCache.preserveOriginalColors = preserveOriginalColors;
+            m_onionSkinOverlayCache.contentRevision = contentRevision;
+            m_onionSkinOverlayCache.hasVisiblePixels = hasVisiblePixels;
         }
 
-        // 渲染之后的帧
-        for (int i = 1; i <= nextFrames; ++i)
+        if (m_onionSkinOverlayCache.hasVisiblePixels)
         {
-            const int nextFrameIndex = frameIndex + i;
-            if (nextFrameIndex >= frameCount) break;
-
-            const std::vector<uint32_t> nextPixels = project->composeFrame(nextFrameIndex);
-            // 透明度渐变：离当前帧越远，透明度越低
-            const float alphaFactor = static_cast<float>(nextFrames - i + 1) / static_cast<float>(nextFrames + 1);
-            const int alpha = static_cast<int>(baseNextAlpha * alphaFactor);
-
-            // 渲染后帧的半透明像素
-            for (int y = 0; y < height; ++y)
-            {
-                for (int x = 0; x < width; ++x)
-                {
-                    const size_t index = static_cast<size_t>(y) * static_cast<size_t>(width) + static_cast<size_t>(x);
-                    const uint32_t pixel = nextPixels[index];
-                    if (((pixel >> 24) & 0xFFu) == 0) continue; // 跳过透明像素
-
-                    const ImU32 color = makeOnionSkinPixelColor(pixel, nextColor, alpha, preserveOriginalColors);
-
-                    const ImVec2 p0(
-                        imagePos.x + static_cast<float>(x * zoom),
-                        imagePos.y + static_cast<float>(y * zoom));
-                    const ImVec2 p1(
-                        imagePos.x + static_cast<float>((x + 1) * zoom),
-                        imagePos.y + static_cast<float>((y + 1) * zoom));
-                    drawList->AddRectFilled(p0, p1, color);
-                }
-            }
+            drawList->AddImage(
+                reinterpret_cast<ImTextureID>(static_cast<uintptr_t>(m_onionSkinTexture.id())),
+                imageMin,
+                imageMax,
+                ImVec2(0, 0),
+                ImVec2(1, 1));
         }
+    }
+    else
+    {
+        m_onionSkinOverlayCache.hasVisiblePixels = false;
     }
 
     drawList->AddImage(
@@ -1048,4 +1138,3 @@ void ProjectWindow::renderCanvasPanel(Project* project)
         drawList->PopClipRect();
     }
 }
-

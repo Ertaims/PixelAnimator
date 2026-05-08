@@ -130,6 +130,12 @@ public:
         return m_projectDirty; 
     }
 
+    // 项目内容版本号：像素/图层/帧回滚等会影响画布显示的内容变化时递增。
+    uint64_t getProjectContentRevision() const
+    {
+        return m_projectContentRevision;
+    }
+
     // 标记项目已修改
     void setProjectDirty(bool dirty = true, const std::string& actionLabel = "Edit");
 
@@ -800,10 +806,12 @@ private:
     bool isEquivalentToCurrentState(const UndoHistoryEntry& entry) const;
     void trimUndoHistoryToLimit();
     void rebuildPixelSelectionMeta();
+    void bumpProjectContentRevision();
 
     // 项目与文档
     Project* m_project = nullptr;
     bool m_projectDirty = false;
+    uint64_t m_projectContentRevision = 1;
     std::string m_projectFilePath;
 
     // 动画与帧

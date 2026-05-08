@@ -194,6 +194,45 @@ private:
     };
 
     /**
+     * @brief 画布显示缓存。
+     *
+     * 大画布下“每帧重新合成图层 + 上传整张纹理”会非常吃性能；
+     * 这里记录上次已上传的内容版本，只在像素/帧/尺寸确实变化时刷新。
+     */
+    struct CanvasCompositionCache
+    {
+        std::vector<uint32_t> pixels;
+        int width = 0;
+        int height = 0;
+        int frameIndex = -1;
+        uint64_t contentRevision = 0;
+    };
+
+    /**
+     * @brief 洋葱皮叠加纹理缓存。
+     *
+     * 以前洋葱皮按像素向 ImGui 提交矩形，大画布会产生海量绘制命令；
+     * 现在先合成为一张半透明纹理，再一次性绘制。
+     */
+    struct OnionSkinOverlayCache
+    {
+        std::vector<uint32_t> pixels;
+        int width = 0;
+        int height = 0;
+        int frameIndex = -1;
+        int frameCount = 0;
+        int previousFrames = 0;
+        int nextFrames = 0;
+        int previousAlpha = 0;
+        int nextAlpha = 0;
+        uint32_t previousColor = 0;
+        uint32_t nextColor = 0;
+        bool preserveOriginalColors = false;
+        uint64_t contentRevision = 0;
+        bool hasVisiblePixels = false;
+    };
+
+    /**
      * @brief 确保画布纹理存在并具有指定尺寸。
      * 
      * @param width 目标宽度。
@@ -223,6 +262,9 @@ private:
     std::string m_windowLabel;                       // 窗口标签字符串
     std::function<void(AppContext*)> m_onFocused;    // 窗口获得焦点时的回调函数
     render::CanvasTexture m_canvasTexture;           // 画布纹理状态
+    render::CanvasTexture m_onionSkinTexture;        // 洋葱皮叠加纹理
+    CanvasCompositionCache m_canvasCompositionCache;  // 当前帧合成缓存
+    OnionSkinOverlayCache m_onionSkinOverlayCache;   // 洋葱皮合成缓存
     PaletteState m_paletteState;                     // 调色板状态
     TimelineState m_timelineState;                   // 时间轴状态
     ToolbarState m_toolbarState;                     // 工具栏状态

@@ -11,6 +11,7 @@
 ProjectWindow::~ProjectWindow()
 {
     m_canvasTexture.release();
+    m_onionSkinTexture.release();
     render::deleteTexture(m_timelineState.playIconTexture);
     render::deleteTexture(m_timelineState.pauseIconTexture);
     render::deleteTexture(m_toolbarState.brushIconTexture);

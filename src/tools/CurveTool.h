@@ -65,6 +65,14 @@ public:
                        bool anyPopupOpen) const;
 
     /**
+     * @brief 当前是否处于曲线预览/调整流程中。
+     *
+     * 曲线工具在松开鼠标后仍会跟随鼠标移动刷新预览，
+     * 画布缓存需要借此判断是否继续上传预览纹理。
+     */
+    bool hasActiveInteraction() const;
+
+    /**
      * @brief 重置交互状态；若传入 frame 则恢复到快照。
      */
     void resetInteractionState(Project::Frame* frame = nullptr);

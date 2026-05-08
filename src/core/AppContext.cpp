@@ -216,6 +216,13 @@ AppContext::AppContext() = default;
 
 AppContext::~AppContext() = default;
 
+void AppContext::bumpProjectContentRevision()
+{
+    // 0 作为“未初始化/无效”哨兵，版本号溢出时跳回 1 即可继续用于缓存失效判断。
+    ++m_projectContentRevision;
+    if (m_projectContentRevision == 0) m_projectContentRevision = 1;
+}
+
 void AppContext::setProjectDirty(bool dirty, const std::string& actionLabel)
 {
     // 标记“已保存”时，仅更新 dirty 位与“已保存历史指针”。
@@ -230,6 +237,7 @@ void AppContext::setProjectDirty(bool dirty, const std::string& actionLabel)
     if (!m_project)
     {
         m_projectDirty = true;
+        bumpProjectContentRevision();
         return;
     }
 
@@ -263,6 +271,7 @@ void AppContext::setProjectDirty(bool dirty, const std::string& actionLabel)
     m_undoHistoryCurrentIndex = static_cast<int>(m_undoHistory.size()) - 1;
     trimUndoHistoryToLimit();
     m_projectDirty = (m_undoHistoryCurrentIndex != m_undoHistorySavedIndex);
+    bumpProjectContentRevision();
 }
 
 void AppContext::setBrushSize(int size)
@@ -852,6 +861,7 @@ void AppContext::undo()
     --m_undoHistoryCurrentIndex;
     applyUndoHistoryEntry(m_undoHistory[static_cast<size_t>(m_undoHistoryCurrentIndex)]);
     m_projectDirty = (m_undoHistoryCurrentIndex != m_undoHistorySavedIndex);
+    bumpProjectContentRevision();
 }
 
 void AppContext::redo()
@@ -860,6 +870,7 @@ void AppContext::redo()
     ++m_undoHistoryCurrentIndex;
     applyUndoHistoryEntry(m_undoHistory[static_cast<size_t>(m_undoHistoryCurrentIndex)]);
     m_projectDirty = (m_undoHistoryCurrentIndex != m_undoHistorySavedIndex);
+    bumpProjectContentRevision();
 }
 
 void AppContext::resetUndoRedoHistory(const std::string& initialLabel)
@@ -871,6 +882,7 @@ void AppContext::resetUndoRedoHistory(const std::string& initialLabel)
     if (!m_project)
     {
         m_projectDirty = false;
+        bumpProjectContentRevision();
         return;
     }
 
@@ -878,6 +890,7 @@ void AppContext::resetUndoRedoHistory(const std::string& initialLabel)
     m_undoHistoryCurrentIndex = 0;
     m_undoHistorySavedIndex = 0;
     m_projectDirty = false;
+    bumpProjectContentRevision();
 }
 
 int AppContext::getUndoHistoryCount() const
@@ -909,6 +922,7 @@ void AppContext::jumpToUndoHistoryIndex(int index)
     m_undoHistoryCurrentIndex = index;
     applyUndoHistoryEntry(m_undoHistory[static_cast<size_t>(m_undoHistoryCurrentIndex)]);
     m_projectDirty = (m_undoHistoryCurrentIndex != m_undoHistorySavedIndex);
+    bumpProjectContentRevision();
 }
 
 int AppContext::getUndoHistoryMaxEntries() const

@@ -518,6 +518,11 @@ void CurveTool::renderOverlay(const AppContext& context,
     (void)anyPopupOpen;
 }
 
+bool CurveTool::hasActiveInteraction() const
+{
+    return m_state.phase != InteractionState::Phase::None && m_state.hasBasePixels;
+}
+
 void CurveTool::resetInteractionState(Project::Frame* frame)
 {
     // 若当前处于交互中，恢复到交互开始前快照，确保不会留下半成品。
